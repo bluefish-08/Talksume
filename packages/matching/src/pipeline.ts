@@ -8,11 +8,15 @@ import {
   scoreSkills,
 } from "./dimensions.ts";
 import { applyHardFilters } from "./filters.ts";
+import { levelAdjustment } from "./level.ts";
 import { classifyRole, ROLE_LABELS } from "./role.ts";
 import { Bm25, buildIdf, clamp01, tokenize } from "./text.ts";
 import {
+  CONTEXT_DIMENSIONS,
+  CORE_DIMENSIONS,
   DEFAULT_WEIGHTS,
   DIMENSIONS,
+  type DimensionKey,
   type DimensionScores,
   type FeedbackEntry,
   type FilterReason,
@@ -23,6 +27,8 @@ import {
 } from "./types.ts";
 
 export const DEFAULT_RECALL_LIMIT = 100;
+/** 规则分低于此值的岗位只是「专业/城市沾边」，不推荐给用户。 */
+export const MIN_RECOMMEND_SCORE = 30;
 
 const jobText = (job: Job) => `${job.title}\n${job.title}\n${job.jdText}`;
 
@@ -98,6 +104,27 @@ export function feedbackAdjustment(
   return { multiplier: boost, evidence: boostNote ? [boostNote] : [] };
 }
 
+/** JD 技能清单通常很长，覆盖一半就算相当对口，取 0.6 次方让覆盖率的边际收益递减。 */
+export const SKILL_CURVE = 0.6;
+
+/** 85 分以上压缩，满分匹配落在 94–95 而不是贴着 100，给后续的加权留出区分度。 */
+function softCeiling(score: number): number {
+  return score <= 85 ? score : 85 + (score - 85) * 0.65;
+}
+
+/** 核心维度加权得相关度，再按专业/城市的契合度打折；没有核心维度时退回整体加权。 */
+export function combineDimensions(dims: DimensionScores, weights: Weights): number {
+  const credit = (k: DimensionKey) => (k === "skills" ? dims.skills.score ** SKILL_CURVE : dims[k].score);
+  const part = (keys: readonly DimensionKey[]) => {
+    const w = keys.reduce((s, k) => s + weights[k], 0);
+    return { w, avg: w > 0 ? keys.reduce((s, k) => s + weights[k] * credit(k), 0) / w : 0 };
+  };
+  const core = part(CORE_DIMENSIONS);
+  const context = part(CONTEXT_DIMENSIONS);
+  if (core.w <= 0) return DIMENSIONS.reduce((s, k) => s + weights[k] * credit(k), 0);
+  return core.avg * (1 - context.w + context.w * context.avg);
+}
+
 export function scoreJob(
   profile: Profile,
   job: Job,
@@ -106,7 +133,10 @@ export function scoreJob(
 ): ScoredJob {
   const dims = scoreDimensions(profile, job, ctx);
   const weights = effectiveWeights(dims, mergeWeights(opts.weights));
-  const base = DIMENSIONS.reduce((s, k) => s + weights[k] * dims[k].score, 0) * 100;
+  const level = levelAdjustment(profile, job);
+  if (level.evidence)
+    dims.experience = { ...dims.experience, evidence: [level.evidence, ...dims.experience.evidence] };
+  const base = softCeiling(combineDimensions(dims, weights) * level.multiplier * 100);
   const adj = feedbackAdjustment(job, opts.feedback ?? []);
   const round = (n: number) => Math.round(n * 10) / 10;
   return {
@@ -117,6 +147,7 @@ export function scoreJob(
     weights,
     feedbackMultiplier: adj.multiplier,
     feedbackEvidence: adj.evidence,
+    levelMultiplier: level.multiplier,
   };
 }
 
@@ -201,5 +232,12 @@ export function matchProfile(
       }),
     )
     .sort((a, b) => b.score - a.score || a.job.id.localeCompare(b.job.id));
-  return { matches, excluded, candidates: passed.length, recalled: recalled.length };
+  const relevant = matches.filter((m) => m.baseScore >= (opts.minScore ?? 0));
+  return {
+    matches: relevant,
+    belowThreshold: matches.length - relevant.length,
+    excluded,
+    candidates: passed.length,
+    recalled: recalled.length,
+  };
 }

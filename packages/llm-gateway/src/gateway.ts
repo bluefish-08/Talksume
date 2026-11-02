@@ -66,6 +66,12 @@ export interface CompleteRequest {
   signal?: AbortSignal;
   maxTokens?: number;
   temperature?: number;
+  /** 本次调用每个模型在首次请求之外的重试次数，不传则用配置值。给有自己重试逻辑的调用方快速切到备用模型。 */
+  maxRetries?: number;
+}
+
+export interface StreamTuning {
+  maxRetries?: number;
 }
 
 export interface CompleteResult {
@@ -87,7 +93,7 @@ export interface Gateway {
   readonly primaryModel: Model<Api>;
   readonly fallbackModel: Model<Api>;
   /** 给 pi-agent-core 的 streamFn。purpose 写入调用日志。 */
-  streamFn(purpose: string): GatewayStreamFn;
+  streamFn(purpose: string, tuning?: StreamTuning): GatewayStreamFn;
   complete(request: CompleteRequest): Promise<CompleteResult>;
   completeStructured<T>(request: StructuredRequest<T>): Promise<{ value: T; text: string; model: string }>;
 }
@@ -256,6 +262,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     context: TranscriptContext,
     options: SimpleStreamOptions | undefined,
     out: AssistantMessageEventStream,
+    maxRetries: number,
   ): Promise<void> {
     const redactor = config.redactPii ? createPiiRedactor() : undefined;
     const safeContext = redactor ? redactor.redactDeep(context) : context;
@@ -276,7 +283,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     };
 
     for (const [index, model] of chain.entries()) {
-      for (let retry = 0; retry <= config.maxRetries; retry++) {
+      for (let retry = 0; retry <= maxRetries; retry++) {
         if (callerSignal?.aborted) {
           finishError(
             emptyAssistantMessage(model, "aborted", "aborted"),
@@ -391,7 +398,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
           finishError(terminal, kind, raw, "error");
           return;
         }
-        if (isRetryableKind(kind) && retry < config.maxRetries) {
+        if (isRetryableKind(kind) && retry < maxRetries) {
           await sleep(config.retryBaseDelayMs * 2 ** retry, callerSignal);
           continue;
         }
@@ -405,10 +412,10 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     }
   }
 
-  function streamFn(purpose: string): GatewayStreamFn {
+  function streamFn(purpose: string, tuning: StreamTuning = {}): GatewayStreamFn {
     return (model, context, options) => {
       const out = createAssistantMessageEventStream();
-      run(purpose, model, context, options, out).catch((error) => {
+      run(purpose, model, context, options, out, tuning.maxRetries ?? config.maxRetries).catch((error) => {
         const text = error instanceof Error ? error.message : String(error);
         out.push({
           type: "error",
@@ -437,7 +444,8 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
       ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     };
-    const message = await streamFn(request.purpose)(primaryModel, context, options).result();
+    const tuning = request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {};
+    const message = await streamFn(request.purpose, tuning)(primaryModel, context, options).result();
     if (message.stopReason === "error" || message.stopReason === "aborted") {
       throw toGatewayError(message.errorMessage ?? "unknown error", message.model);
     }
@@ -465,6 +473,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         messages,
         ...(request.signal ? { signal: request.signal } : {}),
         ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
+        ...(request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {}),
         temperature: request.temperature ?? 0,
       });
       try {

@@ -151,6 +151,45 @@ describe("推荐", () => {
   });
 });
 
+describe("报告失败与重试", () => {
+  it("报告失败时列表标记 failed，重试接口重新生成；未开启 LLM 返回 503", async () => {
+    let healthy = false;
+    const llm: StructuredLlm = {
+      completeStructured: async <T>(req: Parameters<StructuredLlm["completeStructured"]>[0]) => {
+        if (!healthy) throw new Error("timeout");
+        return {
+          value: req.validate({ summary: "很匹配", strengths: ["a"], gaps: ["b"] }) as T,
+          text: "",
+          model: "fake",
+        };
+      },
+    };
+    const app = appWith({
+      llm,
+      embedder: null,
+      rerankTopN: 2,
+      rerank: { attempts: 1, retryDelayMs: 0 },
+      onError: () => {},
+    });
+    const headers = await userWithProfile();
+    await json(app, "POST", "/api/v1/matches/refresh", headers, { wait: true });
+    const [first] = (await json(app, "GET", "/api/v1/matches?limit=2", headers)).body.items;
+    expect(first).toMatchObject({ report: {}, reportStatus: "failed" });
+
+    healthy = true;
+    const url = `/api/v1/jobs/${encodeURIComponent(first.jobId)}/report`;
+    const retry = await json(app, "POST", url, headers, { wait: true });
+    expect(retry).toMatchObject({ status: 202, body: { jobId: first.jobId, reportStatus: "done" } });
+    const [again] = (await json(app, "GET", "/api/v1/matches?limit=1", headers)).body.items;
+    expect(again).toMatchObject({ reportStatus: "ready", report: { summary: "很匹配" } });
+
+    const missing = await json(app, "POST", "/api/v1/jobs/nope/report", headers, {});
+    expect(missing.status).toBe(404);
+    const off = await json(appWith(), "POST", url, headers, {});
+    expect(off).toMatchObject({ status: 503, body: { error: { code: "llm_unavailable" } } });
+  });
+});
+
 describe("反馈与导入", () => {
   it("提交反馈、校验参数、再 refresh 后同类岗位降权", async () => {
     const app = appWith();

@@ -130,7 +130,8 @@ export async function extractJobFields(
       prompt: text.slice(0, 6000),
       schema: z.toJSONSchema(LlmExtract) as Record<string, unknown>,
       validate: (v) => LlmExtract.parse(v),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(30_000),
+      maxTokens: 800,
     });
     const v = res.value;
     const company = v.company?.trim();

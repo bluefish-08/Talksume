@@ -4,6 +4,7 @@ import {
   buildChips,
   citiesText,
   dimRows,
+  evidenceLines,
   formatSalary,
   reasonLine,
   reportsPending,
@@ -21,6 +22,7 @@ function match(
     score: 80,
     dims: {},
     report: {},
+    reportStatus: "none",
     feedback: null,
     createdAt: "",
     job: { id: "j", source: "x", company: "c", title: "t", cities, jobType, tags: [], snippet: "" },
@@ -65,10 +67,30 @@ describe("jobs format", () => {
     expect(reasonLine(m)).toBe("岗位同属后端");
   });
 
-  it("detects pending reports among the top items only", () => {
-    const filled = Array.from({ length: 10 }, () => match({ report: { summary: "ok" } }));
-    expect(reportsPending([...filled, match()])).toBe(false);
-    expect(reportsPending([match(), ...filled])).toBe(true);
+  it("puts skill and experience evidence ahead of major and city", () => {
+    const dim = (score: number, weight: number, text: string) => ({ score, weight, evidence: [text] });
+    const m = match({
+      dims: {
+        major: dim(1, 0.1, "画像专业符合 JD"),
+        city: dim(1, 0.1, "城市在意向内"),
+        skills: dim(0.7, 0.3, "命中 Go：美团实习"),
+        experience: dim(0.8, 0.25, "实习与岗位同属后端"),
+      },
+    });
+    expect(evidenceLines(m)).toEqual(["命中 Go：美团实习", "实习与岗位同属后端"]);
+    expect(reasonLine(m)).toBe("命中 Go：美团实习");
+    const onlyMajor = match({ dims: { major: dim(1, 0.1, "画像专业符合 JD") } });
+    expect(evidenceLines(onlyMajor)).toEqual(["画像专业符合 JD"]);
+  });
+
+  it("polls only while the server reports pending reports among the top items", () => {
+    const ready = Array.from({ length: 10 }, () =>
+      match({ report: { summary: "ok" }, reportStatus: "ready" }),
+    );
+    const pending = match({ reportStatus: "pending" });
+    expect(reportsPending([...ready, pending])).toBe(false);
+    expect(reportsPending([pending, ...ready])).toBe(true);
+    expect(reportsPending([match({ reportStatus: "failed" }), ...ready])).toBe(false);
   });
 
   it("builds and applies chips", () => {

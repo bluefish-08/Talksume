@@ -146,6 +146,16 @@ describe("gateway retry and fallback", () => {
     expect(logs.at(-1)).toMatchObject({ model: "glm-5.3", usedFallback: true, success: true });
   });
 
+  it("maxRetries per request lets slow primary failures fall back immediately", async () => {
+    const { gateway, calls, sleeps } = setup((_n, model) =>
+      model === "glm-5.3" ? "备用回答" : err("Request timed out."),
+    );
+    const result = await gateway.complete({ purpose: "match_report", prompt: "hi", maxRetries: 0 });
+    expect(result.text).toBe("备用回答");
+    expect(calls.map((c) => c.model)).toEqual(["deepseek-v4.1-flash", "glm-5.3"]);
+    expect(sleeps).toEqual([]);
+  });
+
   it("fails with the last error when both models are down", async () => {
     const { gateway, calls } = setup(() => err("500 internal server error"), { maxRetries: 1 });
     await expect(gateway.complete({ purpose: "chat", prompt: "hi" })).rejects.toMatchObject({

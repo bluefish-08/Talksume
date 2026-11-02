@@ -19,14 +19,27 @@ import {
   USER_IMPORT_SOURCE,
   visibleTo,
 } from "./jobs-db.ts";
-import { buildScoreContext, DEFAULT_RECALL_LIMIT, matchProfile, scoreJob } from "./pipeline.ts";
+import {
+  buildScoreContext,
+  DEFAULT_RECALL_LIMIT,
+  MIN_RECOMMEND_SCORE,
+  matchProfile,
+  scoreJob,
+} from "./pipeline.ts";
 import { vectorScores } from "./recall-db.ts";
-import { generateReports, type StructuredLlm } from "./rerank.ts";
+import {
+  DEFAULT_RERANK_TOP_N,
+  generateReport,
+  generateReports,
+  type RerankOptions,
+  type StructuredLlm,
+} from "./rerank.ts";
 import {
   DIMENSIONS,
   type FeedbackEntry,
   type FilterReason,
   type MatchOptions,
+  type MatchOutcome,
   type ScoredJob,
   type Weights,
 } from "./types.ts";
@@ -46,13 +59,34 @@ export interface MatchingServiceOptions {
   embedder?: Embedder | null;
   weights?: Partial<Weights>;
   rerankTopN?: number;
+  /** 覆盖报告生成的并发、超时、重试等参数。 */
+  rerank?: Pick<
+    RerankOptions,
+    "concurrency" | "attemptTimeoutMs" | "attempts" | "retryDelayMs" | "maxTokens"
+  >;
   recallLimit?: number;
+  /** 规则分低于该值的岗位不写入推荐，默认 MIN_RECOMMEND_SCORE。 */
+  minScore?: number;
   /** 写入 match_results 的最大条数。 */
   storeLimit?: number;
   onError?: (message: string, error: unknown) => void;
 }
 
 export type FeedbackSignal = "like" | "dislike" | "irrelevant";
+export type ReportStatus = "ready" | "pending" | "failed" | "none";
+
+/** 进程重启等原因让 pending 永远没人收尾时，超过该时长按失败处理，避免前端一直转圈。 */
+export const REPORT_STALE_MS = 6 * 60_000;
+
+export function reportStatusOf(report: schema.MatchReport, now = Date.now()): ReportStatus {
+  if (report.summary || report.strengths?.length || report.gaps?.length) return "ready";
+  if (report.status === "failed") return "failed";
+  if (report.status === "pending") {
+    const started = report.startedAt ? Date.parse(report.startedAt) : Number.NaN;
+    return Number.isFinite(started) && now - started <= REPORT_STALE_MS ? "pending" : "failed";
+  }
+  return "none";
+}
 
 export interface RefreshResult {
   count: number;
@@ -69,12 +103,21 @@ export interface MatchItem {
   score: number;
   dims: Record<string, { score: number; weight?: number; evidence?: string[] }>;
   report: { summary?: string; strengths?: string[]; gaps?: string[] };
+  /** none：没有为该岗位生成报告；pending：生成中；failed：失败或超时，可重试。 */
+  reportStatus: ReportStatus;
   feedback: FeedbackSignal | null;
   createdAt: string;
   job: JobSummary;
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+const pendingReport = (): schema.MatchReport => ({ status: "pending", startedAt: new Date().toISOString() });
+
+function publicReport(report: schema.MatchReport): MatchItem["report"] {
+  const { status: _status, startedAt: _startedAt, ...content } = report;
+  return content;
+}
 
 function toDims(scored: ScoredJob): Record<string, { score: number; weight: number; evidence: string[] }> {
   const dims: Record<string, { score: number; weight: number; evidence: string[] }> = {};
@@ -123,7 +166,7 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     return [...latest.values()];
   }
 
-  async function persist(userId: string, results: ScoredJob[], replaceAll: boolean) {
+  async function persist(userId: string, results: ScoredJob[], replaceAll: boolean, pendingTop = 0) {
     await db.transaction(async (tx) => {
       const mine = eq(schema.matchResults.userId, userId);
       if (replaceAll) {
@@ -145,33 +188,50 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
       for (let i = 0; i < results.length; i += 200) {
         const chunk = results.slice(i, i + 200);
         if (chunk.length === 0) continue;
-        await tx
-          .insert(schema.matchResults)
-          .values(chunk.map((r) => ({ userId, jobId: r.job.id, score: r.score, dims: toDims(r) })));
+        await tx.insert(schema.matchResults).values(
+          chunk.map((r, j) => ({
+            userId,
+            jobId: r.job.id,
+            score: r.score,
+            dims: toDims(r),
+            ...(i + j < pendingTop && { report: pendingReport() }),
+          })),
+        );
       }
     });
   }
 
+  const topN = () => options.rerankTopN ?? DEFAULT_RERANK_TOP_N;
+
+  const reportWhere = (userId: string, jobId: string) =>
+    and(
+      eq(schema.matchResults.userId, userId),
+      eq(schema.matchResults.jobId, jobId),
+      sql`${schema.matchResults.resumeVersionId} is null`,
+    );
+
+  async function storeReport(userId: string, jobId: string, report: schema.MatchReport, model?: string) {
+    await db
+      .update(schema.matchResults)
+      .set({ report, ...(model && { model }) })
+      .where(reportWhere(userId, jobId));
+  }
+
+  const rerankOptions = (userId: string): RerankOptions => ({
+    ...options.rerank,
+    onReport: (r) => storeReport(userId, r.jobId, r.report, r.model),
+    onError: async (error, jobId) => {
+      log(`匹配报告生成失败 ${jobId}`, error);
+      await storeReport(userId, jobId, { status: "failed" }).catch((e) => log("写入报告失败状态出错", e));
+    },
+  });
+
+  /** 报告随生成随写入，前端不必等最慢的那一个。 */
   async function writeReports(userId: string, profile: Profile, ranked: ScoredJob[]): Promise<void> {
     const llm = options.llm;
     if (!llm) return;
     try {
-      const reports = await generateReports(llm, profile, ranked, {
-        ...(options.rerankTopN !== undefined && { topN: options.rerankTopN }),
-        onError: (error, jobId) => log(`匹配报告生成失败 ${jobId}`, error),
-      });
-      for (const r of reports) {
-        await db
-          .update(schema.matchResults)
-          .set({ report: r.report, model: r.model })
-          .where(
-            and(
-              eq(schema.matchResults.userId, userId),
-              eq(schema.matchResults.jobId, r.jobId),
-              sql`${schema.matchResults.resumeVersionId} is null`,
-            ),
-          );
-      }
+      await generateReports(llm, profile, ranked, { ...rerankOptions(userId), topN: topN() });
     } catch (error) {
       log("匹配报告生成失败", error);
     }
@@ -194,14 +254,15 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
       weights,
       feedback,
       recallLimit: options.recallLimit ?? DEFAULT_RECALL_LIMIT,
+      minScore: options.minScore ?? MIN_RECOMMEND_SCORE,
       ...(vectors && { vectorScores: vectors }),
     };
     const outcome = matchProfile(profile, jobs, matchOptions);
     const stored = outcome.matches.slice(0, options.storeLimit ?? 100);
-    await persist(userId, stored, true);
+    await persist(userId, stored, true, options.llm ? topN() : 0);
 
     const done = options.llm && stored.length > 0 ? writeReports(userId, profile, stored) : Promise.resolve();
-    const hint = stored.length === 0 ? emptyHint(outcome.excluded) : undefined;
+    const hint = stored.length === 0 ? emptyHint(outcome) : undefined;
     return {
       count: stored.length,
       candidates: outcome.candidates,
@@ -267,7 +328,8 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
         jobId: r.jobId,
         score: r.score,
         dims: r.dims,
-        report: r.report,
+        report: publicReport(r.report),
+        reportStatus: reportStatusOf(r.report),
         feedback: signals.get(r.jobId) ?? null,
         createdAt: r.createdAt.toISOString(),
         job: summarize(rowToJob(r.job)),
@@ -340,9 +402,41 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     return { job: detail, match: item ?? null };
   }
 
+  /** 单个岗位的报告失败后由用户触发重试；已在生成或已有报告时不重复调用模型。 */
+  async function retryReport(
+    userId: string,
+    jobId: string,
+  ): Promise<{ reportStatus: ReportStatus; done: Promise<void> }> {
+    const llm = options.llm;
+    if (!llm) throw new MatchingError("llm_unavailable", 503, "AI 解读暂未开启");
+    const { profile, weights } = await loadProfile(userId);
+    const [current] = await db
+      .select({ report: schema.matchResults.report })
+      .from(schema.matchResults)
+      .where(reportWhere(userId, jobId));
+    if (!current) throw new MatchingError("match_not_found", 404, "这个岗位还没有匹配结果");
+    const status = reportStatusOf(current.report);
+    if (status === "pending" || status === "ready") return { reportStatus: status, done: Promise.resolve() };
+
+    const [all, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
+    const job = all.find((a) => a.job.id === jobId)?.job;
+    if (!job) throw new MatchingError("job_not_found", 404, "岗位不存在");
+    const scored = scoreJob(profile, job, buildScoreContext(all.map((a) => a.job)), { weights, feedback });
+    await storeReport(userId, jobId, pendingReport());
+
+    const done = generateReport(llm, profile, scored, options.rerank)
+      .then((r) => storeReport(userId, jobId, r.report, r.model))
+      .catch(async (error) => {
+        log(`匹配报告重试失败 ${jobId}`, error);
+        await storeReport(userId, jobId, { status: "failed" }).catch((e) => log("写入报告失败状态出错", e));
+      });
+    return { reportStatus: "pending", done };
+  }
+
   return {
     refresh,
     listMatches,
+    retryReport,
     recordFeedback,
     importJob,
     searchJobs: (userId: string, search: JobSearch) => searchJobs(db, userId, search),
@@ -357,10 +451,13 @@ export type MatchingService = ReturnType<typeof createMatchingService>;
 
 const REASON_LABEL = { jobType: "求职类型", city: "城市", degree: "学历要求", closed: "岗位状态" } as const;
 
-function emptyHint(excluded: Record<FilterReason, number>): string {
-  const top = (Object.entries(excluded) as [FilterReason, number][])
+function emptyHint(outcome: Pick<MatchOutcome, "excluded" | "belowThreshold">): string {
+  const top = (Object.entries(outcome.excluded) as [FilterReason, number][])
     .filter(([reason]) => reason !== "closed")
     .sort((a, b) => b[1] - a[1])[0];
+  if (outcome.belowThreshold > 0 && (!top || top[1] <= outcome.belowThreshold)) {
+    return "现有岗位和你的技能、经历、意向相关度都不高，建议补充技能与项目，或调整意向岗位方向";
+  }
   if (!top || top[1] === 0) return "岗位库里暂时没有可推荐的岗位";
   const [reason, n] = top;
   return `没有符合条件的职位：${n} 个岗位被「${REASON_LABEL[reason]}」过滤，建议${FILTER_HINTS[reason]}`;

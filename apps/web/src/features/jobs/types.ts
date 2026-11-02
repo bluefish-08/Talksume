@@ -45,11 +45,15 @@ export interface MatchReport {
   gaps?: string[];
 }
 
+export type ReportStatus = "ready" | "pending" | "failed" | "none";
+
 export interface MatchItem {
   jobId: string;
   score: number;
   dims: Partial<Record<DimKey, Dim>>;
   report: MatchReport;
+  /** none：没有为该岗位生成报告；pending：生成中；failed：失败或超时，可重试。 */
+  reportStatus: ReportStatus;
   feedback: FeedbackSignal | null;
   createdAt: string;
   job: JobSummary;

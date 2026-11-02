@@ -111,6 +111,14 @@ export function createMatchingRoutes(options: MatchingServiceOptions = {}): Rout
         return { ...result, rerank: body.wait && rerank === "pending" ? "done" : rerank };
       });
 
+      app.post<{ Params: { id: string } }>("/api/v1/jobs/:id/report", async (req, reply) => {
+        const body = RefreshBody.parse(req.body ?? {});
+        const { reportStatus, done } = await service.retryReport(req.userId, req.params.id);
+        if (body.wait) await done;
+        const status = body.wait && reportStatus === "pending" ? "done" : reportStatus;
+        return reply.code(202).send({ jobId: req.params.id, reportStatus: status });
+      });
+
       app.get("/api/v1/matches", async (req) => {
         const { limit } = MatchesQuery.parse(req.query);
         return service.listMatches(req.userId, limit);

@@ -20,12 +20,13 @@ export interface DetailProps {
   jdText: string | undefined;
   jdLoading: boolean;
   application: ApplicationRef | undefined;
-  reportPending: boolean;
+  retryingReport: boolean;
   busy: { apply: boolean; optimize: boolean; dislike: boolean };
   onBack: () => void;
   onApply: () => void;
   onOptimize: () => void;
   onDislike: () => void;
+  onRetryReport: () => void;
 }
 
 function applyButton({ application, busy, onApply }: DetailProps) {
@@ -51,7 +52,7 @@ function applyButton({ application, busy, onApply }: DetailProps) {
 }
 
 export function JobDetail(props: DetailProps) {
-  const { job, match, excluded, jdText, jdLoading, application, reportPending, busy } = props;
+  const { job, match, excluded, jdText, jdLoading, application, retryingReport, busy } = props;
   const report = match?.report;
   const strengths = report?.strengths?.length ? report.strengths : match ? evidenceLines(match) : [];
   const gaps = report?.gaps ?? [];
@@ -82,13 +83,20 @@ export function JobDetail(props: DetailProps) {
           {report?.summary ? (
             <p className={styles.summary}>{report.summary}</p>
           ) : (
-            reportPending &&
-            !hasReport(match.report) && (
+            !hasReport(match.report) &&
+            (match.reportStatus === "pending" ? (
               <p className={styles.pending} role="status">
                 <Spinner label="生成中" />
                 AI 解读生成中…
               </p>
-            )
+            ) : match.reportStatus === "failed" ? (
+              <p className={styles.pending} role="status">
+                AI 解读没有生成成功。
+                <Button variant="secondary" size="sm" disabled={retryingReport} onClick={props.onRetryReport}>
+                  {retryingReport && <Spinner label="重试中" />}重试
+                </Button>
+              </p>
+            ) : null)
           )}
 
           <section className={styles.section} aria-labelledby="dim-h">

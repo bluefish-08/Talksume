@@ -97,6 +97,69 @@ describe("专业维度", () => {
   });
 });
 
+describe("多段教育", () => {
+  const edu = (over: Record<string, unknown>) => ({
+    id: String(Math.random()),
+    school: "A",
+    degree: "bachelor",
+    ...over,
+  });
+  const job = makeJob({ title: "视觉设计", jdText: "负责海报设计" });
+
+  it("专业按最高学历取，而不是画像里排在第一的那段", () => {
+    const profile = makeProfile({
+      education: [
+        edu({ school: "艺术学院", major: "视觉传达设计", start: "2018-09", end: "2022-06" }),
+        edu({ school: "浙江大学", degree: "master", major: "计算机科学", start: "2022-09", end: "2025-06" }),
+      ],
+    });
+    const res = scoreMajor(profile, job);
+    expect(res.evidence[0]).toContain("浙江大学 计算机科学");
+    expect(res.score).toBeLessThan(0.3);
+  });
+
+  it("学历相同时取毕业时间晚的；没有时间则取后加入的", () => {
+    const early = edu({ school: "同济大学", major: "软件工程", start: "2020-09", end: "2024-06" });
+    const late = edu({ school: "浙江大学", major: "视觉传达设计", start: "2024-09", end: "2026-06" });
+    expect(scoreMajor(makeProfile({ education: [late, early] }), job).evidence[0]).toContain("浙江大学");
+    const undated = [
+      edu({ school: "同济大学", major: "软件工程" }),
+      edu({ school: "浙江大学", major: "计算机科学" }),
+    ];
+    expect(scoreMajor(makeProfile({ education: undated }), job).evidence[0]).toContain("浙江大学");
+  });
+
+  it("最新一段没有填专业时退到下一段", () => {
+    const profile = makeProfile({
+      education: [
+        edu({ school: "同济大学", major: "软件工程" }),
+        edu({ school: "浙江大学", degree: "master" }),
+      ],
+    });
+    expect(scoreMajor(profile, makeJob({ title: "后端开发" })).evidence[0]).toContain("同济大学");
+  });
+});
+
+describe("技能维度：基础课与任选语言", () => {
+  it("计算机类专业的基础课按半分计，其他专业没有", () => {
+    const job = makeJob({ title: "后端", jdText: "【任职要求】\n熟悉操作系统、数据结构" });
+    expect(scoreSkills(makeProfile({ skills: [] }), job).score).toBe(0.5);
+    const art = makeProfile({
+      skills: [],
+      education: [{ id: "e", school: "A", degree: "bachelor", major: "视觉传达设计" }],
+    });
+    expect(scoreSkills(art, job).score).toBe(0);
+  });
+
+  it("「掌握一种以上开发语言，包括 Java、Go」会一种即满足", () => {
+    const job = makeJob({
+      title: "后端",
+      jdText: "掌握一种以上的开发语言，包括但不限于Java、C++、Python、Golang等",
+    });
+    expect(scoreSkills(makeProfile({ skills: [skill("Go")] }), job).score).toBe(1);
+  });
+});
+
 describe("项目/经历维度", () => {
   const jobs = [
     makeJob({ title: "推荐算法工程师", jdText: "负责推荐系统召回排序模型设计，特征工程与线上实验" }),
@@ -122,9 +185,9 @@ describe("项目/经历维度", () => {
     expect(hit.evidence.join("\n")).toMatch(/项目「信息流推荐」.*共有关键词/);
   });
 
-  it("没有任何项目或经历时得 0 且说明原因", () => {
+  it("没有任何项目或经历时该维度不适用，由其余维度决定得分", () => {
     const res = scoreExperience(makeProfile(), jobs[0] as (typeof jobs)[number], ctx);
-    expect(res).toMatchObject({ score: 0, applicable: true });
+    expect(res).toMatchObject({ score: 0, applicable: false });
     expect(res.evidence[0]).toContain("还没有");
   });
 });

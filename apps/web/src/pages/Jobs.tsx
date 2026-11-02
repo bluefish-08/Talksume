@@ -6,7 +6,7 @@ import { useStartConversation } from "../api/queries.ts";
 import { useToast } from "../components/Toast.tsx";
 import { Button, Chip, EmptyState, Spinner } from "../components/ui.tsx";
 import { ApplyDialog, type ManualApply } from "../features/jobs/ApplyDialog.tsx";
-import { applyFilter, buildChips, REPORT_TOP_N, totalOpenJobs } from "../features/jobs/format.ts";
+import { applyFilter, buildChips, totalOpenJobs } from "../features/jobs/format.ts";
 import {
   useAppliedJobs,
   useCreateApplication,
@@ -17,6 +17,7 @@ import {
   useOptimizeResume,
   useRefreshMatches,
   useRefreshResult,
+  useRetryReport,
 } from "../features/jobs/hooks.ts";
 import { ImportDialog } from "../features/jobs/ImportDialog.tsx";
 import { JobDetail, JobDetailSkeleton } from "../features/jobs/JobDetail.tsx";
@@ -62,7 +63,8 @@ export function JobsPage() {
   const [manual, setManual] = useState<ManualApply | null>(null);
   const [imported, setImported] = useState<Record<string, ImportResult>>({});
 
-  const { query: matchesQ, reportsPending, startPolling } = useMatches();
+  const { query: matchesQ } = useMatches();
+  const retryReport = useRetryReport();
   const refresh = useRefreshMatches();
   const refreshInfo = useRefreshResult().data;
   const searchQ = useJobSearch(q);
@@ -76,8 +78,8 @@ export function JobsPage() {
   const noProfile = refresh.error instanceof ApiError && refresh.error.code === "profile_not_found";
 
   const runRefresh = useCallback(() => {
-    refresh.mutate(undefined, { onSuccess: startPolling });
-  }, [refresh.mutate, startPolling]);
+    refresh.mutate();
+  }, [refresh.mutate]);
 
   const autoRefreshed = useRef(false);
   const matchesLoaded = matchesQ.data;
@@ -148,7 +150,6 @@ export function JobsPage() {
   const listJob = rows.find((r) => r.job.id === selectedId)?.job ?? match?.job ?? importedHit?.job;
   const job = detailQ.data ?? listJob;
   const application = job ? applied?.get(job.id) : undefined;
-  const matchRank = job ? matches.findIndex((m) => m.jobId === job.id) : -1;
 
   function apply() {
     if (!job) return;
@@ -279,7 +280,7 @@ export function JobsPage() {
           jdText={detailQ.data?.jdText}
           jdLoading={detailQ.isPending}
           application={application}
-          reportPending={reportsPending && matchRank >= 0 && matchRank < REPORT_TOP_N}
+          retryingReport={retryReport.isPending}
           busy={{ apply: createApp.isPending, optimize: optimize.isPending, dislike: feedback.isPending }}
           onBack={() => select(null, true)}
           onApply={apply}
@@ -290,6 +291,9 @@ export function JobsPage() {
             )
           }
           onDislike={dislike}
+          onRetryReport={() =>
+            retryReport.mutate(job.id, { onError: (e) => toast(errorText(e), { tone: "error" }) })
+          }
         />
       );
     }

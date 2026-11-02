@@ -3,7 +3,14 @@ import { CASES } from "../eval/dataset.ts";
 import { evaluate } from "../eval/evaluate.ts";
 import { cosine, createEmbedderFromEnv, OpenAiEmbedder } from "./embedder.ts";
 import { makeJob, makeProfile } from "./fixtures.ts";
-import { buildScoreContext, feedbackAdjustment, matchProfile, mergeWeights, scoreJob } from "./pipeline.ts";
+import {
+  buildScoreContext,
+  feedbackAdjustment,
+  matchProfile,
+  mergeWeights,
+  SKILL_CURVE,
+  scoreJob,
+} from "./pipeline.ts";
 import { DEFAULT_WEIGHTS, DIMENSIONS } from "./types.ts";
 
 const backend = makeJob({
@@ -51,7 +58,7 @@ describe("matchProfile", () => {
     const ctx = buildScoreContext([backend]);
     const onlySkills = { skills: 1, role: 0, experience: 0, major: 0, city: 0 };
     const m = scoreJob(profile, backend, ctx, { weights: onlySkills });
-    expect(m.score).toBeCloseTo(m.dims.skills.score * 100, 0);
+    expect(m.score).toBeCloseTo(m.dims.skills.score ** SKILL_CURVE * 100, 0);
   });
 
   it("候选超过召回上限时只给最相关的打分", () => {

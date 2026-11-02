@@ -5,11 +5,15 @@ export type DimensionKey = (typeof DIMENSIONS)[number];
 
 export type Weights = Record<DimensionKey, number>;
 
+/** 技能/意向/经历决定相关度，专业/城市只在其上做 0–15% 的折扣，不单独贡献分数。 */
+export const CORE_DIMENSIONS = ["skills", "role", "experience"] as const;
+export const CONTEXT_DIMENSIONS = ["major", "city"] as const;
+
 export const DEFAULT_WEIGHTS: Weights = {
   skills: 0.3,
-  role: 0.25,
-  experience: 0.2,
-  major: 0.15,
+  role: 0.3,
+  experience: 0.25,
+  major: 0.05,
   city: 0.1,
 };
 
@@ -59,6 +63,8 @@ export interface ScoredJob {
   weights: Weights;
   feedbackMultiplier: number;
   feedbackEvidence: string[];
+  /** 岗位要求多年经验而画像不足时的整体折扣，1 为不折扣。 */
+  levelMultiplier: number;
 }
 
 export interface MatchOptions {
@@ -70,10 +76,14 @@ export interface MatchOptions {
   /** 向量召回得到的余弦相似度，key 为 jobId；没有时只用 BM25。 */
   vectorScores?: Map<string, number>;
   feedback?: FeedbackEntry[];
+  /** 规则分（不含反馈调整）低于该值的岗位不进入结果，默认 0 即全部保留。 */
+  minScore?: number;
 }
 
 export interface MatchOutcome {
   matches: ScoredJob[];
+  /** 因相关度过低被剔除的数量。 */
+  belowThreshold: number;
   excluded: Record<FilterReason, number>;
   candidates: number;
   recalled: number;

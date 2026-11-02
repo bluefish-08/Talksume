@@ -1,4 +1,5 @@
 import type { Job, Profile } from "@talksume/core";
+import { educationByRecency } from "./education.ts";
 import { jobAllowsAnyCity, matchCity, profileCities, wantsAnyCity } from "./filters.ts";
 import { classifyRole, ROLE_LABELS, type RoleFamily, roleRelatedness } from "./role.ts";
 import { findSkills, normalizeSkillList, PARTIAL_COVERAGE, type SkillHit } from "./synonyms.ts";
@@ -25,7 +26,7 @@ export interface JdSkill {
 const SECTION_HEADER =
   /^[【[(（]?\s*(岗位职责|工作职责|任职要求|职位要求|岗位要求|工作内容|职位描述|我们希望你)/;
 const BONUS_MARK = /加分|优先|bonus|nice to have|更佳|佳者/i;
-const ANY_OF = /其中一|任[一意]|之一|至少.{0,3}一|一门|或者/;
+const ANY_OF = /其中一|任[一意]|之一|至少.{0,3}一|一[门种]|或者/;
 
 export function extractJdSkills(job: Pick<Job, "title" | "jdText">): JdSkill[] {
   const found = new Map<string, JdSkill>();
@@ -58,6 +59,9 @@ interface Owned {
   source: string;
 }
 
+/** 计算机类专业默认学过的基础课，JD 点名时按半分计。 */
+const CS_FUNDAMENTALS = ["操作系统", "数据结构与算法", "数据库", "网络协议"];
+
 const LEVEL_CREDIT = { beginner: 0.6, familiar: 0.8, proficient: 1, expert: 1 } as const;
 const EXPERIENCE_KIND = { internship: "实习", fulltime: "工作", parttime: "兼职" } as const;
 
@@ -88,14 +92,17 @@ export function collectProfileSkills(profile: Profile): Map<string, Owned> {
   }
   for (const edu of profile.education) {
     for (const hit of findSkills(edu.courses.join(" "))) put(hit.name, 0.5, `课程「${hit.snippet}」`);
+    if (edu.major && majorField(edu.major) === "cs") {
+      for (const name of CS_FUNDAMENTALS) put(name, 0.5, `专业「${edu.major}」核心课程`);
+    }
   }
   return owned;
 }
 
 function creditFor(name: string, owned: Map<string, Owned>): Owned | undefined {
   const own = owned.get(name);
-  if (own) return own;
-  let best: Owned | undefined;
+  if (own && own.credit >= 0.7) return own;
+  let best: Owned | undefined = own;
   for (const via of PARTIAL_COVERAGE[name] ?? []) {
     const o = owned.get(via);
     if (o && (!best || o.credit * 0.7 > best.credit)) {
@@ -223,45 +230,45 @@ export function jdMajorRequirement(
 }
 
 export function scoreMajor(profile: Profile, job: Job): DimensionScore {
-  const majors = profile.education
-    .filter((e) => e.major)
-    .map((e) => ({ school: e.school, major: e.major as string }));
-  if (majors.length === 0) return NA("画像中没有填写专业");
+  const edu = educationByRecency(profile).find((e) => e.major);
+  if (!edu?.major) return NA("画像中没有填写专业");
+  const major = edu.major;
   const jobFamily = classifyRole(job.title);
   if (jobFamily === "other") return NA("无法判断岗位所属方向");
   const req = jdMajorRequirement(job.jdText);
+  const mine = majorField(major);
+  const who = `画像专业「${edu.school} ${major}」`;
 
-  let best: { score: number; evidence: string } | undefined;
-  for (const { major } of majors) {
-    const mine = majorField(major);
-    let score: number;
-    let evidence: string;
-    if (req?.any) {
-      score = 0.7;
-      evidence = `画像专业「${major}」；JD「${req.quote}」专业不限`;
-    } else if (req) {
-      const hit = req.fields.find((f) => f === mine);
-      const affinity = Math.max(...req.fields.map((f) => fieldAffinity(mine, f)));
-      score = hit ? 1 : affinity;
-      evidence = `画像专业「${major}」（${FIELD_LABEL[mine]}）${hit ? "符合" : "不完全符合"} JD「${req.quote}」`;
-    } else {
-      const expected =
-        EXPECTED_FIELDS[jobFamily] ??
-        (TECH_FAMILIES.includes(jobFamily) ? (["cs", "math", "ee"] as Field[]) : undefined);
-      if (!expected) {
-        score = 0.6;
-        evidence = `画像专业「${major}」；${ROLE_LABELS[jobFamily]}类岗位对专业没有明确限制`;
-      } else {
-        const hit = expected.includes(mine);
-        score = hit ? 0.85 : Math.max(...expected.map((f) => fieldAffinity(mine, f)));
-        evidence = `画像专业「${major}」（${FIELD_LABEL[mine]}）${hit ? "对口" : "与"}${ROLE_LABELS[jobFamily]}岗位${hit ? "" : "关联度较低"}；JD 未写专业要求`;
-      }
-    }
-    if (!best || score > best.score) best = { score, evidence };
+  if (req?.any) {
+    return { score: 0.7, applicable: true, evidence: [`${who}；JD「${req.quote}」专业不限`] };
   }
-  return best
-    ? { score: clamp01(best.score), applicable: true, evidence: [best.evidence] }
-    : NA("无可比较的专业信息");
+  if (req) {
+    const hit = req.fields.find((f) => f === mine);
+    const affinity = Math.max(...req.fields.map((f) => fieldAffinity(mine, f)));
+    return {
+      score: clamp01(hit ? 1 : affinity),
+      applicable: true,
+      evidence: [`${who}（${FIELD_LABEL[mine]}）${hit ? "符合" : "不完全符合"} JD「${req.quote}」`],
+    };
+  }
+  const expected =
+    EXPECTED_FIELDS[jobFamily] ??
+    (TECH_FAMILIES.includes(jobFamily) ? (["cs", "math", "ee"] as Field[]) : undefined);
+  if (!expected) {
+    return {
+      score: 0.6,
+      applicable: true,
+      evidence: [`${who}；${ROLE_LABELS[jobFamily]}类岗位对专业没有明确限制`],
+    };
+  }
+  const hit = expected.includes(mine);
+  return {
+    score: clamp01(hit ? 0.85 : Math.max(...expected.map((f) => fieldAffinity(mine, f)))),
+    applicable: true,
+    evidence: [
+      `${who}（${FIELD_LABEL[mine]}）${hit ? "对口" : "与"}${ROLE_LABELS[jobFamily]}岗位${hit ? "" : "关联度较低"}；JD 未写专业要求`,
+    ],
+  };
 }
 
 /* ---------- 项目/经历 ---------- */
@@ -299,11 +306,11 @@ function profileDocs(profile: Profile): ProfileDoc[] {
 }
 
 const KEY_TERMS = 25;
-const KEYWORD_FULL_SCORE_AT = 0.4;
+const KEYWORD_FULL_SCORE_AT = 0.2;
 
 export function scoreExperience(profile: Profile, job: Job, ctx: ScoreContext): DimensionScore {
   const docs = profileDocs(profile);
-  if (docs.length === 0) return { score: 0, applicable: true, evidence: ["画像中还没有项目或实习经历"] };
+  if (docs.length === 0) return NA("画像中还没有项目或实习经历");
 
   const tf = termFrequency(tokenize(`${job.title}\n${job.title}\n${job.jdText}`));
   const defaultIdf = Math.log(1 + 1);
@@ -346,7 +353,7 @@ export function scoreExperience(profile: Profile, job: Job, ctx: ScoreContext): 
     evidence.push(`${label}与 JD 共有关键词：${terms.slice(0, 6).join("、")}`);
   }
   if (evidence.length === 0) evidence.push("项目与实习经历和 JD 关键词几乎没有重合");
-  return { score: clamp01(0.55 * keywordScore + 0.45 * familyScore), applicable: true, evidence };
+  return { score: clamp01(0.4 * keywordScore + 0.6 * familyScore), applicable: true, evidence };
 }
 
 /* ---------- 城市 ---------- */

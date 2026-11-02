@@ -1,5 +1,4 @@
 import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../../api/client.ts";
 import { qk } from "../../api/queries.ts";
@@ -14,38 +13,43 @@ import type {
   JobList,
   MatchList,
   RefreshResult,
+  ReportStatus,
 } from "./types.ts";
 
 const API = "/api/v1";
 const matchesKey = [...qk.matches, "page"] as const;
 const refreshKey = [...qk.matches, "refresh-result"] as const;
-const POLL_MS = 5_000;
-const POLL_WINDOW_MS = 60_000;
+const POLL_MS = 4_000;
 
-/** 报告在刷新后台生成：前几名还没有报告时每 5 秒拉一次，最多一分钟。 */
+/** 报告在刷新后台逐个生成：服务端标记 pending 时每 4 秒拉一次；服务端会把超时/失败标成 failed，不会无限等。 */
 export function useMatches() {
-  const [polling, setPolling] = useState(true);
-  const [round, setRound] = useState(0);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: round 变化时重新计时
-  useEffect(() => {
-    if (!polling) return;
-    const t = setTimeout(() => setPolling(false), POLL_WINDOW_MS);
-    return () => clearTimeout(t);
-  }, [polling, round]);
-
   const query = useQuery({
     queryKey: matchesKey,
     queryFn: ({ signal }) => api.get<MatchList>(`${API}/matches?limit=100`, signal),
-    refetchInterval: (q) => (polling && reportsPending(q.state.data?.items ?? []) ? POLL_MS : false),
+    refetchInterval: (q) => (reportsPending(q.state.data?.items ?? []) ? POLL_MS : false),
   });
+  return { query, reportsPending: reportsPending(query.data?.items ?? []) };
+}
 
-  const startPolling = useCallback(() => {
-    setPolling(true);
-    setRound((r) => r + 1);
-  }, []);
-
-  return { query, reportsPending: polling && reportsPending(query.data?.items ?? []), startPolling };
+export function useRetryReport() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      api.post<{ jobId: string; reportStatus: ReportStatus }>(
+        `${API}/jobs/${encodeURIComponent(jobId)}/report`,
+        {},
+      ),
+    onSuccess: (_, jobId) => {
+      client.setQueryData<MatchList>(
+        matchesKey,
+        (old) =>
+          old && {
+            ...old,
+            items: old.items.map((m) => (m.jobId === jobId ? { ...m, reportStatus: "pending" } : m)),
+          },
+      );
+    },
+  });
 }
 
 export function useRefreshResult() {

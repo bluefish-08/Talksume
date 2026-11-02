@@ -1,12 +1,12 @@
 import { createDb, type DbHandle, migrate, schema } from "@talksume/db";
 import { count, eq, isNotNull } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Embedder } from "./embedder.ts";
 import { makeProfile } from "./fixtures.ts";
 import { embedPendingJobs, vectorScores } from "./recall-db.ts";
 import type { StructuredLlm } from "./rerank.ts";
 import { seedJobs, seedJobsIfEmpty } from "./seed.ts";
-import { createMatchingService, MatchingError } from "./service.ts";
+import { createMatchingService, MatchingError, REPORT_STALE_MS, reportStatusOf } from "./service.ts";
 import { tokenize } from "./text.ts";
 
 let handle: DbHandle;
@@ -125,27 +125,130 @@ describe("反馈影响推荐", () => {
 });
 
 describe("LLM 匹配报告", () => {
-  it("只给前 N 个岗位生成报告，单个失败不影响其余", async () => {
+  type Req = Parameters<StructuredLlm["completeStructured"]>[0];
+  const okValue = (req: Req) =>
+    req.validate({ summary: "整体匹配", strengths: ["技能对口"], gaps: ["缺少实习"] });
+  const rerank = { retryDelayMs: 0, attemptTimeoutMs: 100 };
+
+  it("只给前 N 个岗位生成报告，单个失败标记为可重试且不影响其余", async () => {
     let calls = 0;
     const llm: StructuredLlm = {
-      completeStructured: async <T>(req: Parameters<StructuredLlm["completeStructured"]>[0]) => {
-        calls++;
-        if (calls === 2) throw new Error("boom");
-        const value = req.validate({ summary: "整体匹配", strengths: ["技能对口"], gaps: ["缺少实习"] });
-        return { value: value as T, text: "", model: "fake" };
+      completeStructured: async <T>(req: Req) => {
+        if (++calls === 2) throw new Error("boom");
+        return { value: okValue(req) as T, text: "", model: "fake" };
       },
     };
-    const service = createMatchingService(handle.db, { llm, rerankTopN: 4 });
+    const service = createMatchingService(handle.db, {
+      llm,
+      rerankTopN: 4,
+      rerank: { ...rerank, attempts: 1 },
+      onError: () => {},
+    });
     const userId = await newUser(backendProfile());
     const res = await service.refresh(userId);
     expect(res.rerank).toBe("pending");
     await res.done;
     const items = (await service.listMatches(userId, 20)).items;
-    const withReport = items.filter((i) => i.report.summary);
-    expect(calls).toBe(4);
-    expect(withReport).toHaveLength(3);
-    expect(withReport.every((i) => items.indexOf(i) < 4)).toBe(true);
-    expect(withReport[0]?.report.strengths).toEqual(["技能对口"]);
+    const top = items.slice(0, 4);
+    expect(top.filter((i) => i.reportStatus === "ready")).toHaveLength(3);
+    expect(top.filter((i) => i.reportStatus === "failed")).toHaveLength(1);
+    expect(top.find((i) => i.reportStatus === "ready")?.report.strengths).toEqual(["技能对口"]);
+    expect(items.slice(4).every((i) => i.reportStatus === "none")).toBe(true);
+    expect(items.every((i) => !("status" in i.report))).toBe(true);
+  });
+
+  it("报告随完成逐个写入，最慢的一个不会拖住其余；生成中状态为 pending", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let calls = 0;
+    const llm: StructuredLlm = {
+      completeStructured: async <T>(req: Req) => {
+        if (++calls === 1) await gate;
+        return { value: okValue(req) as T, text: "", model: "fake" };
+      },
+    };
+    const service = createMatchingService(handle.db, { llm, rerankTopN: 3, rerank: { concurrency: 3 } });
+    const userId = await newUser(backendProfile());
+    const res = await service.refresh(userId);
+    await vi.waitFor(async () => {
+      const top = (await service.listMatches(userId, 3)).items.map((i) => i.reportStatus);
+      expect(top.filter((x) => x === "ready")).toHaveLength(2);
+      expect(top.filter((x) => x === "pending")).toHaveLength(1);
+    });
+    release?.();
+    await res.done;
+    const after = (await service.listMatches(userId, 3)).items;
+    expect(after.every((i) => i.reportStatus === "ready")).toBe(true);
+  });
+
+  it("模型卡住时单次超时放弃并重发，重发成功则报告可用", async () => {
+    let calls = 0;
+    const llm: StructuredLlm = {
+      completeStructured: async <T>(req: Req) => {
+        if (++calls === 1) {
+          await new Promise<void>((_, reject) =>
+            req.signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+          );
+        }
+        return { value: okValue(req) as T, text: "", model: "fake" };
+      },
+    };
+    const service = createMatchingService(handle.db, {
+      llm,
+      rerankTopN: 1,
+      rerank: { ...rerank, attemptTimeoutMs: 30 },
+    });
+    const userId = await newUser(backendProfile());
+    await (await service.refresh(userId)).done;
+    expect(calls).toBe(2);
+    expect((await service.listMatches(userId, 1)).items[0]?.reportStatus).toBe("ready");
+  });
+
+  it("失败的报告可以单独重试；已有报告或生成中不重复调用模型", async () => {
+    let healthy = false;
+    let calls = 0;
+    const llm: StructuredLlm = {
+      completeStructured: async <T>(req: Req) => {
+        calls++;
+        if (!healthy) throw new Error("down");
+        await new Promise((r) => setTimeout(r, 30));
+        return { value: okValue(req) as T, text: "", model: "fake" };
+      },
+    };
+    const service = createMatchingService(handle.db, {
+      llm,
+      rerankTopN: 2,
+      rerank: { ...rerank, attempts: 1 },
+      onError: () => {},
+    });
+    const userId = await newUser(backendProfile());
+    await (await service.refresh(userId)).done;
+    const [first] = (await service.listMatches(userId, 2)).items;
+    expect(first?.reportStatus).toBe("failed");
+
+    healthy = true;
+    const retry = await service.retryReport(userId, first?.jobId ?? "");
+    expect(retry.reportStatus).toBe("pending");
+    expect((await service.listMatches(userId, 1)).items[0]?.reportStatus).toBe("pending");
+    await retry.done;
+    expect((await service.listMatches(userId, 1)).items[0]?.reportStatus).toBe("ready");
+
+    const before = calls;
+    expect((await service.retryReport(userId, first?.jobId ?? "")).reportStatus).toBe("ready");
+    expect(calls).toBe(before);
+    await expect(service.retryReport(userId, "nope")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("长期卡在 pending 的报告按失败处理，前端不会一直转圈", () => {
+    const old = new Date(Date.now() - REPORT_STALE_MS - 1000).toISOString();
+    expect(reportStatusOf({ status: "pending", startedAt: old })).toBe("failed");
+    expect(reportStatusOf({ status: "pending", startedAt: new Date().toISOString() })).toBe("pending");
+    expect(reportStatusOf({ status: "pending" })).toBe("failed");
+    expect(reportStatusOf({})).toBe("none");
+    expect(reportStatusOf({ status: "failed" })).toBe("failed");
+    expect(reportStatusOf({ summary: "x", status: "pending" })).toBe("ready");
   });
 
   it("LLM 全部失败时规则结果照常返回", async () => {
@@ -154,12 +257,14 @@ describe("LLM 匹配报告", () => {
         throw new Error("down");
       },
     };
-    const service = createMatchingService(handle.db, { llm, onError: () => {} });
+    const service = createMatchingService(handle.db, { llm, onError: () => {}, rerank });
     const userId = await newUser(backendProfile());
     const res = await service.refresh(userId);
     await res.done;
     expect(res.count).toBeGreaterThan(0);
-    expect((await service.listMatches(userId, 5)).items[0]?.report).toEqual({});
+    const [top] = (await service.listMatches(userId, 5)).items;
+    expect(top?.report).toEqual({});
+    expect(top?.reportStatus).toBe("failed");
   });
 });
 

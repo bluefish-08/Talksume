@@ -64,7 +64,7 @@ export function jobMeta(job: JobSummary, cityMax = 2): string {
 export const hasReport = (r: MatchReport) => Boolean(r.summary || r.strengths?.length || r.gaps?.length);
 
 export function reportsPending(items: MatchItem[]): boolean {
-  return items.slice(0, REPORT_TOP_N).some((m) => !hasReport(m.report));
+  return items.slice(0, REPORT_TOP_N).some((m) => m.reportStatus === "pending");
 }
 
 export interface DimRow {
@@ -81,18 +81,19 @@ export function dimRows(match: MatchItem): DimRow[] {
   });
 }
 
-/** 没有 AI 报告时，用得分较高的维度证据充当“为什么推荐”。 */
+/** 没有 AI 报告时，用得分较高的维度证据充当“为什么推荐”；技能/经历/意向优先，专业和城市只在前者不足两条时补充。 */
 export function evidenceLines(match: MatchItem, max = 4): string[] {
-  const picked: { text: string; weighted: number }[] = [];
+  const main: { text: string; weighted: number }[] = [];
+  const context: string[] = [];
   for (const key of DIM_KEYS) {
     const d = match.dims[key];
     const text = d?.evidence[0];
-    if (d && text && d.weight > 0 && d.score >= 0.6) picked.push({ text, weighted: d.score * d.weight });
+    if (!d || !text || d.weight <= 0 || d.score < 0.6) continue;
+    if (key === "major" || key === "city") context.push(text);
+    else main.push({ text, weighted: d.score * d.weight });
   }
-  return picked
-    .sort((a, b) => b.weighted - a.weighted)
-    .slice(0, max)
-    .map((x) => x.text);
+  const lines = main.sort((a, b) => b.weighted - a.weighted).map((x) => x.text);
+  return (lines.length >= 2 ? lines : [...lines, ...context]).slice(0, max);
 }
 
 export function reasonLine(match: MatchItem): string | undefined {

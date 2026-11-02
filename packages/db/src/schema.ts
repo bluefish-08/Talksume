@@ -33,7 +33,14 @@ const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull(
 const textId = () => text("id").primaryKey().default(sql`gen_random_uuid()::text`);
 
 export type MatchDimension = { score: number; weight?: number; evidence?: string[] };
-export type MatchReport = { summary?: string; strengths?: string[]; gaps?: string[] };
+export type MatchReport = {
+  summary?: string;
+  strengths?: string[];
+  gaps?: string[];
+  /** 报告生成中/失败的标记，生成成功后整体被报告内容替换。 */
+  status?: "pending" | "failed";
+  startedAt?: string;
+};
 
 /** 采集对话的断点续聊状态；画像与事实在各自的表里。 */
 export type ConversationIntakeState = {
