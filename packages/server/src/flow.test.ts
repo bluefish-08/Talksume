@@ -342,6 +342,52 @@ describe("权限", () => {
     expect((await call("GET", "/api/v1/notifications", stranger)).body.items).toEqual([]);
   });
 
+  it("没指定简历时按当前画像冻结一份快照，画像不变就复用", async () => {
+    const hr = await newHr();
+    const candidate = await newCandidate("李四");
+    await handle.db.insert(schema.profiles).values({
+      userId: candidate,
+      data: {
+        basics: { name: "李四" },
+        education: [],
+        experiences: [],
+        projects: [],
+        skills: [],
+        awards: [],
+        intention: { roles: [], cities: [] },
+      },
+      version: 3,
+    });
+    const first = await call("POST", "/api/v1/applications", candidate, { jobId: await postJob(hr, "前端") });
+    const second = await call("POST", "/api/v1/applications", candidate, {
+      jobId: await postJob(hr, "后端"),
+    });
+    const snapshotId = first.body.application.resumeVersionId as string;
+    expect(snapshotId).toBeTruthy();
+    expect(second.body.application.resumeVersionId).toBe(snapshotId);
+    const incoming = await call("GET", `/api/v1/hr/applications?jobId=${first.body.job.id}`, hr);
+    expect(incoming.body.items[0].resume).toMatchObject({
+      template: "campus",
+      content: { basics: { name: "李四" } },
+    });
+  });
+
+  it("TALKSUME_DEMO=1 时生产环境也开放演示 HR 接口", async () => {
+    const previous = { env: process.env.NODE_ENV, demo: process.env.TALKSUME_DEMO };
+    process.env.NODE_ENV = "production";
+    process.env.TALKSUME_DEMO = "1";
+    try {
+      const prod = buildApp({ edition: "cloud", version: "t", db: handle.db });
+      const res = await prod.inject({ method: "POST", url: "/api/v1/dev/hr", payload: {} });
+      expect(res.statusCode).toBe(200);
+      await prod.close();
+    } finally {
+      process.env.NODE_ENV = previous.env;
+      if (previous.demo === undefined) delete process.env.TALKSUME_DEMO;
+      else process.env.TALKSUME_DEMO = previous.demo;
+    }
+  });
+
   it("生产环境不注册开发用的 HR 接口", async () => {
     const previous = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";

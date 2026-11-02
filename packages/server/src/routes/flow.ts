@@ -22,6 +22,9 @@ export const flowRoutes: RouteModule = (app, deps) => {
     registerApplicationRoutes(scope, ctx);
     registerHrRoutes(scope, ctx);
     registerNotificationRoutes(scope, ctx);
-    if (process.env.NODE_ENV !== "production") registerDevRoutes(scope, ctx);
+    // 正式登录上线前，演示环境靠 TALKSUME_DEMO=1 打开演示 HR 入口
+    if (process.env.NODE_ENV !== "production" || process.env.TALKSUME_DEMO === "1") {
+      registerDevRoutes(scope, ctx);
+    }
   });
 };

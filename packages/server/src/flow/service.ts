@@ -3,6 +3,8 @@ import {
   type ApplicationOutcome,
   type ApplicationStatus,
   type Notification,
+  Profile,
+  profileToResume,
   type StatusChange,
   type StatusSource,
 } from "@talksume/core";
@@ -11,7 +13,7 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { FlowContext } from "./context.ts";
 import { HttpError, isUniqueViolation } from "./http.ts";
 
-const { applications, applicationEvents, jobs, resumeVersions, users } = schema;
+const { applications, applicationEvents, jobs, profiles, resumeVersions, users } = schema;
 
 // 同一毫秒内的两条事件靠状态先后兜底排序（状态只会向前走）
 const statusRank = sql`array_position(array[${sql.raw(APPLICATION_STATUSES.map((s) => `'${s}'`).join(","))}]::text[], ${applicationEvents.toStatus})`;
@@ -100,6 +102,29 @@ export interface CreateApplicationInput {
   pitch?: string | undefined;
 }
 
+/** 投递时冻结一份简历给 HR 看；画像没变就复用上一份快照。 */
+async function snapshotResume(ctx: FlowContext, userId: string): Promise<string | null> {
+  const [profile] = await ctx.db.select().from(profiles).where(eq(profiles.userId, userId));
+  const [latest] = await ctx.db
+    .select({ id: resumeVersions.id, profileVersion: resumeVersions.profileVersion })
+    .from(resumeVersions)
+    .where(eq(resumeVersions.userId, userId))
+    .orderBy(desc(resumeVersions.createdAt))
+    .limit(1);
+  if (!profile) return latest?.id ?? null;
+  if (latest && latest.profileVersion === profile.version) return latest.id;
+  const [created] = await ctx.db
+    .insert(resumeVersions)
+    .values({
+      userId,
+      profileVersion: profile.version,
+      template: "campus",
+      content: profileToResume(Profile.parse(profile.data)),
+    })
+    .returning({ id: resumeVersions.id });
+  return created?.id ?? null;
+}
+
 export async function createApplication(ctx: FlowContext, userId: string, input: CreateApplicationInput) {
   const [job] = await ctx.db.select().from(jobs).where(eq(jobs.id, input.jobId));
   if (!job) throw new HttpError(404, "job_not_found", "职位不存在");
@@ -114,13 +139,7 @@ export async function createApplication(ctx: FlowContext, userId: string, input:
     if (!own) throw new HttpError(404, "resume_not_found", "简历版本不存在");
     resumeVersionId = own.id;
   } else {
-    const [latest] = await ctx.db
-      .select({ id: resumeVersions.id })
-      .from(resumeVersions)
-      .where(eq(resumeVersions.userId, userId))
-      .orderBy(desc(resumeVersions.createdAt))
-      .limit(1);
-    resumeVersionId = latest?.id ?? null;
+    resumeVersionId = await snapshotResume(ctx, userId);
   }
 
   const plan = ctx.connectors.resolve(job.source);
