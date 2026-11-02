@@ -100,19 +100,21 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
         </div>
 
         <div className={styles.composer}>
-          <Composer
-            variant="chat"
-            label="你的回答"
-            placeholder="接着说……"
-            rows={2}
-            value={draft}
-            onChange={setDraft}
-            onSubmit={submit}
-            streaming={session.streaming}
-            onStop={session.stop}
-            inputRef={input}
-            tools={<span className={styles.hint}>Enter 发送 · Shift + Enter 换行</span>}
-          />
+          <div className={styles.composerInner}>
+            <Composer
+              variant="chat"
+              label="你的回答"
+              placeholder="接着说……"
+              rows={2}
+              value={draft}
+              onChange={setDraft}
+              onSubmit={submit}
+              streaming={session.streaming}
+              onStop={session.stop}
+              inputRef={input}
+              tools={<span className={styles.hint}>Enter 发送 · Shift + Enter 换行</span>}
+            />
+          </div>
         </div>
       </section>
 

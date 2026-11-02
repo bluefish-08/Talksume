@@ -60,7 +60,7 @@
   padding: 0 24px 20px;
 }
 
-.composer > * {
+.composerInner {
   max-width: 640px;
   margin: 0 auto;
 }
