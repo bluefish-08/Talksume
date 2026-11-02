@@ -40,6 +40,10 @@ services:
       EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      RERANK_BASE_URL: ${RERANK_BASE_URL:-}
+      RERANK_MODEL: ${RERANK_MODEL:-}
+      RERANK_API_KEY: ${RERANK_API_KEY:-}
+      RERANK_TOP_K: ${RERANK_TOP_K:-}
       TALKSUME_DEMO: ${TALKSUME_DEMO:-1}
     depends_on:
       postgres: { condition: service_healthy }

@@ -7,6 +7,7 @@ export * from "./jobs-db.ts";
 export * from "./pipeline.ts";
 export * from "./recall-db.ts";
 export * from "./rerank.ts";
+export * from "./reranker.ts";
 export * from "./role.ts";
 export * from "./seed.ts";
 export * from "./service.ts";

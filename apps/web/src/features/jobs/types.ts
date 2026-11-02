@@ -32,6 +32,8 @@ export interface JobList {
 
 export const DIM_KEYS = ["skills", "role", "experience", "major", "city"] as const;
 export type DimKey = (typeof DIM_KEYS)[number];
+/** Rerank 模型的语义相关度，只有排名靠前的推荐才有。 */
+export type SemanticKey = "semantic";
 
 export interface Dim {
   score: number;
@@ -50,7 +52,7 @@ export type ReportStatus = "ready" | "pending" | "failed" | "none";
 export interface MatchItem {
   jobId: string;
   score: number;
-  dims: Partial<Record<DimKey, Dim>>;
+  dims: Partial<Record<DimKey | SemanticKey, Dim>>;
   report: MatchReport;
   /** none：没有为该岗位生成报告；pending：生成中；failed：失败或超时，可重试。 */
   reportStatus: ReportStatus;

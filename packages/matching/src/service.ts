@@ -36,6 +36,7 @@ import {
   type RerankOptions,
   type StructuredLlm,
 } from "./rerank.ts";
+import { applySemantic, type Reranker, type SemanticOptions } from "./reranker.ts";
 import { classifyRole } from "./role.ts";
 import {
   DIMENSIONS,
@@ -60,6 +61,9 @@ export class MatchingError extends Error {
 export interface MatchingServiceOptions {
   llm?: StructuredLlm | null;
   embedder?: Embedder | null;
+  /** 召回打分之后的语义重排，不传或为 null 时只用规则分。 */
+  reranker?: Reranker | null;
+  semantic?: SemanticOptions;
   weights?: Partial<Weights>;
   rerankTopN?: number;
   /** 覆盖报告生成的并发、超时、重试等参数。 */
@@ -73,6 +77,7 @@ export interface MatchingServiceOptions {
   /** 写入 match_results 的最大条数。 */
   storeLimit?: number;
   onError?: (message: string, error: unknown) => void;
+  onInfo?: (message: string, data: Record<string, unknown>) => void;
 }
 
 export type FeedbackSignal = "like" | "dislike" | "irrelevant";
@@ -149,6 +154,13 @@ function toDims(scored: ScoredJob): Record<string, { score: number; weight: numb
     const d = scored.dims[key];
     dims[key] = { score: round3(d.score), weight: round3(scored.weights[key]), evidence: d.evidence };
   }
+  if (scored.semantic) {
+    dims.semantic = {
+      score: round3(scored.semantic.score),
+      weight: round3(scored.semantic.weight),
+      evidence: scored.semantic.evidence,
+    };
+  }
   if (scored.feedbackMultiplier !== 1) {
     dims.feedback = {
       score: round3(scored.feedbackMultiplier),
@@ -161,6 +173,17 @@ function toDims(scored: ScoredJob): Record<string, { score: number; weight: numb
 
 export function createMatchingService(db: Db, options: MatchingServiceOptions = {}) {
   const log = options.onError ?? (() => {});
+  const info = options.onInfo ?? (() => {});
+
+  /** 语义重排失败时退回规则排序，推荐照常给出。 */
+  async function withSemantic(profile: Profile, ranked: ScoredJob[], purpose: string): Promise<ScoredJob[]> {
+    const reranker = options.reranker;
+    if (!reranker || ranked.length === 0) return ranked;
+    const res = await applySemantic(reranker, profile, ranked, options.semantic);
+    if (res.error) log(`语义重排失败，退回规则排序（${purpose}，${res.ms}ms）`, res.error);
+    else info("语义重排完成", { purpose, reranked: res.reranked, ms: res.ms });
+    return res.matches;
+  }
 
   /** 传 override 时用调用方手里的画像（对话中可能还没落库），只从库里取权重。 */
   async function loadProfile(
@@ -291,7 +314,8 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
       ...(vectors && { vectorScores: vectors }),
     };
     const outcome = matchProfile(profile, jobs, matchOptions);
-    const stored = outcome.matches.slice(0, options.storeLimit ?? 100);
+    const ranked = await withSemantic(profile, outcome.matches, "refresh");
+    const stored = ranked.slice(0, options.storeLimit ?? 100);
     await persist(userId, stored, true, options.llm ? topN() : 0);
 
     const done = options.llm && stored.length > 0 ? writeReports(userId, profile, stored) : Promise.resolve();
@@ -429,7 +453,12 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
 
     const [all, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
     const ctx = buildScoreContext(all.map((a) => a.job));
-    const scored = scoreJob(profile, job, ctx, { weights, feedback });
+    const [scored] = await withSemantic(
+      profile,
+      [scoreJob(profile, job, ctx, { weights, feedback })],
+      "import",
+    );
+    if (!scored) throw new Error("score missing");
     await persist(userId, [scored], false);
     const [item] = (await listMatches(userId, 1, job.id)).items;
     return { job: detail, match: item ?? null };
@@ -454,7 +483,12 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     const [all, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
     const job = all.find((a) => a.job.id === jobId)?.job;
     if (!job) throw new MatchingError("job_not_found", 404, "岗位不存在");
-    const scored = scoreJob(profile, job, buildScoreContext(all.map((a) => a.job)), { weights, feedback });
+    const [scored] = await withSemantic(
+      profile,
+      [scoreJob(profile, job, buildScoreContext(all.map((a) => a.job)), { weights, feedback })],
+      "retry",
+    );
+    if (!scored) throw new Error("score missing");
     await storeReport(userId, jobId, pendingReport());
 
     const done = generateReport(llm, profile, scored, options.rerank)
@@ -491,14 +525,14 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     const [all, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
     const ctx = buildScoreContext(all.map((a) => a.job));
     const wanted = new Set(ids);
-    return new Map(
-      all
-        .filter((a) => wanted.has(a.job.id))
-        .map((a) => [
-          a.job.id,
-          { scored: scoreJob(profile, a.job, ctx, { weights, feedback }), status: a.status },
-        ]),
+    const picked = all.filter((a) => wanted.has(a.job.id));
+    const status = new Map(picked.map((a) => [a.job.id, a.status]));
+    const scored = await withSemantic(
+      profile,
+      picked.map((a) => scoreJob(profile, a.job, ctx, { weights, feedback })),
+      "score",
     );
+    return new Map(scored.map((s) => [s.job.id, { scored: s, status: status.get(s.job.id) ?? "open" }]));
   }
 
   /** 对话里的推荐：已存推荐过期时先按传入的画像重新匹配，再按条件收窄。 */

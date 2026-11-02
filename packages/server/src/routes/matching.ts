@@ -3,6 +3,7 @@ import { createGateway, GatewayConfigError, loadGatewayConfig } from "@talksume/
 import {
   createEmbedderFromEnv,
   createMatchingService,
+  createRerankerFromEnv,
   MatchingError,
   type MatchingServiceOptions,
 } from "@talksume/matching";
@@ -45,12 +46,15 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
   return reply.code(status).send({ error: { code, message } });
 }
 
-/** 传 llm / embedder 为 null 可显式关闭；不传则按环境变量决定。 */
+/** 传 llm / embedder / reranker 为 null 可显式关闭；不传则按环境变量决定。 */
 export function matchingServiceFor(db: Db, options: MatchingServiceOptions, log: FastifyBaseLogger) {
   return createMatchingService(db, {
     llm: options.llm === undefined ? llmFromEnv() : options.llm,
     embedder: options.embedder === undefined ? (createEmbedderFromEnv() ?? null) : options.embedder,
+    reranker: options.reranker === undefined ? (createRerankerFromEnv() ?? null) : options.reranker,
     onError: (message, error) => log.warn({ err: error }, message),
+    onInfo: (message, data) => log.info(data, message),
+    ...(Number(process.env.RERANK_TOP_K) > 0 && { semantic: { topK: Number(process.env.RERANK_TOP_K) } }),
     ...options,
   });
 }

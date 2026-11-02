@@ -61,6 +61,13 @@ describe("jobs format", () => {
     expect(rows.find((r) => r.key === "skills")?.applicable).toBe(true);
   });
 
+  it("appends the semantic row only when the match was reranked", () => {
+    const semantic = { score: 0.82, weight: 0.2, evidence: ["语义模型判断岗位内容与你的意向和经历高度相关"] };
+    const rows = dimRows(match({ dims: { semantic } }));
+    expect(rows.at(-1)).toEqual({ key: "semantic", label: "语义相关", score: 0.82, applicable: true });
+    expect(dimRows(match()).some((r) => r.key === "semantic")).toBe(false);
+  });
+
   it("picks the reason line from report then evidence", () => {
     expect(reasonLine(match({ report: { strengths: ["对口"] } }))).toBe("对口");
     const m = match({ dims: { role: { score: 1, weight: 0.25, evidence: ["岗位同属后端"] } } });

@@ -16,7 +16,9 @@ beforeAll(async () => {
 });
 afterAll(() => handle.close());
 
-function appWith(options: Parameters<typeof createMatchingRoutes>[0] = { llm: null, embedder: null }) {
+function appWith(
+  options: Parameters<typeof createMatchingRoutes>[0] = { llm: null, embedder: null, reranker: null },
+) {
   const app = Fastify();
   registerDevAuth(app, handle.db);
   createMatchingRoutes(options)(app, { edition: "cloud", version: "t", db: handle.db });
@@ -142,7 +144,7 @@ describe("推荐", () => {
         model: "fake",
       }),
     };
-    const app = appWith({ llm, embedder: null, rerankTopN: 3 });
+    const app = appWith({ llm, embedder: null, reranker: null, rerankTopN: 3 });
     const headers = await userWithProfile();
     const refresh = await json(app, "POST", "/api/v1/matches/refresh", headers, { wait: true });
     expect(refresh.body.rerank).toBe("done");
@@ -167,6 +169,7 @@ describe("报告失败与重试", () => {
     const app = appWith({
       llm,
       embedder: null,
+      reranker: null,
       rerankTopN: 2,
       rerank: { attempts: 1, retryDelayMs: 0 },
       onError: () => {},

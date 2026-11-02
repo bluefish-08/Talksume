@@ -68,17 +68,20 @@ export function reportsPending(items: MatchItem[]): boolean {
 }
 
 export interface DimRow {
-  key: DimKey;
+  key: DimKey | "semantic";
   label: string;
   score: number;
   applicable: boolean;
 }
 
 export function dimRows(match: MatchItem): DimRow[] {
-  return DIM_KEYS.map((key) => {
+  const rows: DimRow[] = DIM_KEYS.map((key) => {
     const d = match.dims[key];
     return { key, label: DIM_LABELS[key], score: d?.score ?? 0, applicable: Boolean(d && d.weight > 0) };
   });
+  const semantic = match.dims.semantic;
+  if (semantic) rows.push({ key: "semantic", label: "语义相关", score: semantic.score, applicable: true });
+  return rows;
 }
 
 /** 没有 AI 报告时，用得分较高的维度证据充当“为什么推荐”；技能/经历/意向优先，专业和城市只在前者不足两条时补充。 */

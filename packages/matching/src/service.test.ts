@@ -5,6 +5,7 @@ import type { Embedder } from "./embedder.ts";
 import { makeProfile } from "./fixtures.ts";
 import { embedPendingJobs, vectorScores } from "./recall-db.ts";
 import type { StructuredLlm } from "./rerank.ts";
+import type { Reranker } from "./reranker.ts";
 import { seedJobs, seedJobsIfEmpty } from "./seed.ts";
 import { createMatchingService, MatchingError, REPORT_STALE_MS, reportStatusOf } from "./service.ts";
 import { tokenize } from "./text.ts";
@@ -437,5 +438,46 @@ describe("向量召回（可选）", () => {
     const service = createMatchingService(handle.db, { llm: null, embedder: broken, onError: () => {} });
     const res = await service.refresh(await newUser(backendProfile()));
     expect(res.count).toBeGreaterThan(0);
+  });
+});
+
+describe("语义重排（可选）", () => {
+  const reranker = (impl: Reranker["rerank"]): Reranker => ({ rerank: vi.fn(impl) });
+
+  it("成功时前 K 个带语义维度，排序与分数一致，并记录耗时", async () => {
+    const userId = await newUser(backendProfile());
+    const info = vi.fn();
+    const r = reranker(async (_q, docs) =>
+      docs.map((d) => (/后台|后端|服务端/.test(d.split("\n")[0] ?? "") ? 1 : 0)),
+    );
+    const service = createMatchingService(handle.db, {
+      llm: null,
+      reranker: r,
+      semantic: { topK: 5 },
+      onInfo: info,
+    });
+    await service.refresh(userId);
+    expect((r.rerank as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toHaveLength(5);
+    const { items } = await service.listMatches(userId, 100);
+    expect(items.filter((i) => i.dims.semantic)).toHaveLength(5);
+    expect(items[0]?.dims.semantic?.evidence?.[0]).toContain("语义模型");
+    expect(info).toHaveBeenCalledWith(
+      "语义重排完成",
+      expect.objectContaining({ purpose: "refresh", reranked: 5 }),
+    );
+  });
+
+  it("rerank 失败时推荐照常返回规则结果，并记录原因", async () => {
+    const userId = await newUser(backendProfile());
+    const onError = vi.fn();
+    const plain = await createMatchingService(handle.db, { llm: null }).refresh(userId);
+    const r = reranker(async () => {
+      throw new Error("rerank down");
+    });
+    const res = await createMatchingService(handle.db, { llm: null, reranker: r, onError }).refresh(userId);
+    expect(res.count).toBe(plain.count);
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("退回规则排序"), expect.any(Error));
+    const { items } = await createMatchingService(handle.db, { llm: null }).listMatches(userId, 100);
+    expect(items.some((i) => i.dims.semantic)).toBe(false);
   });
 });

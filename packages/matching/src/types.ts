@@ -65,6 +65,8 @@ export interface ScoredJob {
   feedbackEvidence: string[];
   /** 岗位要求多年经验而画像不足时的整体折扣，1 为不折扣。 */
   levelMultiplier: number;
+  /** Rerank 模型给出的语义相关度，只有召回后排名靠前且调用成功的岗位才有。 */
+  semantic?: { score: number; weight: number; evidence: string[] };
 }
 
 export interface MatchOptions {

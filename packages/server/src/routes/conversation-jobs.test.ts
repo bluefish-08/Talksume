@@ -72,7 +72,7 @@ async function boot(steps: FauxResponseStep[]) {
     version: "t",
     db: handle.db,
     llm,
-    matching: { llm: null, embedder: null, minScore: 0 },
+    matching: { llm: null, embedder: null, reranker: null, minScore: 0 },
   });
   await app.ready();
 }
