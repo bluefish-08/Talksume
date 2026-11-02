@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Chip, Spinner } from "../../components/ui.tsx";
 import { relativeTime } from "../applications/format.ts";
 import { StatusTag } from "../applications/Tags.tsx";
+import { candidateIdentity } from "./candidate.ts";
 import styles from "./HrApplicationsPane.module.css";
 import type { HrApplication, HrJob } from "./types.ts";
 
@@ -56,33 +57,37 @@ export function HrApplicationsPane({ job, items, loading, failed, activeId, onOp
       )}
       {shown.length > 0 && (
         <ul className={styles.list}>
-          {shown.map(({ application, candidate }) => (
-            <li key={application.id}>
-              <button
-                type="button"
-                className={[styles.row, application.id === activeId && styles.active]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onOpen(application.id)}
-              >
-                <span className={styles.who}>
-                  <span className={styles.avatar} aria-hidden="true">
-                    {candidate.displayName.slice(0, 1)}
+          {shown.map((item) => {
+            const { application } = item;
+            const who = candidateIdentity(item);
+            return (
+              <li key={application.id}>
+                <button
+                  type="button"
+                  className={[styles.row, application.id === activeId && styles.active]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => onOpen(application.id)}
+                >
+                  <span className={styles.who}>
+                    <span className={styles.avatar} aria-hidden="true">
+                      {who.name.slice(0, 1)}
+                    </span>
+                    <span className={styles.names}>
+                      <span className={styles.name}>{who.name}</span>
+                      <span className={styles.email}>{who.contacts.join(" · ")}</span>
+                    </span>
                   </span>
-                  <span className={styles.names}>
-                    <span className={styles.name}>{candidate.displayName}</span>
-                    <span className={styles.email}>{candidate.email}</span>
+                  <span className={styles.right}>
+                    <StatusTag status={application.status} outcome={application.outcome} />
+                    <time className={styles.time} dateTime={application.updatedAt}>
+                      {relativeTime(application.updatedAt)}
+                    </time>
                   </span>
-                </span>
-                <span className={styles.right}>
-                  <StatusTag status={application.status} outcome={application.outcome} />
-                  <time className={styles.time} dateTime={application.updatedAt}>
-                    {relativeTime(application.updatedAt)}
-                  </time>
-                </span>
-              </button>
-            </li>
-          ))}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

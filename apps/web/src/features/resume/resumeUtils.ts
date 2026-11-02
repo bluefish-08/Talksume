@@ -1,5 +1,4 @@
-import type { Completeness, ProfileSection, ResumeContent } from "../../api/types.ts";
-import { SECTION_LABELS } from "../../api/types.ts";
+import type { Completeness, MissingField, ProfileSection, ResumeContent } from "../../api/types.ts";
 import type { FactItem } from "./queries.ts";
 import type { FactQuote } from "./ResumePreview.tsx";
 
@@ -52,14 +51,43 @@ export function diffAdded(before: ResumeContent, after: ResumeContent): Set<stri
   return added;
 }
 
-/** 「还差项目、技能」；都完成了返回空串。 */
+const SECTION_TITLES: Record<ProfileSection, string> = {
+  basics: "基本信息",
+  education: "教育经历",
+  experiences: "实习经历",
+  projects: "项目经历",
+  skills: "技能",
+  awards: "获奖荣誉",
+  intention: "求职意向",
+};
+
+const MISSING_LIMIT = 4;
+
+/** 基本信息、求职意向的字段名自带语境，直接列；列表型分区合并成「项目经历的角色、结果」。 */
 export function missingText(completeness: Completeness | undefined): string {
   if (!completeness) return "";
-  const labels = completeness.sections
-    .filter((s) => !s.completed && s.score < 1)
-    .map((s) => SECTION_LABELS[s.section]);
+  const done = new Set(completeness.sections.filter((s) => s.completed).map((s) => s.section));
+  const labels: string[] = [];
+  const nested = new Map<ProfileSection, string[]>();
+  const push = (list: string[], label: string) => {
+    if (!list.includes(label)) list.push(label);
+  };
+  for (const m of completeness.missing) {
+    if (!m.required || m.kind === "quantify" || done.has(m.section)) continue;
+    if (m.kind === "new_item") push(labels, SECTION_TITLES[m.section]);
+    else if (m.section === "basics" || m.section === "intention") push(labels, m.label);
+    else {
+      const fields = nested.get(m.section) ?? [];
+      nested.set(m.section, fields);
+      push(fields, m.label.replace(/（.*?）/, ""));
+    }
+  }
+  for (const [section, fields] of nested) {
+    if (!labels.includes(SECTION_TITLES[section]))
+      labels.push(`${SECTION_TITLES[section]}的${fields.join("、")}`);
+  }
   if (labels.length === 0) return "";
-  return `还差${labels.slice(0, 3).join("、")}${labels.length > 3 ? "等" : ""}`;
+  return `还差${labels.slice(0, MISSING_LIMIT).join("、")}${labels.length > MISSING_LIMIT ? "等" : ""}`;
 }
 
 export function factQuotes(

@@ -34,6 +34,25 @@ describe("renderHtml", () => {
     for (const text of allTexts(sampleResume)) expect(html).toContain(text);
   });
 
+  it("技能每组渲染成一行「标题：内容」，无标题时只有内容", () => {
+    const html = renderHtml({
+      basics: { name: "陈晓", contacts: [] },
+      sections: [
+        {
+          kind: "skills",
+          title: "专业技能",
+          items: [
+            { heading: "熟悉", bullets: [{ text: "Go、MySQL", factIds: [] }] },
+            { heading: "", bullets: [{ text: "Python", factIds: [] }] },
+          ],
+        },
+      ],
+    });
+    expect(html).toContain('<p class="skill-line"><span class="item-title">熟悉：</span>Go、MySQL</p>');
+    expect(html).toContain('<p class="skill-line">Python</p>');
+    expect(html).not.toContain("<li>");
+  });
+
   it("转义所有用户文本，防止 XSS", () => {
     const evil = '<script>alert("x")</script>';
     const html = renderHtml({
@@ -75,5 +94,20 @@ describe("renderDocx", () => {
     const xml = await readZipEntry(docx, "word/document.xml");
     expect(xml).toContain(sampleResume.basics.name);
     for (const section of sampleResume.sections) expect(xml).toContain(section.title);
+  });
+
+  it("技能渲染成一行，标题与内容在同一段", async () => {
+    const docx = await renderDocx({
+      basics: { name: "陈晓", contacts: [] },
+      sections: [
+        {
+          kind: "skills",
+          title: "专业技能",
+          items: [{ heading: "熟悉", bullets: [{ text: "Go、MySQL", factIds: [] }] }],
+        },
+      ],
+    });
+    const xml = await readZipEntry(docx, "word/document.xml");
+    expect(xml).toMatch(/熟悉：<\/w:t><\/w:r><w:r>.*?Go、MySQL/);
   });
 });

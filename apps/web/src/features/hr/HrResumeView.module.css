@@ -88,3 +88,10 @@
   margin-bottom: 2px;
   overflow-wrap: anywhere;
 }
+
+.skillLine {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}

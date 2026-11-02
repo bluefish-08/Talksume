@@ -45,8 +45,12 @@ function Card({ item, active }: { item: BoardItem; active: boolean }) {
       className={[styles.card, active && styles.active].filter(Boolean).join(" ")}
       aria-label={`${item.job.title}，${place}`}
     >
-      <span className={styles.cardTitle}>{item.job.title}</span>
-      <span className={styles.place}>{place}</span>
+      <span className={styles.cardTitle} title={item.job.title}>
+        {item.job.title}
+      </span>
+      <span className={styles.place} title={place}>
+        {place}
+      </span>
       {interviewAt && <span className={styles.interview}>面试 {dateTime(interviewAt)}</span>}
       <span className={styles.foot}>
         <span className={styles.tags}>

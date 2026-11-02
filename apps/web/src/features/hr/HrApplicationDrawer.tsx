@@ -5,6 +5,7 @@ import { Button, Spinner } from "../../components/ui.tsx";
 import { Modal } from "../applications/Modal.tsx";
 import { StatusTag } from "../applications/Tags.tsx";
 import { Timeline } from "../applications/Timeline.tsx";
+import { candidateIdentity } from "./candidate.ts";
 import { Field } from "./Field.tsx";
 import styles from "./HrApplicationDrawer.module.css";
 import { HrResumeView } from "./HrResumeView.tsx";
@@ -26,7 +27,7 @@ export function HrApplicationDrawer({ id, onClose }: { id: string; onClose: () =
     <Modal
       variant="drawer"
       wide
-      title={detail ? detail.candidate.displayName : "投递详情"}
+      title={detail ? candidateIdentity(detail).name : "投递详情"}
       onClose={onClose}
       footer={detail && <Actions key={detail.application.status} detail={detail} />}
     >
@@ -48,14 +49,15 @@ export function HrApplicationDrawer({ id, onClose }: { id: string; onClose: () =
 }
 
 function Body({ detail }: { detail: HrApplicationDetail }) {
-  const { application: app, candidate, job, resume, timeline } = detail;
+  const { application: app, job, resume, timeline } = detail;
+  const who = candidateIdentity(detail);
   return (
     <div className={styles.body}>
       <section className={styles.summary}>
         <p className={styles.line}>
           投递 <strong>{job.title}</strong>
         </p>
-        <p className={styles.meta}>{candidate.email}</p>
+        <p className={styles.meta}>{who.contacts.join(" · ")}</p>
         <div className={styles.tags}>
           <StatusTag status={app.status} outcome={app.outcome} />
         </div>

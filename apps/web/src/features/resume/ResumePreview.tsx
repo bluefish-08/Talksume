@@ -50,6 +50,7 @@ export function ResumePreview({ resume, highlightTexts, facts, placeholders = []
               // biome-ignore lint/suspicious/noArrayIndexKey: 条目没有稳定 id，同分区内标题可能重复
               key={`${item.heading}:${i}`}
               item={item}
+              inline={section.kind === "skills"}
               highlightTexts={highlightTexts}
               facts={facts}
             />
@@ -74,24 +75,30 @@ export function ResumePreview({ resume, highlightTexts, facts, placeholders = []
 
 function Item({
   item,
+  inline,
   highlightTexts,
   facts,
 }: {
   item: ResumeItem;
+  /** 技能条目：标题与要点同一行。 */
+  inline: boolean;
   highlightTexts: ReadonlySet<string> | undefined;
   facts: Props["facts"];
 }) {
   const itemNew = highlightTexts?.has(item.heading) ?? false;
   return (
-    <div className={styles.item}>
-      <div className={itemNew ? `${styles.row} ${styles.hl}` : styles.row}>
-        <span className={styles.heading}>
-          {item.heading}
-          {item.subheading && <span className={styles.sub}>{item.subheading}</span>}
-        </span>
-        {item.period && <span className={styles.period}>{item.period}</span>}
-        {itemNew && <span className={styles.tag}>刚刚添加</span>}
-      </div>
+    <div className={inline ? `${styles.item} ${styles.inline}` : styles.item}>
+      {(!inline || item.heading) && (
+        <div className={itemNew ? `${styles.row} ${styles.hl}` : styles.row}>
+          <span className={styles.heading}>
+            {item.heading}
+            {inline && "："}
+            {item.subheading && <span className={styles.sub}>{item.subheading}</span>}
+          </span>
+          {item.period && <span className={styles.period}>{item.period}</span>}
+          {itemNew && <span className={styles.tag}>刚刚添加</span>}
+        </div>
+      )}
       {item.bullets.length > 0 && (
         <ul className={styles.bullets}>
           {item.bullets.map((b, i) => {

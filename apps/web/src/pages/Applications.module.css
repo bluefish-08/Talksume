@@ -52,7 +52,7 @@
   color: #fff;
 }
 
-/* 列在小屏上横向滚动，而不是压扁 */
+/* 5 列在约 1000px 内容宽度内放得下；更窄时横向滚动，而不是继续压扁 */
 .scroller {
   flex: 1;
   min-height: 0;
@@ -63,8 +63,8 @@
 
 .board {
   display: grid;
-  grid-template-columns: repeat(5, minmax(204px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(164px, 1fr));
+  gap: 12px;
   align-items: start;
   min-width: min-content;
 }

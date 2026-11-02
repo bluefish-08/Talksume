@@ -1,5 +1,5 @@
 // 版式思路借鉴 career-ops (MIT) templates/cv-template.zh-minimal.html：单栏、禁用连字以保证 ATS 文本抽取
-import type { ResumeContent, ResumeItem, ResumeSection } from "@talksume/core";
+import { type ResumeContent, type ResumeItem, type ResumeSection, skillLine } from "@talksume/core";
 import { DEFAULT_TEMPLATE, FONT_STACK_CSS, type RenderOptions } from "./types.ts";
 
 const ESCAPES: Record<string, string> = {
@@ -33,6 +33,7 @@ h2 { font-size: 11pt; font-weight: 700; color: #1d4e89; border-bottom: 1.2px sol
 .item-period { flex: none; color: #4b5563; font-size: 9pt; white-space: nowrap; }
 ul { margin: 2px 0 0 1.3em; padding: 0; }
 li { margin-top: 1px; padding-left: 0.1em; }
+.skill-line { margin-top: 2px; break-inside: avoid; }
 `;
 
 function renderItem(item: ResumeItem): string {
@@ -44,9 +45,16 @@ function renderItem(item: ResumeItem): string {
   return `<div class="item"><div class="item-head"><div><span class="item-title">${escapeHtml(item.heading)}</span>${sub}</div>${period}</div>${bullets}</div>`;
 }
 
+function renderSkillLine(item: ResumeItem): string {
+  const { label, text } = skillLine(item);
+  const head = label ? `<span class="item-title">${escapeHtml(label)}：</span>` : "";
+  return `<p class="skill-line">${head}${escapeHtml(text)}</p>`;
+}
+
 function renderSection(section: ResumeSection): string {
   if (section.items.length === 0) return "";
-  return `<section data-kind="${section.kind}"><h2>${escapeHtml(section.title)}</h2>${section.items.map(renderItem).join("")}</section>`;
+  const render = section.kind === "skills" ? renderSkillLine : renderItem;
+  return `<section data-kind="${section.kind}"><h2>${escapeHtml(section.title)}</h2>${section.items.map(render).join("")}</section>`;
 }
 
 export function renderHtml(content: ResumeContent, options: RenderOptions = {}): string {

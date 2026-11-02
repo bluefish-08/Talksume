@@ -11,8 +11,8 @@ const DEGREE_LABEL: Record<Education["degree"], string> = {
 const SKILL_GROUPS = [
   { level: "expert", heading: "精通" },
   { level: "proficient", heading: "熟练" },
-  { level: "familiar", heading: "了解" },
-  { level: undefined, heading: "技能" },
+  { level: "familiar", heading: "熟悉" },
+  { level: undefined, heading: "其他" },
 ] as const;
 
 function formatMonth(value: string): string {
@@ -97,13 +97,27 @@ function experienceTitle(experiences: Experience[]): string {
   return internships === 0 ? "工作经历" : "实习与工作经历";
 }
 
+/** 每个熟练度一个条目；全部没有熟练度时不加前缀，避免只剩一个「其他」。 */
 function skillItems(skills: Profile["skills"]): ResumeItem[] {
-  return SKILL_GROUPS.flatMap(({ level, heading }) => {
-    const group = skills.filter((s) => s.level === level);
-    if (group.length === 0) return [];
-    const factIds = [...new Set(group.flatMap((s) => s.sourceFactIds))];
-    return [{ heading, bullets: [{ text: group.map((s) => s.name).join("、"), factIds }] }];
-  });
+  const groups = SKILL_GROUPS.map(({ level, heading }) => ({
+    heading,
+    group: skills.filter((s) => s.level === level),
+  })).filter(({ group }) => group.length > 0);
+  const onlyUnleveled = groups.length === 1 && groups[0]?.heading === "其他";
+  return groups.map(({ heading, group }) => ({
+    heading: onlyUnleveled ? "" : heading,
+    bullets: [
+      {
+        text: group.map((s) => s.name).join("、"),
+        factIds: [...new Set(group.flatMap((s) => s.sourceFactIds))],
+      },
+    ],
+  }));
+}
+
+/** 技能条目在各处统一渲染成一行：「熟悉：Go、MySQL」；无标题时只有内容。 */
+export function skillLine(item: ResumeItem): { label: string; text: string } {
+  return { label: item.heading.trim(), text: item.bullets.map((b) => b.text).join("；") };
 }
 
 /** 画像到简历内容的确定性映射，不调用模型；用于实时预览和导出。 */

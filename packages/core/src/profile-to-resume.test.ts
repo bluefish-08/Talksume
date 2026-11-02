@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Profile } from "./profile.ts";
-import { profileToResume } from "./profile-to-resume.ts";
+import { profileToResume, skillLine } from "./profile-to-resume.ts";
 import { ResumeContent } from "./resume.ts";
 
 const full = Profile.parse({
@@ -145,12 +145,32 @@ describe("profileToResume", () => {
     expect(item?.period).toBeUndefined();
   });
 
-  it("技能按熟练度分组，无等级的归入「技能」", () => {
+  it("技能一个熟练度一个条目，无等级的归入「其他」", () => {
     const section = profileToResume(full).sections.find((s) => s.kind === "skills");
     expect(section?.items).toEqual([
       { heading: "熟练", bullets: [{ text: "Go、Redis", factIds: ["f5", "f6"] }] },
-      { heading: "技能", bullets: [{ text: "Docker", factIds: [] }] },
+      { heading: "其他", bullets: [{ text: "Docker", factIds: [] }] },
     ]);
+  });
+
+  it("技能都没有等级时不加前缀；familiar 显示为「熟悉」", () => {
+    const skillsOf = (skills: object[]) =>
+      profileToResume(Profile.parse({ skills })).sections.find((s) => s.kind === "skills")?.items;
+    expect(
+      skillsOf([
+        { id: "a", name: "Go" },
+        { id: "b", name: "Python" },
+      ]),
+    ).toEqual([{ heading: "", bullets: [{ text: "Go、Python", factIds: [] }] }]);
+    expect(skillsOf([{ id: "a", name: "Go", level: "familiar" }])?.[0]?.heading).toBe("熟悉");
+  });
+
+  it("skillLine 把条目压成一行", () => {
+    expect(skillLine({ heading: "熟悉", bullets: [{ text: "Go、MySQL", factIds: [] }] })).toEqual({
+      label: "熟悉",
+      text: "Go、MySQL",
+    });
+    expect(skillLine({ heading: "", bullets: [{ text: "Python", factIds: [] }] }).label).toBe("");
   });
 
   it("获奖：日期作 period，描述作 bullet", () => {

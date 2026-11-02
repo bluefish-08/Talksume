@@ -85,6 +85,12 @@
   gap: 2px;
 }
 
+.inline {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0;
+}
+
 .row {
   position: relative;
   display: flex;
@@ -123,6 +129,24 @@
   content: "•";
   position: absolute;
   left: 8px;
+}
+
+.inline .row {
+  flex: none;
+}
+
+.inline .bullets {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline .bullet {
+  margin: 0;
+  padding: 2px 4px;
+}
+
+.inline .bullet::before {
+  content: none;
 }
 
 .traceable:hover,

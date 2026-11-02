@@ -1,4 +1,4 @@
-import type { ResumeContent, ResumeItem, ResumeSection } from "@talksume/core";
+import { type ResumeContent, type ResumeItem, type ResumeSection, skillLine } from "@talksume/core";
 import {
   AlignmentType,
   BorderStyle,
@@ -49,11 +49,18 @@ function itemParagraphs(item: ResumeItem): Paragraph[] {
   return paragraphs;
 }
 
+function skillParagraph(item: ResumeItem): Paragraph[] {
+  const { label, text } = skillLine(item);
+  const runs = label ? [new TextRun({ text: `${label}：`, bold: true, color: "111827" })] : [];
+  runs.push(new TextRun(text));
+  return [new Paragraph({ children: runs, spacing: { before: 40, after: 10 }, keepLines: true })];
+}
+
 function sectionParagraphs(section: ResumeSection): Paragraph[] {
   if (section.items.length === 0) return [];
   return [
     new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(section.title)] }),
-    ...section.items.flatMap(itemParagraphs),
+    ...section.items.flatMap(section.kind === "skills" ? skillParagraph : itemParagraphs),
   ];
 }
 
