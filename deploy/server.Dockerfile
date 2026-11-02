@@ -2,24 +2,21 @@ FROM node:24-slim AS base
 RUN npm install -g pnpm@12.4.2
 WORKDIR /app
 
+FROM base AS manifests
+COPY . /src
+RUN cd /src && find . -name package.json -not -path "*/node_modules/*" -exec cp --parents {} /app \; \
+  && cp pnpm-lock.yaml pnpm-workspace.yaml /app/
+
 FROM base AS deps
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/core/package.json packages/core/
-COPY packages/db/package.json packages/db/
-COPY packages/server/package.json packages/server/
-COPY cloud/server/package.json cloud/server/
-COPY apps/web/package.json apps/web/
+COPY --from=manifests /app ./
 RUN pnpm install --frozen-lockfile --prod --filter "@talksume/cloud-server..."
 
 FROM node:24-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=deps /app ./
-COPY packages/core/src packages/core/src
-COPY packages/db/src packages/db/src
-COPY packages/db/drizzle packages/db/drizzle
-COPY packages/server/src packages/server/src
-COPY cloud/server/src cloud/server/src
+COPY packages packages
+COPY cloud cloud
 USER node
 EXPOSE 8080
 CMD ["node", "cloud/server/src/main.ts"]
