@@ -109,14 +109,28 @@ function draftSlot(state: IntakeState, skipped: ReadonlySet<string>): Slot | nul
   return null;
 }
 
+/** 最近写入的事实落在哪段实习或项目上。 */
+function focusItemOf(state: IntakeState): string | undefined {
+  for (const fact of [...state.facts].reverse()) {
+    if (fact.status !== "confirmed") continue;
+    if (fact.section !== "experiences" && fact.section !== "projects") continue;
+    const items = state.profile[fact.section] as { id: string; sourceFactIds: string[] }[];
+    const hit = items.find((item) => item.sourceFactIds.includes(fact.id));
+    if (hit) return hit.id;
+  }
+  return undefined;
+}
+
 export function nextSlotOf(state: IntakeState): Slot | null {
   const skipped = skippedKeys(state);
   const draft = draftSlot(state, skipped);
   if (draft) return draft;
+  const focusItemId = focusItemOf(state);
   return pickNextSlot(state.profile, {
     completedSections: state.completedSections,
     askCounts: state.askCounts,
     skipped,
+    ...(focusItemId ? { focusItemId } : {}),
   });
 }
 

@@ -271,39 +271,33 @@ function present(value: unknown): boolean {
   return true;
 }
 
-/** 只数带 title 的要点：旧 bullets / STAR 转来的无标题要点不算深挖过。 */
-export function titledHighlights(record: Record<string, unknown>): number {
-  const list = Array.isArray(record.highlights) ? record.highlights : [];
-  return list.filter((h) => typeof h?.title === "string" && h.title.trim() && h.detail?.trim()).length;
-}
-
 const CHALLENGE =
   /难|挑战|瓶颈|问题|故障|排查|踩坑|解决|冲突|不一致|超卖|慢查询|卡顿|并发|抖动|泄漏|丢失|缺失/;
 
-/** 只按条数算会被「负责 A、负责 B」糊弄过去，难点那条要真的在讲难点或做法。 */
-function hasChallenge(record: Record<string, unknown>): boolean {
-  const list = Array.isArray(record.highlights) ? record.highlights : [];
-  return (
-    titledHighlights(record) >= 2 && list.some((h) => CHALLENGE.test(`${h?.title ?? ""}${h?.detail ?? ""}`))
-  );
+/** 经历里用户讲过的每件事：要点，没有要点时是旧的 bullets 和项目的做法、结果。老数据讲过的不再重复问。 */
+function contentOf(record: Record<string, unknown>): { duty: string[]; all: string[] } {
+  const highlights = Array.isArray(record.highlights) ? record.highlights : [];
+  if (highlights.length > 0) {
+    const texts = highlights.map((h) => `${h?.title ?? ""} ${h?.detail ?? ""}`.trim()).filter(Boolean);
+    return { duty: texts, all: texts };
+  }
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? [v.trim()] : []);
+  const bullets = Array.isArray(record.bullets) ? record.bullets.flatMap(str) : [];
+  const duty = [...bullets, ...str(record.action)];
+  return { duty, all: [...duty, ...str(record.result)] };
 }
 
-function hasNumbers(record: Record<string, unknown>): boolean {
-  const texts = [
-    ...(Array.isArray(record.highlights)
-      ? record.highlights.map((h) => `${h?.title ?? ""} ${h?.detail ?? ""}`)
-      : []),
-    ...(Array.isArray(record.bullets) ? record.bullets.map(String) : []),
-    typeof record.result === "string" ? record.result : "",
-  ];
-  return texts.some((t) => isQuantified(t));
+/** 只按条数算会被「负责 A、负责 B」糊弄过去，难点那条要真的在讲难点或做法。 */
+function hasChallenge(record: Record<string, unknown>): boolean {
+  const { all } = contentOf(record);
+  return all.length >= 2 && all.some((t) => CHALLENGE.test(t));
 }
 
 function fieldOk(section: ProfileSection, field: string, record: Record<string, unknown>): boolean {
   if (section === "experiences" || section === "projects") {
-    if (field === "duty") return titledHighlights(record) >= 1;
+    if (field === "duty") return contentOf(record).duty.length >= 1;
     if (field === "challenge") return hasChallenge(record);
-    if (field === "impact") return hasNumbers(record);
+    if (field === "impact") return contentOf(record).all.some((t) => isQuantified(t));
   }
   if (section === "education" && field === "gpa") return present(record.gpa) || present(record.rank);
   return present(record[field]);
@@ -426,6 +420,8 @@ export interface PickOptions extends CompletenessOptions {
   maxAsks?: number;
   /** 用户跳过或说没有的字段 key，永远不主动再问。 */
   skipped?: ReadonlySet<string>;
+  /** 正在聊的实习/项目条目，深挖时先把它问完再换下一段。 */
+  focusItemId?: string;
 }
 
 export interface Slot extends MissingField {
@@ -494,6 +490,7 @@ export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot 
     .filter((m) => m.depth && m.required)
     .sort(
       (a, b) =>
+        Number(b.itemId === options.focusItemId) - Number(a.itemId === options.focusItemId) ||
         (order.get(a.section) ?? 0) - (order.get(b.section) ?? 0) ||
         itemOrder(a) - itemOrder(b) ||
         (a.depth ?? 0) - (b.depth ?? 0),

@@ -75,7 +75,7 @@ describe("computeCompleteness", () => {
     expect(computeCompleteness(p).missing.some((m) => m.kind === "quantify")).toBe(false);
   });
 
-  it("scores a one-line experience below 100% until it has 2 titled highlights and a tech stack", () => {
+  it("keeps a thin old experience below 100% but counts what it already answered", () => {
     const thin = Profile.parse({
       experiences: [
         {
@@ -89,18 +89,43 @@ describe("computeCompleteness", () => {
         },
       ],
     });
-    const score = () => computeCompleteness(thin).sections.find((s) => s.section === "experiences")?.score;
-    expect(score()).toBeLessThan(0.7);
+    const c = () => computeCompleteness(thin);
+    const missingFields = () => c().missing.map((m) => m.field);
+    expect(c().sections.find((s) => s.section === "experiences")?.score).toBeLessThan(1);
+    expect(missingFields()).toEqual(expect.arrayContaining(["techStack", "challenge"]));
+    expect(missingFields()).not.toContain("duty");
+    expect(missingFields()).not.toContain("impact");
     const exp = thin.experiences[0];
     if (!exp) throw new Error("no experience");
     exp.techStack = ["Java", "MySQL"];
-    exp.highlights = [{ title: "订单模块", detail: "负责订单模块" }];
-    expect(score()).toBeLessThan(1);
-    exp.highlights.push({ title: "慢查询治理", detail: "接口 P99 从 600ms 降到 150ms" });
-    expect(score()).toBe(1);
+    exp.highlights = [
+      { detail: "负责订单模块" },
+      { detail: "修复缺陷 30 个" },
+      { title: "慢查询治理", detail: "解决了大促时的慢查询" },
+    ];
+    expect(c().sections.find((s) => s.section === "experiences")?.score).toBe(1);
   });
 
-  it("does not count untitled highlights converted from old bullets as deep-dived", () => {
+  it("treats an old project's action and result as answered duty and numbers", () => {
+    const p = Profile.parse({
+      projects: [
+        {
+          id: "prj_old",
+          name: "江城闲置",
+          role: "后端负责人",
+          techStack: ["Java"],
+          action: "负责后端，做了商品发布、搜索和订单模块",
+          result: "接口响应从 800ms 降到 120ms",
+        },
+      ],
+    });
+    const fields = computeCompleteness(p)
+      .missing.filter((m) => m.section === "projects" && m.required)
+      .map((m) => m.field);
+    expect(fields).toEqual(["challenge"]);
+  });
+
+  it("counts untitled highlights as answered too", () => {
     const p = Profile.parse({
       projects: [
         {
@@ -113,10 +138,9 @@ describe("computeCompleteness", () => {
       ],
     });
     const fields = computeCompleteness(p)
-      .missing.filter((m) => m.section === "projects")
+      .missing.filter((m) => m.section === "projects" && m.required)
       .map((m) => m.field);
-    expect(fields).toEqual(expect.arrayContaining(["duty", "challenge"]));
-    expect(fields).not.toContain("impact");
+    expect(fields).toEqual(["challenge"]);
   });
 
   it("accepts either GPA or rank for education", () => {
@@ -197,6 +221,27 @@ describe("pickNextSlot", () => {
     expect(impact?.replies).toContain("没有具体数字");
     expect(pickNextSlot(p, { ...opts, skipped: new Set([impact?.key ?? ""]) })).toMatchObject({
       itemId: "prj_1",
+      field: "techStack",
+    });
+  });
+
+  it("finishes the experience being talked about before going back to an older one", () => {
+    const p = withEducation(withBasics());
+    p.projects.push(
+      {
+        id: "prj_old",
+        sourceFactIds: [],
+        name: "江城闲置",
+        role: "后端",
+        techStack: ["Java"],
+        action: "做了订单模块",
+      },
+      { id: "prj_new", sourceFactIds: [], name: "江城图书馆", role: "组长", techStack: [] },
+    );
+    const opts = { completedSections: ["experiences", "skills", "intention", "awards"] as const };
+    expect(pickNextSlot(p, opts)).toMatchObject({ itemId: "prj_old", field: "challenge" });
+    expect(pickNextSlot(p, { ...opts, focusItemId: "prj_new" })).toMatchObject({
+      itemId: "prj_new",
       field: "techStack",
     });
   });

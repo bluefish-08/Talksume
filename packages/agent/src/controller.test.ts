@@ -832,3 +832,74 @@ describe("intake controller: claimed but not written", () => {
     expect(core.state.callCount).toBe(1);
   });
 });
+
+describe("intake controller: old profile data", () => {
+  it("does not re-ask what an old project already says, and merges a retelling without duplicates", async () => {
+    const state = createIntakeState({
+      profile: Profile.parse({
+        basics: { name: "李明", phone: "13800001111", email: "liming@example.com" },
+        education: [{ id: "edu_1", school: "示例大学", degree: "bachelor", major: "软件工程" }],
+        projects: [
+          {
+            id: "prj_old",
+            name: "江城闲置",
+            role: "后端负责人",
+            techStack: ["Java", "Redis"],
+            action: "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品",
+            result: "接口响应从 800ms 降到 120ms",
+          },
+        ],
+        skills: ["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, name })),
+        intention: { roles: ["后端开发"], cities: ["杭州"], jobType: "campus" },
+      }),
+      completedSections: ["experiences", "awards"],
+    });
+    const prj = (name: string, payload: JsonObject, quote: string) => ({
+      section: "projects",
+      payload: { name, ...payload },
+      quote,
+    });
+    const { controller } = fake([
+      toolTurn(upsert([prj("江城图书馆", {}, "课程项目叫江城图书馆")])),
+      toolTurn(ask("你在里面担任什么角色？")),
+      toolTurn(upsert([prj("江城图书馆", { role: "组长" }, "我是组长")])),
+      toolTurn(ask("用了哪些技术？")),
+      toolTurn(
+        upsert([
+          prj(
+            "江城闲置",
+            {
+              highlights: [
+                { title: "商品发布与搜索", detail: "商品发布、搜索" },
+                { title: "订单模块", detail: "订单模块" },
+              ],
+            },
+            "商品发布、搜索和订单模块",
+          ),
+        ]),
+      ),
+      toolTurn(ask("那江城闲置遇到过什么难点？")),
+    ]);
+    const slots: (string | undefined)[] = [];
+    for (const [id, text] of [
+      ["m1", "我还做过一个课程项目叫江城图书馆"],
+      ["m2", "我是组长"],
+      ["m3", "之前说过了呀，就是商品发布、搜索和订单模块"],
+    ] as const) {
+      const events = await collect(controller.handleUserMessage(state, { id, text }));
+      const last = events.at(-1);
+      slots.push(last?.type === "completeness" ? last.nextSlot?.key : undefined);
+    }
+    const newId = state.profile.projects.find((p) => p.name === "江城图书馆")?.id;
+    expect(slots).toEqual([
+      `projects:${newId}:role`,
+      `projects:${newId}:techStack`,
+      "projects:prj_old:challenge",
+    ]);
+    expect(slots.some((k) => k?.endsWith(":duty"))).toBe(false);
+    expect(state.profile.projects[0]?.highlights).toEqual([
+      { title: "商品发布与搜索", detail: "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品" },
+      { detail: "接口响应从 800ms 降到 120ms" },
+    ]);
+  });
+});

@@ -530,6 +530,77 @@ describe("applyFacts: new resume fields", () => {
     expect(project(r)?.situation).toBe("校园二手平台");
   });
 
+  it("merges a retold old point into the folded one instead of adding duplicates", () => {
+    const base = withProject({
+      action: "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品",
+      result: "接口响应从 800ms 降到 120ms",
+    });
+    const r = applyFacts(
+      base,
+      [
+        fact("projects", {
+          name: "二手平台",
+          highlights: [
+            { title: "商品发布与搜索", detail: "负责商品发布、搜索模块" },
+            { title: "订单模块", detail: "负责订单模块" },
+          ],
+        }),
+      ],
+      ctx,
+    );
+    expect(project(r)?.highlights).toEqual([
+      { title: "商品发布与搜索", detail: "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品" },
+      { detail: "接口响应从 800ms 降到 120ms" },
+    ]);
+  });
+
+  it("titles an untitled point with the fuller retelling, but keeps a genuinely new point", () => {
+    const base = withProject({ highlights: [{ detail: "做了订单模块" }] });
+    const r = applyFacts(
+      base,
+      [
+        fact("projects", {
+          name: "二手平台",
+          highlights: [
+            { title: "订单模块", detail: "做了订单模块，还接了支付回调" },
+            { title: "超卖问题", detail: "用分布式锁解决了超卖" },
+          ],
+        }),
+      ],
+      ctx,
+    );
+    expect(project(r)?.highlights).toEqual([
+      { title: "订单模块", detail: "做了订单模块，还接了支付回调" },
+      { title: "超卖问题", detail: "用分布式锁解决了超卖" },
+    ]);
+  });
+
+  it("replaces an untitled point when the retelling adds numbers, and keeps unrelated ones apart", () => {
+    const base = withProject({ highlights: [{ detail: "负责订单模块的接口" }] });
+    const quote = "负责订单模块接口，QPS 到了 3000…搜索接口 P99 是 80ms";
+    const r = applyFacts(
+      base,
+      [
+        fact(
+          "projects",
+          {
+            name: "二手平台",
+            highlights: [
+              { title: "订单接口", detail: "负责订单模块接口，QPS 到了 3000" },
+              { title: "搜索提速", detail: "搜索接口 P99 是 80ms" },
+            ],
+          },
+          quote,
+        ),
+      ],
+      ctx,
+    );
+    expect(project(r)?.highlights).toEqual([
+      { title: "订单接口", detail: "负责订单模块接口，QPS 到了 3000" },
+      { title: "搜索提速", detail: "搜索接口 P99 是 80ms" },
+    ]);
+  });
+
   it("merges links by url and fills a missing label", () => {
     const base = Profile.parse({ basics: { links: [{ url: "https://github.com/demo/" }] } });
     const r = applyFacts(

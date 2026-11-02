@@ -341,9 +341,40 @@ function mergeHighlights(
       if (title && !byDetail.title) byDetail.title = title;
       continue;
     }
+    if (restates(merged, title, detail)) continue;
     merged.push(title ? { title, detail } : { detail });
   }
   return { merged, conflicts };
+}
+
+const SAME_THING = 0.6;
+const RESTATED = 0.8;
+
+/**
+ * 用户复述老内容时别追加重复的一条：和某条无标题要点讲的是同一件事，就给它补上标题
+ * （新说法基本覆盖旧原文时换成新说法）；已被某条带标题要点覆盖的，直接略过。
+ */
+function restates(merged: Highlight[], title: string | undefined, detail: string): boolean {
+  const grams = bigrams(detail);
+  const newNumbers = [...anchorsOf(detail)].filter((x) => /^\d/.test(x));
+  for (const h of merged) {
+    const old = bigrams(h.detail);
+    const covered = coverage(grams, old);
+    const covers = coverage(old, grams);
+    const addsNumbers = newNumbers.some((n) => !anchorsOf(h.detail).has(n));
+    if (h.title && title) {
+      if (covered >= RESTATED && !addsNumbers) return true;
+      continue;
+    }
+    if (!h.title && Math.max(covered, covers) >= SAME_THING) {
+      if ((covers >= RESTATED && covers >= covered) || (addsNumbers && covers >= SAME_THING))
+        h.detail = detail;
+      else if (addsNumbers) continue;
+      if (title) h.title = title;
+      return true;
+    }
+  }
+  return false;
 }
 
 function cleanText(text: unknown): string {
