@@ -15,6 +15,7 @@
     "@talksume/db": "workspace:*",
     "@talksume/llm-gateway": "workspace:*",
     "@talksume/resume-render": "workspace:*",
+    "@talksume/matching": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.7",
     "ioredis": "^6.0.0",

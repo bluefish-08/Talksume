@@ -13,6 +13,9 @@
     },
     {
       "path": "../../packages/llm-gateway"
+    },
+    {
+      "path": "../../packages/matching"
     }
   ]
 }

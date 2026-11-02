@@ -1,0 +1,20 @@
+{
+  "name": "@talksume/matching",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "seed": "node --env-file-if-exists=../../.env src/seed-cli.ts",
+    "eval": "node eval/run.ts"
+  },
+  "dependencies": {
+    "@talksume/core": "workspace:*",
+    "@talksume/db": "workspace:*",
+    "@talksume/llm-gateway": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7"
+  }
+}

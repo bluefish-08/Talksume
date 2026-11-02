@@ -10,6 +10,7 @@
   "dependencies": {
     "@talksume/db": "workspace:*",
     "@talksume/llm-gateway": "workspace:*",
+    "@talksume/matching": "workspace:*",
     "@talksume/server": "workspace:*"
   }
 }

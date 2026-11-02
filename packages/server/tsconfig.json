@@ -19,6 +19,9 @@
     },
     {
       "path": "../resume-render"
+    },
+    {
+      "path": "../matching"
     }
   ]
 }

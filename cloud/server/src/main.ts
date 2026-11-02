@@ -1,5 +1,6 @@
 import { createDb, migrate } from "@talksume/db";
 import { createGateway, type LlmCallLog, loadGatewayConfig } from "@talksume/llm-gateway";
+import { createEmbedderFromEnv, embedPendingJobs, seedJobsIfEmpty } from "@talksume/matching";
 import {
   buildApp,
   createRedisNotifier,
@@ -10,7 +11,17 @@ import {
 
 const databaseUrl = process.env.DATABASE_URL;
 const database = databaseUrl ? await createDb({ url: databaseUrl }) : undefined;
-if (database) await migrate(database);
+if (database) {
+  await migrate(database);
+  const seeded = await seedJobsIfEmpty(database.db);
+  if (seeded > 0) console.log(`已写入 ${seeded} 条种子岗位`);
+  const embedder = createEmbedderFromEnv();
+  if (embedder) {
+    void embedPendingJobs(database.db, embedder).catch((err: unknown) =>
+      console.error("岗位向量生成失败", err instanceof Error ? err.message : err),
+    );
+  }
+}
 
 let logCall: (log: LlmCallLog) => void = () => {};
 const gateway = process.env.LLM_API_KEY

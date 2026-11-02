@@ -7,6 +7,7 @@ import type { ConnectorRegistry } from "./flow/channels.ts";
 import type { NotificationBus } from "./notifications/bus.ts";
 import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
+import { matchingRoutes } from "./routes/matching.ts";
 
 /** 对话模型：生产由 llm-gateway 提供，测试注入假的 streamFn。 */
 export type LlmDeps = Pick<IntakeDeps, "streamFn" | "model">;
@@ -22,7 +23,7 @@ export interface AppDeps {
 
 export type RouteModule = (app: FastifyInstance, deps: AppDeps & { db: Db }) => void;
 
-const routes: RouteModule[] = [conversationRoutes, flowRoutes];
+const routes: RouteModule[] = [conversationRoutes, flowRoutes, matchingRoutes];
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: deps.logger ?? false });
