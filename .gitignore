@@ -9,3 +9,4 @@ dist/
 docs/dist/
 docs/assets/mermaid.min.js
 .claude/worktrees/
+data/jobs/

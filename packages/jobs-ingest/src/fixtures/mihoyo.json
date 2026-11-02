@@ -1,0 +1,108 @@
+{
+  "items": [
+    {
+      "id": "9167",
+      "title": "场景模型师",
+      "addressDetailList": [
+        {
+          "addressId": "8",
+          "addressDetail": "上海"
+        }
+      ],
+      "competencyType": "美术&表现类",
+      "jobNature": "全职",
+      "jobNatureId": 1,
+      "projectName": "2027届秋招",
+      "hurry": false,
+      "channelDetailIds": [1, 2],
+      "tagList": [],
+      "jobSummary": "",
+      "objectId": "19",
+      "objectName": "2027届（2026.9-2027.8之间毕业）"
+    },
+    {
+      "id": "9621",
+      "title": "境外市场营销实习-星布谷地",
+      "addressDetailList": [
+        {
+          "addressId": "8",
+          "addressDetail": "上海"
+        }
+      ],
+      "competencyType": "市场&商务类",
+      "jobNature": "实习",
+      "jobNatureId": 3,
+      "projectName": "实习生专项",
+      "hurry": false,
+      "channelDetailIds": [1, 2],
+      "tagList": [],
+      "jobSummary": "",
+      "objectId": "20",
+      "objectName": "2027届及之后毕业的在校生"
+    }
+  ],
+  "details": [
+    {
+      "id": "9167",
+      "code": "",
+      "title": "场景模型师",
+      "addressDetailList": [
+        {
+          "addressId": "8",
+          "addressDetail": "上海"
+        }
+      ],
+      "competencyTypeId": "2",
+      "competencyType": "美术&表现类",
+      "jobNatureId": 1,
+      "jobNature": "全职",
+      "projectName": "2027届秋招",
+      "description": "1.成为一名优秀的3D场景模型师，持续输出高品质的美术资产；\n2.依据游戏设定并结合原画，理解原画意图，完成游戏中3D场景模型制作；\n3.与项目组程序、策划、美术团队充分沟通，了解需求，准确对接并实现效果。",
+      "jobRequire": "1.扎实的美术功底，优秀的审美能力，有丰富的想象力和创造力；\n2.熟练掌握Zbrush、3dsMAX/Maya等3D建模软件以及Substance Painter等PBR材质软件，了解3D模型的相关基础知识；\n3.了解PBR次时代游戏制作流程；\n4.乐于沟通，善于合作，深入游戏研发过程，与上下游形成良好的协作；\n5.丰富的创造力和积极的创作热情，并能将想法在游戏中实现；\n6.热爱游戏，希望投身游戏行业，对游戏美术有执着的追求；\n7.对AIGC领域保持极度敏感，愿意尝试新工具、新插件。",
+      "addition": "1.参与过游戏项目的实习/外包经历；\n2.热爱游戏，对游戏富有激情，爱看动画、电影优先考虑；\n3.了解并使用过AI生成辅助制作3D模型，有个人训练的LoRA模型或ComfyUI工作流经验；\n4.了解市面上成熟的游戏商业引擎（Unreal、Unity等）。",
+      "deliveryInstructions": "",
+      "hadDelivery": 0,
+      "status": 1,
+      "channelDetailIds": [1, 2],
+      "objectId": "19",
+      "objectName": "2027届（2026.9-2027.8之间毕业）",
+      "projectId": 13,
+      "hireType": 1,
+      "hireTypeName": "校园招聘",
+      "hurry": false,
+      "tagList": [],
+      "jobSummary": ""
+    },
+    {
+      "id": "9621",
+      "code": "",
+      "title": "境外市场营销实习-星布谷地",
+      "addressDetailList": [
+        {
+          "addressId": "8",
+          "addressDetail": "上海"
+        }
+      ],
+      "competencyTypeId": "6",
+      "competencyType": "市场&商务类",
+      "jobNatureId": 3,
+      "jobNature": "实习",
+      "projectName": "实习生专项",
+      "description": "工作职责\n1. 协助境外市场营销方案的策划与执行，参与版本推广、品牌活动、内容传播及社区营销等项目。\n2. 深入体验和理解游戏内容，结合版本内容及玩家需求，参与提炼传播卖点和内容方向。\n3. 关注境外游戏市场、社交媒体热点、玩家文化及竞品动态，形成有价值的市场观察和用户洞察。\n4. 参与营销创意讨论，能够基于业务目标主动提出问题、表达判断，并贡献内容创意及传播想法。\n5. 跟进素材制作、本地化、发布排期及上线验收，协调内外部合作方，推动方案按计划落地。\n6. 协助整理传播数据和用户反馈，参与项目复盘，推动后续策略及内容优化。\n7. 随着业务能力成长，逐步独立负责营销模块，并参与完成从洞察、创意到执行方案的完整提案和落地执行。",
+      "jobRequire": "1. 本科及以上学历在读，专业不限；市场营销、广告、传播、语言等相关专业优先。\n2. 热爱游戏并拥有较为深入的游戏体验，能够理解游戏内容、玩家情绪及不同产品的核心吸引力。\n3. 对内容和用户反馈敏感，具备良好的观察、分析及洞察能力，能够从现象中发现问题并形成自己的判断。\n4. 具备较好的创意能力，对游戏营销、社交媒体内容及玩家文化有自己的关注和想法。\n5. 主动性和好奇心强，不仅能够承接任务，也愿意主动提问、补充信息并推动问题解决。\n6. 具备清晰的表达和基础方案撰写能力，能够有逻辑地呈现自己的观点；有策划或独立提案经验者优先。\n7. 英语可作为工作语言；掌握日语、韩语或其他语种者优先。\n8. 学习能力和成长意愿较强，愿意长期投入境外市场营销方向。",
+      "addition": "",
+      "deliveryInstructions": "实习要求\n1. 每周可实习3天或以上，连续实习时间不短于3个月。\n2. 表现优秀且符合岗位要求者，可获得正式岗位转正机会。",
+      "hadDelivery": 0,
+      "status": 1,
+      "channelDetailIds": [1, 2],
+      "objectId": "20",
+      "objectName": "2027届及之后毕业的在校生",
+      "projectId": 4,
+      "hireType": 1,
+      "hireTypeName": "校园招聘",
+      "hurry": false,
+      "tagList": [],
+      "jobSummary": ""
+    }
+  ]
+}

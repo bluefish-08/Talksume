@@ -1,0 +1,184 @@
+{
+  "items": [
+    {
+      "id": 22444,
+      "position": 783,
+      "positionTitle": "AI全栈工程师",
+      "positionFamily": 2,
+      "projectId": 1,
+      "bgs": "CDG CSIG IEG PCG TEG WXG ",
+      "workCities": "深圳总部 北京 上海 广州 成都 杭州 ",
+      "positionUrl": null,
+      "positionSource": "oa",
+      "projectName": "应届毕业生",
+      "recruitLabelName": "应届毕业生",
+      "groupTag": null,
+      "postId": "1282707398326592512"
+    },
+    {
+      "id": 21417,
+      "position": 101,
+      "positionTitle": "后台开发",
+      "positionFamily": 2,
+      "projectId": 2,
+      "bgs": "CDG CSIG IEG PCG TEG WXG S1 S2 ",
+      "workCities": "深圳总部 北京 上海 广州 成都 杭州 ",
+      "positionUrl": null,
+      "positionSource": "oa",
+      "projectName": "应届实习",
+      "recruitLabelName": "应届实习",
+      "groupTag": null,
+      "postId": "1200791473415778304"
+    }
+  ],
+  "details": [
+    {
+      "postId": "1282707398326592512",
+      "id": 783,
+      "tid": 2,
+      "tidName": "技术",
+      "fid": 75,
+      "oldId": 1,
+      "title": "AI全栈工程师",
+      "desc": "1、负责产品业务系统的全栈开发，涵盖前端交互、后端服务、数据存储等，参与需求分析、架构设计、开发交付与迭代优化；\n2、构建基于大模型的全链路应用系统，包括AI能力接入、Agent架构设计、RAG系统搭建、业务知识库建设等，实现端到端的AI应用落地；\n3、跟踪AI与全栈技术的前沿发展，关注行业前沿动态，并结合业务场景进行落地实践。",
+      "request": "1、熟练掌握主流前后端技术栈，具备扎实的计算机基础知识和全栈工程能力，能够完成需求分析、方案设计、开发交付及迭代优化的完整流程；\n2、熟练使用 AI 编程工具，能通过 AI 完成业务开发与应用搭建；\n3、了解大模型基本原理与推理部署方式，熟悉RAG技术、Agent原理（包括 Tool Use、Planning、Memory 等），有相关实践经验；\n4、 具备系统设计能力，了解分布式系统、微服务架构、消息队列、缓存等后端核心技术；\n5、 对 AI 前沿技术有浓厚兴趣，愿意主动探索AI在业务场景的创新应用； \n6、具备良好的沟通协作与问题解决能力，有较强的责任心，能高效配合团队完成项目交付。",
+      "workCity": "1,2,3,4,5,11",
+      "workCityList": ["深圳总部", "北京", "上海", "广州", "成都", "杭州"],
+      "recruitCity": "47",
+      "recruitCityList": ["远程面试"],
+      "ordering": 99,
+      "status": null,
+      "selectedWorks": "0",
+      "withFile": "0",
+      "ideptId": "128,193,194,260,263,204,270,207,143,208,82,274,83,84,86,279,88,216,89,90,218,282,219,220,285,222,224,288,225,291,228,293,166,168,172,173,302,303,176,304,305,177,181,246,253,254",
+      "intentionBGDList": [
+        {
+          "id": 953,
+          "title": "CDG企业发展事业群",
+          "showTitle": "CDG"
+        },
+        {
+          "id": 29294,
+          "title": "CSIG云与智慧产业事业群",
+          "showTitle": "CSIG"
+        },
+        {
+          "id": 956,
+          "title": "IEG互动娱乐事业群",
+          "showTitle": "IEG"
+        },
+        {
+          "id": 29292,
+          "title": "PCG平台与内容事业群",
+          "showTitle": "PCG"
+        },
+        {
+          "id": 958,
+          "title": "TEG技术工程事业群",
+          "showTitle": "TEG"
+        },
+        {
+          "id": 14129,
+          "title": "WXG微信事业群",
+          "showTitle": "WXG"
+        }
+      ],
+      "projectId": 1,
+      "projectName": "应届毕业生",
+      "recruitType": 1,
+      "recruitLabelName": "应届毕业生",
+      "introduction": " ",
+      "fileUrl": "",
+      "coverUrl": "",
+      "graduateBonus": "1、有全栈项目经验（如独立开发过 Web 应用 / SaaS 产品 / AI 应用平台等）；\n2、具备模型算法调优经验、个人项目、开源项目或成熟业务系统开发经验者优先；\n3、有RAG、主流Agent框架（如LangGraph / AutoGen 等）使用经验；\n4、有复杂Agent构建经验，能够系统性评估质量、持续改进效果、优化应用性能/成本；\n5、参与过开源项目或有技术博客、技术作品；\n6、在技术竞赛、开源社区中有突出表现。",
+      "internBonus": "",
+      "isQingyun": 0,
+      "techTagId": null,
+      "techTagName": null,
+      "topicDetail": "",
+      "topicRequirement": "",
+      "projectInternDirections": null,
+      "subDirectionId": "",
+      "subDirectionDtos": null
+    },
+    {
+      "postId": "1200791473415778304",
+      "id": 101,
+      "tid": 2,
+      "tidName": "技术",
+      "fid": 75,
+      "oldId": 1,
+      "title": "后台开发",
+      "desc": "负责实现和优化公司的产品功能，以及构建和维护关键服务与基础设施。\n1、深入理解业务需求和产品设计，高效地实现并优化产品功能；\n2、持续优化架构，提升关键服务和基础设施的稳定性与可用性，关注AI在智能运维、故障预测等领域的应用；\n3、通过引入AI编程工具和自动化流程，显著提升团队的开发效率和代码质量；\n4、通过与产品和前端工程师的紧密合作，共同推进产品的迭代与优化，参与AI能力在后端的集成与落地；\n5、对线上问题进行快速定位并解决，探索利用AI进行智能故障诊断和性能优化；\n6、参与新技术的研究和探索，特别关注AI/大模型技术在后端架构中的应用，为团队的技术进步和产品创新提供支持。",
+      "request": "AI应用技能：\n善于借助AI工具拆解复杂问题、探索解决方案，并能对AI的输出进行高质量判断，具备人机协同的工作意识和习惯。\n\n专业能力：\n1、扎实的编程能力，熟练掌握C/C++/Java/Go等其中一门开发语言；\n2、TCP/UDP网络协议及相关编程、进程间通讯编程；专业软件知识，包括算法、操作系统、软件工程、设计模式、数据结构、数据库系统、网络安全等。\n3、有一定了解的：Python、Shell等脚本语言；MySQL及SQL语言、编程；NoSQL, Key-value存储原理。",
+      "workCity": "1,2,3,4,5,11",
+      "workCityList": ["深圳总部", "北京", "上海", "广州", "成都", "杭州"],
+      "recruitCity": "5,47",
+      "recruitCityList": ["上海", "远程面试"],
+      "ordering": 10,
+      "status": null,
+      "selectedWorks": "0",
+      "withFile": "0",
+      "ideptId": "128,260,262,143,274,276,278,279,282,285,288,289,290,291,164,292,165,166,167,168,301,173,302,303,176,304,305,181,184,57,58,193,194,204,207,82,83,85,213,215,88,216,218,91,219,92,220,224,228,230,243,246,248,253,254",
+      "intentionBGDList": [
+        {
+          "id": 953,
+          "title": "CDG企业发展事业群",
+          "showTitle": "CDG"
+        },
+        {
+          "id": 29294,
+          "title": "CSIG云与智慧产业事业群",
+          "showTitle": "CSIG"
+        },
+        {
+          "id": 956,
+          "title": "IEG互动娱乐事业群",
+          "showTitle": "IEG"
+        },
+        {
+          "id": 29292,
+          "title": "PCG平台与内容事业群",
+          "showTitle": "PCG"
+        },
+        {
+          "id": 958,
+          "title": "TEG技术工程事业群",
+          "showTitle": "TEG"
+        },
+        {
+          "id": 14129,
+          "title": "WXG微信事业群",
+          "showTitle": "WXG"
+        },
+        {
+          "id": 78,
+          "title": "S1职能系统－职能线",
+          "showTitle": "S1"
+        },
+        {
+          "id": 2233,
+          "title": "S2职能系统－财经线",
+          "showTitle": "S2"
+        }
+      ],
+      "projectId": 2,
+      "projectName": "应届实习",
+      "recruitType": 2,
+      "recruitLabelName": "应届实习",
+      "introduction": "你是腾讯产品「背后」的英雄， \n打造出更稳定安全、高效可靠的后台支撑体系， \n守护海量用户的笑容！",
+      "fileUrl": "",
+      "coverUrl": "",
+      "graduateBonus": "1、分布式系统设计与开发、负载均衡技术，系统容灾设计，高可用系统等知识；\n2、对云原生相关技术有所了解；\n3、有利用AI工具完成实际项目的经验；\n4、了解大模型API调用和AI能力集成的基本方法。",
+      "internBonus": "1、分布式系统设计与开发、负载均衡技术，系统容灾设计，高可用系统等知识；\n2、对云原生相关技术有所了解。",
+      "isQingyun": 0,
+      "techTagId": null,
+      "techTagName": null,
+      "topicDetail": "",
+      "topicRequirement": "",
+      "projectInternDirections": null,
+      "subDirectionId": "",
+      "subDirectionDtos": null
+    }
+  ]
+}

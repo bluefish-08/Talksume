@@ -1,0 +1,220 @@
+{
+  "items": [
+    {
+      "jobUnionId": "4697320043",
+      "name": "AI全栈工程师",
+      "projectId": null,
+      "projectName": null,
+      "jobType": "1",
+      "jobSpecialCode": "1",
+      "jobSource": "2",
+      "jobStatus": "000",
+      "jobFamily": "技术类",
+      "jobFamilyGroup": "软件",
+      "cityList": [
+        {
+          "code": null,
+          "name": "北京市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "上海市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "成都市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "深圳市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        }
+      ],
+      "workYear": null,
+      "department": [],
+      "desc": null,
+      "departmentIntro": null,
+      "jobDuty": "岗位职责\n1. 参与 AI 应用的全栈开发：负责 AI 产品功能的前端界面（Web/小程序）与后端服务的设计与实现，保障高可用与用户体验；\n2. 大模型能力工程化：参与LLM 应用架构设计与开发，包括 Prompt 模板工程、RAG检索管线搭建、Agent 工作流编排等；\n3. 模型效果调优与评估：参与模型输出的质量评估，分析 Bad Case，优化提示词策略与检索链路，提升 AI 回答的准确率与可用性；\n4. AI 工程基础设施建设：参与模型服务化部署、推理性能优化、流式响应设计，构建高效稳定的 AI 应用底座；\n5. 技术探索与落地：跟踪前沿AI 技术动态，参与从 0 到 1 的 AI 功能创新验证。",
+      "jobRequirement": "岗位要求\n1. 本科及以上学历，计算机科学、软件工程或相关专业；\n2. 扎实的编程基础：熟练掌握至少一门编程语言（Python / Java / TypeScript / Go 等），具备良好的代码习惯；\n3. 基本功扎实：了解前端框架（React / Vue 等）或后端框架（Spring / Django / Express 等）之一，具备完整 Web 项目开发经验；\n4. AI 素养与好奇心：熟悉大模型基本原理与应用范式，有 ChatGPT / Claude 等工具的深度使用经验，理解 Prompt Engineering 基本技巧；\n5. 学习与解决问题能力：对新技术保持敏感，能快速学习并应用 AI 领域新知识，具备良好的逻辑思维与沟通协作能力。\n6. 有独立完成AI应用（Bot/Agent/自动化工作流）从0到1上线的经历者优先",
+      "precedence": null,
+      "highLight": null,
+      "otherInfo": null,
+      "firstPostTime": null,
+      "refreshTime": 1786960999000,
+      "tag": [1],
+      "expiredTime": null,
+      "socialRecommendJob": null
+    },
+    {
+      "jobUnionId": "4887607615",
+      "name": "市场营销实习生",
+      "projectId": null,
+      "projectName": null,
+      "jobType": "2",
+      "jobSpecialCode": "6",
+      "jobSource": "1",
+      "jobStatus": "000",
+      "jobFamily": "市场营销类",
+      "jobFamilyGroup": "营销",
+      "cityList": [
+        {
+          "code": null,
+          "name": "北京市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        }
+      ],
+      "workYear": null,
+      "department": [
+        {
+          "code": null,
+          "name": "核心本地商业-美团平台",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        }
+      ],
+      "desc": null,
+      "departmentIntro": null,
+      "jobDuty": "1、大型项目执行：参与全国核心城市营销项目的全链路落地，包括投放执行、商圈/商家物料管理、线下活动策划与执行等；\n2、供应商与物料管理：对接供应商，跟进物料设计、制作及传播执行，确保交付质量与时效；\n3、创意内容策划与传播支持：协助宣传内容策划，监测社交媒体热点，输出借势建议；\n4、数据分析与整理：负责日常数据汇总、行业分析，为营销决策提供数据支撑；\n5、跨部门沟通协作：对接内部项目组及跨部门资源，推进执行细节，保障项目顺利落地；\n6、日常运营支持：支持部门日常事务，包括文档整理、会议组织及跨部门对接等。",
+      "jobRequirement": "1、本科及以上学历，市场营销、品牌、设计等相关专业优先，非相关专业但有营销实践/作品集亦可；\n2、熟悉主流社交媒体平台（微信、微博、抖音、小红书等），具备敏锐的热点捕捉能力；\n3、思维活跃、洞察力强，具备一定的文案及设计功底；\n4、工作积极主动、执行力强，具备良好的沟通协调能力及团队合作意识；\n5、自驱力强，责任心强，事事有回应，能够高效配合项目推进；\n6、有互联网/AI产品/热点营销实习经验者优先。",
+      "precedence": null,
+      "highLight": "1、团队氛围：汇聚行业资深品牌人才，氛围开放友好，情绪价值给满；\n2、项目质量：有机会参与全国性大规模品牌营销战役，项目含金量高；\n3、成长空间：项目机会丰富，成长路径清晰，能力快速提升；\n4、实战经验：深度参与从策略到执行的全链路营销实战，积累核心能力。",
+      "otherInfo": null,
+      "firstPostTime": null,
+      "refreshTime": 1793606684000,
+      "tag": null,
+      "expiredTime": null,
+      "socialRecommendJob": null
+    },
+    {
+      "jobUnionId": "4885648910",
+      "name": "蔬菜区域采购",
+      "projectId": null,
+      "projectName": null,
+      "jobType": "3",
+      "jobSpecialCode": "5",
+      "jobSource": "1",
+      "jobStatus": "000",
+      "jobFamily": "零售类",
+      "jobFamilyGroup": "采购",
+      "cityList": [
+        {
+          "code": null,
+          "name": "北京市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "武汉市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "广州市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "成都市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "苏州市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        },
+        {
+          "code": null,
+          "name": "深圳市",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        }
+      ],
+      "workYear": null,
+      "department": [
+        {
+          "code": null,
+          "name": "食杂零售-快驴事业部",
+          "children": null,
+          "sort": null,
+          "subCode": null,
+          "mapping": null,
+          "outerCode": null,
+          "bgNode": false
+        }
+      ],
+      "desc": null,
+      "departmentIntro": null,
+      "jobDuty": "1.根据产地轮转制定并落地区域内各城市的采买计划，负责茄果/叶菜品类的寻源、议价、质量与履约管理。\n2.负责品类货盘策略销售策略的制定。\n3.对所负责的品类的规模增长以及盈利提升负责。",
+      "jobRequirement": "1.5年以上的产地采买经验，有多产区资源的优先。\n2.有较好的沟通谈判能力。\n3.正直诚信，吃苦耐劳。\n4.掌握基本的AI工具，使用工具提升工作流程效率。",
+      "precedence": null,
+      "highLight": "1.全面供应链视角，业务发挥空间大，团队氛围好；\n2.BU级重点项目，能从全链路视角看业务发展。",
+      "otherInfo": null,
+      "firstPostTime": null,
+      "refreshTime": 1793617719000,
+      "tag": null,
+      "expiredTime": null,
+      "socialRecommendJob": null
+    }
+  ]
+}

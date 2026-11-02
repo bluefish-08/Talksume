@@ -1,0 +1,18 @@
+{
+  "name": "@talksume/jobs-ingest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "fetch": "node src/cli.ts",
+    "seed": "node src/seed-cli.ts",
+    "stats": "node src/stats-cli.ts"
+  },
+  "dependencies": {
+    "@talksume/core": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
