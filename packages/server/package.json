@@ -17,6 +17,7 @@
     "@talksume/resume-render": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.7",
+    "ioredis": "^6.0.0",
     "zod": "^4.6.7"
   }
 }

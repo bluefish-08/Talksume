@@ -3,6 +3,9 @@ import type { ApplicationStatus, StatusChange } from "./application.ts";
 export type Edition = "local" | "cloud";
 
 export interface Notification {
+  /** 持久化后才有；推送给前端时带上，便于去重与标记已读。 */
+  id?: string;
+  createdAt?: string;
   userId: string;
   kind: "status_changed" | "follow_up" | "interview_soon";
   title: string;

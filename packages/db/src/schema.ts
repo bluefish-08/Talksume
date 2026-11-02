@@ -20,6 +20,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   vector,
 } from "drizzle-orm/pg-core";
@@ -150,11 +151,13 @@ export const jobs = pgTable(
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
     status: text("status").$type<"open" | "closed">().notNull().default("open"),
+    ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     unique("jobs_source_source_job_id_key").on(t.source, t.sourceJobId),
     index("jobs_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
     index("jobs_status_idx").on(t.status),
+    index("jobs_owner_idx").on(t.ownerId),
     check("jobs_status_check", sql`${t.status} in ('open', 'closed')`),
   ],
 );
@@ -257,7 +260,13 @@ export const notifications = pgTable(
     readAt: timestamp("read_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [index("notifications_user_idx").on(t.userId, t.readAt, t.createdAt)],
+  (t) => [
+    index("notifications_user_idx").on(t.userId, t.readAt, t.createdAt),
+    // 提醒类通知每个对象只发一次；状态变化通知每次都发
+    uniqueIndex("notifications_reminder_once_idx")
+      .on(t.userId, t.kind, t.refId)
+      .where(sql`${t.kind} <> 'status_changed'`),
+  ],
 );
 
 export const llmCallLogs = pgTable(

@@ -141,6 +141,29 @@ describe("ApplicationRepo.transition", () => {
     ]);
   });
 
+  it("每次迁移同事务写一条候选人通知，非法迁移不写", async () => {
+    const app = await seedApplication();
+    const repo = new ApplicationRepo(handle.db);
+
+    await repo.transition(app.id, "applied", "system");
+    const { notification } = await repo.transitionAndNotify(app.id, "viewed", "hr", undefined, {
+      payload: { note: "已阅" },
+    });
+    await expect(repo.transition(app.id, "applied", "hr")).rejects.toBeInstanceOf(InvalidTransitionError);
+
+    const rows = await handle.db
+      .select()
+      .from(schema.notifications)
+      .where(eq(schema.notifications.refId, app.id))
+      .orderBy(schema.notifications.createdAt);
+    expect(rows.map((r) => r.title)).toEqual([
+      "「示例科技·后端实习生」状态更新为：已投递",
+      "「示例科技·后端实习生」状态更新为：已查看",
+    ]);
+    expect(rows.every((r) => r.userId === app.userId && r.kind === "status_changed")).toBe(true);
+    expect(notification.id).toBe(rows[1]?.id);
+  });
+
   it("非法迁移抛错且不留下事件", async () => {
     const app = await seedApplication();
     const repo = new ApplicationRepo(handle.db);

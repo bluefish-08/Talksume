@@ -1,13 +1,15 @@
 import {
   type ApplicationOutcome,
   type ApplicationStatus,
+  type Notification,
   type StatusChange,
   type StatusSource,
+  statusChangeTitle,
   transition,
 } from "@talksume/core";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "./client.ts";
-import { applicationEvents, applications } from "./schema.ts";
+import { applicationEvents, applications, jobs, notifications } from "./schema.ts";
 
 export class ApplicationNotFoundError extends Error {
   readonly applicationId: string;
@@ -37,6 +39,13 @@ export class ConcurrentTransitionError extends Error {
 export interface TransitionOptions {
   /** 调用方上次看到的状态；与库中当前状态不一致时抛 ConcurrentTransitionError。 */
   expectedFrom?: ApplicationStatus;
+  /** 写入事件的附加信息，如 HR 备注、面试时间。 */
+  payload?: Record<string, unknown>;
+}
+
+export interface TransitionResult {
+  change: StatusChange;
+  notification: Notification & { id: string; createdAt: string };
 }
 
 export class ApplicationRepo {
@@ -53,10 +62,27 @@ export class ApplicationRepo {
     outcome?: ApplicationOutcome,
     options: TransitionOptions = {},
   ): Promise<StatusChange> {
+    return (await this.transitionAndNotify(applicationId, to, source, outcome, options)).change;
+  }
+
+  /** 状态、事件、候选人通知在同一事务里落库；调用方在提交后再把返回的通知推给在线连接。 */
+  async transitionAndNotify(
+    applicationId: string,
+    to: ApplicationStatus,
+    source: StatusSource,
+    outcome?: ApplicationOutcome,
+    options: TransitionOptions = {},
+  ): Promise<TransitionResult> {
     return this.#db.transaction(async (tx) => {
       const [current] = await tx
-        .select({ status: applications.status })
+        .select({
+          status: applications.status,
+          userId: applications.userId,
+          company: jobs.company,
+          jobTitle: jobs.title,
+        })
         .from(applications)
+        .innerJoin(jobs, eq(jobs.id, applications.jobId))
         .where(eq(applications.id, applicationId));
       if (!current) throw new ApplicationNotFoundError(applicationId);
 
@@ -80,9 +106,27 @@ export class ApplicationRepo {
         toStatus: change.to,
         outcome: change.outcome ?? null,
         source: change.source,
+        payload: options.payload ?? {},
         createdAt: change.at,
       });
-      return change;
+
+      const title = statusChangeTitle(current.company, current.jobTitle, change.to, change.outcome);
+      const [row] = await tx
+        .insert(notifications)
+        .values({ userId: current.userId, kind: "status_changed", title, refId: applicationId })
+        .returning();
+      if (!row) throw new Error("notification insert failed");
+      return {
+        change,
+        notification: {
+          id: row.id,
+          createdAt: row.createdAt.toISOString(),
+          userId: row.userId,
+          kind: "status_changed",
+          title,
+          refId: applicationId,
+        },
+      };
     });
   }
 }
