@@ -33,10 +33,11 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
   });
 
   app.get("/api/v1/resume", async (req) => {
-    const { profile, version } = await loadProfile(db, req.userId);
+    const { profile, version, updatedAt } = await loadProfile(db, req.userId);
     return {
       resume: await polishedResume(db, req.userId, profileToResume(profile)),
       profileVersion: version,
+      updatedAt: updatedAt?.toISOString() ?? null,
     };
   });
 

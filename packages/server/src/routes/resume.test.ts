@@ -51,12 +51,14 @@ describe("画像与简历预览", () => {
     expect(profileRes.completeness.score).toBe(0);
     const resume = (await app.inject({ method: "GET", url: "/api/v1/resume" })).json();
     expect(resume.resume.sections).toEqual([]);
+    expect(resume.updatedAt).toBeNull();
   });
 
   it("按当前用户返回画像与由它生成的简历", async () => {
     await seedProfile();
     const resume = (await app.inject({ method: "GET", url: "/api/v1/resume", headers })).json();
     expect(resume.profileVersion).toBe(1);
+    expect(Number.isNaN(Date.parse(resume.updatedAt))).toBe(false);
     expect(resume.resume.basics).toMatchObject({ name: "李明", contacts: ["liming@example.com"] });
     expect(resume.resume.sections.map((s: { kind: string }) => s.kind)).toEqual(["education", "skills"]);
   });

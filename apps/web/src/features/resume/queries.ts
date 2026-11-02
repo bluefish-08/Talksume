@@ -36,7 +36,8 @@ export function useFacts() {
 export function useResume() {
   return useQuery({
     queryKey: qk.resume,
-    queryFn: () => api.get<{ resume: ResumeContent; profileVersion: number }>("/api/v1/resume"),
+    queryFn: () =>
+      api.get<{ resume: ResumeContent; profileVersion: number; updatedAt?: string | null }>("/api/v1/resume"),
   });
 }
 
@@ -85,6 +86,9 @@ export function useRecommendStyle() {
 }
 
 export type ExportFormat = "pdf" | "docx";
+
+/** 简历操作按钮的尺寸：对话页简历栏用 sm，简历页页头用 md。 */
+export type TriggerSize = "sm" | "md";
 
 function filenameOf(header: string | null, fallback: string): string {
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header ?? "")?.[1];

@@ -1,5 +1,5 @@
 import { FileText } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useConversations } from "../../api/queries.ts";
 import { SECTION_LABELS } from "../../api/types.ts";
@@ -12,8 +12,7 @@ import { MessageList } from "./MessageList.tsx";
 import { ResumePane } from "./ResumePane.tsx";
 import type { ConversationDetail } from "./types.ts";
 import { useChatSession } from "./useChatSession.ts";
-
-const NEAR_BOTTOM_PX = 120;
+import { useStickToBottom } from "./useStickToBottom.ts";
 
 export function ChatView({ detail }: { detail: ConversationDetail }) {
   const navigate = useNavigate();
@@ -25,8 +24,6 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const conversations = useConversations();
   const [draft, setDraft] = useState("");
   const [paneOpen, setPaneOpen] = useState(false);
-  const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
   const input = useRef<HTMLTextAreaElement>(null);
   const initialSent = useRef(false);
 
@@ -41,11 +38,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
 
   useEffect(() => input.current?.focus(), []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 消息或待确认项变化时才需要判断是否贴底
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [messages, session.conflicts]);
+  const scroller = useStickToBottom(messages, session.conflicts);
 
   const userIds = useMemo(() => messages.filter((m) => m.role === "user").map((m) => m.serverId), [messages]);
   const roundOf = (messageId: string) => {
@@ -59,7 +52,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const progress = session.focus ? `${SECTION_LABELS[session.focus]} · 第 ${asked} 问` : "信息已基本完整";
 
   const submit = () => {
-    stick.current = true;
+    scroller.pin();
     if (send(draft)) setDraft("");
   };
 
@@ -76,26 +69,19 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           </button>
         </header>
 
-        <div
-          ref={scroller}
-          className={styles.scroll}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-          }}
-        >
+        <div ref={scroller.ref} className={styles.scroll} onScroll={scroller.onScroll}>
           <MessageList
             messages={messages}
             conflicts={session.conflicts}
             streaming={session.streaming}
             resolving={session.resolving}
             onRetry={(key) => {
-              stick.current = true;
+              scroller.pin();
               session.retry(key);
             }}
             onResolve={(c, choice) => void session.resolveConflict(c, choice)}
             onQuickReply={(text) => {
-              stick.current = true;
+              scroller.pin();
               session.send(text);
             }}
           />

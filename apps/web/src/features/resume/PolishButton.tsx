@@ -6,8 +6,9 @@ import { useToast } from "../../components/Toast.tsx";
 import styles from "./PolishButton.module.css";
 import { PolishReview } from "./PolishReview.tsx";
 import { usePolishActions, usePolishState } from "./polishQueries.ts";
+import type { TriggerSize } from "./queries.ts";
 
-export function PolishButton() {
+export function PolishButton({ size = "sm" }: { size?: TriggerSize }) {
   const state = usePolishState();
   const { polish } = usePolishActions();
   const toast = useToast();
@@ -55,7 +56,7 @@ export function PolishButton() {
     <>
       <button
         type="button"
-        className={styles.trigger}
+        className={size === "md" ? `${styles.trigger} ${styles.md}` : styles.trigger}
         disabled={!state.data || !!disabledReason}
         title={
           disabledReason ??

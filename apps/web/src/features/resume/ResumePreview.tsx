@@ -1,6 +1,6 @@
 import { DEFAULT_RESUME_STYLE, type ResumeStyle } from "@talksume/core";
 import { renderFragment } from "@talksume/resume-render/browser";
-import { useId, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { ResumeContent } from "../../api/types.ts";
 import styles from "./ResumePreview.module.css";
 
@@ -19,6 +19,8 @@ interface Props {
   highlightTexts?: ReadonlySet<string>;
   /** factId → 原话，用于悬停溯源。 */
   facts?: Readonly<Record<string, FactQuote>>;
+  /** 高亮变化时把第一处高亮滚进视野。 */
+  revealHighlight?: boolean;
   /** 还没内容的分区标题，渲染为浅色占位。 */
   placeholders?: readonly string[];
   /** 缩略图只看版式，不加高亮、溯源和占位。 */
@@ -161,6 +163,7 @@ export function ResumePreview({
   resume,
   resumeStyle = DEFAULT_RESUME_STYLE,
   highlightTexts,
+  revealHighlight = false,
   facts,
   placeholders = [],
   decorated = true,
@@ -184,6 +187,11 @@ export function ResumePreview({
     root.innerHTML = `<style>${fragment.css}${PREVIEW_CSS}</style><div class="page" style="padding: ${fragment.margin}">${fragment.html}</div>`;
     if (decorated) decorate(root, resume, { highlightTexts, facts, placeholders, idPrefix });
   }, [fragment, decorated, highlightKey, factsKey, placeholdersKey, idPrefix]);
+
+  useEffect(() => {
+    if (!revealHighlight || !highlightKey) return;
+    host.current?.shadowRoot?.querySelector(".hl")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [revealHighlight, highlightKey]);
 
   useLayoutEffect(() => {
     const node = host.current;

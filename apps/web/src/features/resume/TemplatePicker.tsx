@@ -15,6 +15,7 @@ import type { ResumeContent } from "../../api/types.ts";
 import { Spinner } from "../../components/ui.tsx";
 import {
   type StyleRecommendation,
+  type TriggerSize,
   useRecommendStyle,
   useResumeStyle,
   useSaveResumeStyle,
@@ -22,7 +23,13 @@ import {
 import { ResumePreview } from "./ResumePreview.tsx";
 import styles from "./TemplatePicker.module.css";
 
-export function TemplatePicker({ resume }: { resume: ResumeContent | undefined }) {
+export function TemplatePicker({
+  resume,
+  size = "sm",
+}: {
+  resume: ResumeContent | undefined;
+  size?: TriggerSize;
+}) {
   const [open, setOpen] = useState(false);
   const [advice, setAdvice] = useState<StyleRecommendation | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -66,7 +73,7 @@ export function TemplatePicker({ resume }: { resume: ResumeContent | undefined }
     <div className={styles.root} ref={root}>
       <button
         type="button"
-        className={styles.trigger}
+        className={size === "md" ? `${styles.trigger} ${styles.md}` : styles.trigger}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}

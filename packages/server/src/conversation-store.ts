@@ -63,7 +63,11 @@ function intakeOf(state: IntakeState) {
 
 export async function loadProfile(db: Db, userId: string) {
   const [row] = await db.select().from(profiles).where(eq(profiles.userId, userId));
-  return { profile: row ? Profile.parse(row.data) : Profile.parse({}), version: row?.version ?? 0 };
+  return {
+    profile: row ? Profile.parse(row.data) : Profile.parse({}),
+    version: row?.version ?? 0,
+    updatedAt: row?.updatedAt ?? null,
+  };
 }
 
 export async function loadMessages(db: Db, conversationId: string): Promise<StoredMessage[]> {

@@ -2,14 +2,14 @@ import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../components/ui.tsx";
 import styles from "./ExportMenu.module.css";
-import { type ExportFormat, useExportResume } from "./queries.ts";
+import { type ExportFormat, type TriggerSize, useExportResume } from "./queries.ts";
 
 const OPTIONS: { format: ExportFormat; label: string }[] = [
   { format: "pdf", label: "PDF（.pdf）" },
   { format: "docx", label: "Word（.docx）" },
 ];
 
-export function ExportMenu() {
+export function ExportMenu({ size = "sm" }: { size?: TriggerSize }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const { exportAs, busy } = useExportResume();
@@ -34,7 +34,7 @@ export function ExportMenu() {
     <div className={styles.root} ref={root}>
       <button
         type="button"
-        className={styles.trigger}
+        className={size === "md" ? `${styles.trigger} ${styles.md}` : styles.trigger}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={busy !== null}
