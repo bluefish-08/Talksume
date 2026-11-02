@@ -1,18 +1,18 @@
 import type { Job } from "@talksume/core";
 import { type Db, JobRepo, schema } from "@talksume/db";
 import { and, eq, sql } from "drizzle-orm";
-import { USER_IMPORT_SOURCE } from "./jobs-db.ts";
-
-const PROTECTED_SOURCES = new Set(["hr_workspace", USER_IMPORT_SOURCE]);
+import { type DedupeResult, dedupeJobs, PROTECTED_SOURCES } from "./dedupe.ts";
 
 export interface SyncResult {
   upserted: number;
   closed: Record<string, number>;
+  dedupe: DedupeResult;
 }
 
 /**
  * 把抓取结果同步进岗位库：upsert 并重新打开回到官网的岗位；
  * `online` 给出各来源仍在招的 sourceJobId（含因限量没入库的），不在其中的同来源岗位标为 closed，不删除。
+ * 最后重算重复发布的归并，upsert 会把规范岗位的城市写回官网原值。
  */
 export async function syncCrawledJobs(
   db: Db,
@@ -40,5 +40,5 @@ export async function syncCrawledJobs(
       .returning({ id: t.id });
     closed[source] = rows.length;
   }
-  return { upserted: jobs.length, closed };
+  return { upserted: jobs.length, closed, dedupe: await dedupeJobs(db) };
 }

@@ -7,6 +7,7 @@ import type { Embedder } from "./embedder.ts";
 import { applyHardFilters, FILTER_HINTS } from "./filters.ts";
 import { extractJobFields } from "./import.ts";
 import {
+  canonicalJob,
   type JobDetail,
   type JobSearch,
   type JobSummary,
@@ -268,7 +269,10 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
 
   async function refresh(userId: string, override?: Profile): Promise<RefreshResult> {
     const { profile, weights } = await loadProfile(userId, override);
-    const [jobs, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
+    const [jobs, feedback] = await Promise.all([
+      loadVisibleJobs(db, userId, { canonicalOnly: true }),
+      loadFeedback(userId),
+    ]);
 
     let vectors: Map<string, number> | undefined;
     if (options.embedder) {
@@ -312,7 +316,7 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
       eq(m.userId, userId),
       eq(schema.jobs.status, "open"),
       visibleTo(userId),
-      jobId ? eq(m.jobId, jobId) : undefined,
+      jobId ? eq(m.jobId, jobId) : canonicalJob,
     );
     const [count] = await db
       .select({ n: sql<number>`count(*)::int` })

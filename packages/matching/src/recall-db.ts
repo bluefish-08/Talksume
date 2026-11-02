@@ -2,7 +2,7 @@ import type { Profile } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
 import { and, cosineDistance, eq, isNull, sql } from "drizzle-orm";
 import type { Embedder } from "./embedder.ts";
-import { visibleTo } from "./jobs-db.ts";
+import { canonicalJob, visibleTo } from "./jobs-db.ts";
 import { profileQueryText } from "./pipeline.ts";
 
 const t = schema.jobs;
@@ -48,7 +48,7 @@ export async function vectorScores(
   const rows = await db
     .select({ id: t.id, sim: sql<number>`1 - (${distance})` })
     .from(t)
-    .where(and(eq(t.status, "open"), visibleTo(userId), sql`${t.embedding} is not null`))
+    .where(and(eq(t.status, "open"), canonicalJob, visibleTo(userId), sql`${t.embedding} is not null`))
     .orderBy(distance)
     .limit(limit);
   // 零向量的余弦是 NaN，这类岗位当作没有向量

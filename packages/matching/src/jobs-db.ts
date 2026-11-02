@@ -1,10 +1,10 @@
 import type { Job } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
-import { and, eq, getTableColumns, or, type SQL, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, isNull, or, type SQL, sql } from "drizzle-orm";
 
 export const USER_IMPORT_SOURCE = "user_import";
 
-const { embedding: _embedding, ...jobColumns } = getTableColumns(schema.jobs);
+const { embedding: _embedding, duplicateOf: _duplicateOf, ...jobColumns } = getTableColumns(schema.jobs);
 
 export { jobColumns };
 
@@ -21,6 +21,9 @@ export function visibleTo(userId: string): SQL {
     sql`${schema.jobs.sourceJobId} like ${`${userId}:%`}`,
   ) as SQL;
 }
+
+/** 重复发布只留规范岗位；按 id 打开时不加这个条件，旧 id 仍能访问。 */
+export const canonicalJob: SQL = isNull(schema.jobs.duplicateOf);
 
 export function rowToJob(row: SelectedRow): Job {
   return {
@@ -42,8 +45,12 @@ export function rowToJob(row: SelectedRow): Job {
   };
 }
 
-export async function loadVisibleJobs(db: Db, userId: string): Promise<{ job: Job; status: string }[]> {
-  const rows = await selectJobs(db, visibleTo(userId));
+export async function loadVisibleJobs(
+  db: Db,
+  userId: string,
+  opts: { canonicalOnly?: boolean } = {},
+): Promise<{ job: Job; status: string }[]> {
+  const rows = await selectJobs(db, and(visibleTo(userId), opts.canonicalOnly ? canonicalJob : undefined));
   return rows.map((r) => ({ job: rowToJob(r), status: r.status }));
 }
 
@@ -113,7 +120,7 @@ export async function searchJobs(
   search: JobSearch,
 ): Promise<{ items: JobSummary[]; total: number }> {
   const t = schema.jobs;
-  const conds: (SQL | undefined)[] = [eq(t.status, "open"), visibleTo(userId)];
+  const conds: (SQL | undefined)[] = [eq(t.status, "open"), canonicalJob, visibleTo(userId)];
   if (search.city) conds.push(sql`${search.city} = any(${t.cities})`);
   if (search.jobType) conds.push(eq(t.jobType, search.jobType));
   if (search.company) conds.push(sql`${t.company} ilike ${likePattern(search.company)}`);

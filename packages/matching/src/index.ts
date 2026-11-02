@@ -1,3 +1,4 @@
+export * from "./dedupe.ts";
 export * from "./dimensions.ts";
 export * from "./embedder.ts";
 export * from "./filters.ts";

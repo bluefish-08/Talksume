@@ -50,7 +50,9 @@ try {
   await migrate(handle);
   if (jobs.length > 0) {
     const r = await syncCrawledJobs(handle.db, jobs, values["close-missing"] ? online : undefined);
-    console.error(`已写入 ${r.upserted} 条岗位；标为下线 ${JSON.stringify(r.closed)}`);
+    console.error(
+      `已写入 ${r.upserted} 条岗位；标为下线 ${JSON.stringify(r.closed)}；重复发布 ${r.dedupe.groups} 组 ${r.dedupe.duplicates} 条`,
+    );
   }
   const embedder = values.embed ? createEmbedderFromEnv() : undefined;
   if (values.embed && !embedder) console.error("未配置 EMBEDDING_BASE_URL / EMBEDDING_MODEL，跳过向量");

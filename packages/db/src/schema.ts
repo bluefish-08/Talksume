@@ -12,6 +12,7 @@ import {
 } from "@talksume/core";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   check,
   index,
   integer,
@@ -218,12 +219,14 @@ export const jobs = pgTable(
     embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
     status: text("status").$type<"open" | "closed">().notNull().default("open"),
     ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+    duplicateOf: text("duplicate_of").references((): AnyPgColumn => jobs.id, { onDelete: "set null" }),
   },
   (t) => [
     unique("jobs_source_source_job_id_key").on(t.source, t.sourceJobId),
     index("jobs_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
     index("jobs_status_idx").on(t.status),
     index("jobs_owner_idx").on(t.ownerId),
+    index("jobs_duplicate_of_idx").on(t.duplicateOf),
     index("jobs_open_recent_idx")
       .on(sql`coalesce(${t.postedAt}, ${t.fetchedAt})`, t.id)
       .where(sql`${t.status} = 'open'`),

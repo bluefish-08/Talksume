@@ -3,6 +3,7 @@ import { type Db, schema } from "@talksume/db";
 import {
   applyHardFilters,
   buildScoreContext,
+  canonicalJob,
   createMatchingService,
   DEGREE_LABEL,
   DIMENSIONS,
@@ -63,7 +64,7 @@ const searchText = sql`(${t.title} || ' ' || ${t.company} || ' ' || ${t.jdText})
 const degreeOf = sql<string>`coalesce(${t.degree}, 'any')`;
 
 function where(userId: string, f: Filters, omit?: Facet): SQL | undefined {
-  const conds: (SQL | undefined)[] = [eq(t.status, "open"), visibleTo(userId)];
+  const conds: (SQL | undefined)[] = [eq(t.status, "open"), canonicalJob, visibleTo(userId)];
   if (omit !== "company" && f.company.length) conds.push(inArray(t.company, f.company));
   if (omit !== "city" && f.city.length) conds.push(arrayOverlaps(t.cities, f.city));
   if (omit !== "type" && f.type.length) conds.push(inArray(t.jobType, f.type));

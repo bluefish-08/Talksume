@@ -27,7 +27,7 @@ try {
   const profile = Profile.parse(row.data);
 
   let t = performance.now();
-  const jobs = await loadVisibleJobs(handle.db, row.userId);
+  const jobs = await loadVisibleJobs(handle.db, row.userId, { canonicalOnly: true });
   console.log(`加载岗位 ${jobs.length} 条，${ms(t)}`);
 
   const modes: [string, Map<string, number> | undefined][] = [["BM25", undefined]];

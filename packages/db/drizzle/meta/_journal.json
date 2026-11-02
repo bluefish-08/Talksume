@@ -64,6 +64,13 @@
       "when": 1793637082002,
       "tag": "0008_jobs_browse",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793639150679,
+      "tag": "0009_jobs_duplicate_of",
+      "breakpoints": true
     }
   ]
 }
