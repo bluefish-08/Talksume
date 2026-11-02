@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
-import { ApiError, api } from "../../api/client.ts";
+import { ApiError } from "../../api/client.ts";
 import { qk } from "../../api/queries.ts";
 import { postSse } from "../../api/sse.ts";
 import type { Completeness, ProfileSection, ResumeContent } from "../../api/types.ts";
@@ -14,9 +14,6 @@ interface Frame {
   data: Record<string, unknown>;
 }
 
-const STOPPED = "已停止，这一句没有保存";
-const LOST = "连接中断了，这一句没有保存";
-
 let seq = 0;
 const nextKey = () => `m${++seq}`;
 
@@ -27,7 +24,8 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     role: m.role,
     text: m.content,
     asks: [],
-    changes: [],
+    changes: m.changes ?? [],
+    quickReplies: m.quickReplies ?? [],
     state: "done",
   }));
 }
@@ -67,26 +65,32 @@ export function useChatSession(detail: ConversationDetail) {
     void client.invalidateQueries({ queryKey: factsKey });
   }, [client]);
 
-  const run = useCallback(
-    async (userKey: string, content: string) => {
+  /** 发消息与解决矛盾共用的一轮流式回复：userKey 有值表示由这条用户消息触发。 */
+  const stream = useCallback(
+    async (path: string, body: unknown, userKey?: string) => {
       busy.current = true;
       setStreaming(true);
       const replyKey = nextKey();
       setMessages((all) => [
         ...all.map((m) => (m.key === userKey ? { ...m, state: "done" as const, error: undefined } : m)),
-        { key: replyKey, role: "assistant", text: "", asks: [], changes: [], state: "streaming" },
+        {
+          key: replyKey,
+          role: "assistant",
+          text: "",
+          asks: [],
+          changes: [],
+          quickReplies: [],
+          state: "streaming",
+        },
       ]);
       const controller = new AbortController();
       abort.current = controller;
+      const unit = userKey ? "这一句" : "这次选择";
 
       let failure: string | undefined;
       let finished = false;
       try {
-        for await (const { event, data } of postSse(
-          `/api/v1/conversations/${detail.id}/messages`,
-          { content },
-          controller.signal,
-        ) as AsyncIterable<Frame>) {
+        for await (const { event, data } of postSse(path, body, controller.signal) as AsyncIterable<Frame>) {
           switch (event) {
             case "token":
               patch(replyKey, (m) => ({ ...m, text: m.text + String(data.text ?? "") }));
@@ -99,11 +103,12 @@ export function useChatSession(detail: ConversationDetail) {
               break;
             case "ask": {
               const question = String(data.question ?? "");
-              patch(replyKey, (m) =>
-                m.text.includes(question) || m.asks.includes(question)
-                  ? m
-                  : { ...m, asks: [...m.asks, question] },
-              );
+              const quickReplies = Array.isArray(data.quickReplies) ? (data.quickReplies as string[]) : [];
+              patch(replyKey, (m) => ({
+                ...m,
+                asks: m.text.includes(question) || m.asks.includes(question) ? m.asks : [...m.asks, question],
+                quickReplies,
+              }));
               const conflict = data.conflict as Conflict | undefined;
               if (conflict) {
                 setConflicts((all) =>
@@ -134,19 +139,20 @@ export function useChatSession(detail: ConversationDetail) {
                   ),
                 );
                 applyResume(data.resume as ResumeContent);
+                if (Array.isArray(data.conflicts)) setConflicts(data.conflicts as Conflict[]);
                 if (failure) toast(failure, { tone: "error" });
                 failure = undefined;
               } else {
-                failure ??= "这一句没有保存，请重试";
+                failure ??= `${unit}没有保存，请重试`;
               }
               break;
             }
           }
         }
-        if (!finished) failure = LOST;
+        if (!finished) failure = `连接中断了，${unit}没有保存`;
       } catch (error) {
-        if (controller.signal.aborted) failure = STOPPED;
-        else failure = error instanceof ApiError ? error.message : LOST;
+        if (controller.signal.aborted) failure = `已停止，${unit}没有保存`;
+        else failure = error instanceof ApiError ? error.message : `连接中断了，${unit}没有保存`;
       } finally {
         abort.current = null;
         busy.current = false;
@@ -159,10 +165,17 @@ export function useChatSession(detail: ConversationDetail) {
             .filter((m) => m.key !== replyKey)
             .map((m) => (m.key === userKey ? { ...m, state: "failed" as const, error: failure } : m)),
         );
+        if (!userKey) toast(failure, { tone: "error" });
       }
       refreshShared();
     },
-    [applyResume, detail.id, patch, refreshShared, toast],
+    [applyResume, patch, refreshShared, toast],
+  );
+
+  const run = useCallback(
+    (userKey: string, content: string) =>
+      stream(`/api/v1/conversations/${detail.id}/messages`, { content }, userKey),
+    [detail.id, stream],
   );
 
   const send = useCallback(
@@ -173,7 +186,7 @@ export function useChatSession(detail: ConversationDetail) {
       setHighlights(new Set());
       setMessages((all) => [
         ...all.filter((m) => m.state !== "failed"),
-        { key, role: "user", text: content, asks: [], changes: [], state: "done" },
+        { key, role: "user", text: content, asks: [], changes: [], quickReplies: [], state: "done" },
       ]);
       void run(key, content);
       return true;
@@ -196,33 +209,18 @@ export function useChatSession(detail: ConversationDetail) {
 
   const resolveConflict = useCallback(
     async (conflict: Conflict, choice: "proposed" | "previous") => {
+      if (busy.current) return;
       setResolving(true);
+      setHighlights(new Set());
       try {
-        const res = await api.post<{
-          events: { type: string; changes?: ProfileChange[]; question?: string }[];
-          completeness: Completeness;
-          resume: ResumeContent;
-          conflicts: Conflict[];
-        }>(`/api/v1/conversations/${detail.id}/conflicts/${encodeURIComponent(conflict.factId)}`, { choice });
-        setCompleteness(res.completeness);
-        setConflicts(res.conflicts);
-        applyResume(res.resume);
-        const changes = res.events.flatMap((e) => (e.type === "profile_patch" ? (e.changes ?? []) : []));
-        const asks = res.events.flatMap((e) => (e.type === "ask" && e.question ? [e.question] : []));
-        if (changes.length > 0 || asks.length > 0) {
-          setMessages((all) => [
-            ...all,
-            { key: nextKey(), role: "assistant", text: "", asks, changes, state: "done" },
-          ]);
-        }
-        refreshShared();
-      } catch (error) {
-        toast(error instanceof ApiError ? error.message : "操作失败，请稍后再试", { tone: "error" });
+        await stream(`/api/v1/conversations/${detail.id}/conflicts/${encodeURIComponent(conflict.factId)}`, {
+          choice,
+        });
       } finally {
         setResolving(false);
       }
     },
-    [applyResume, detail.id, refreshShared, toast],
+    [detail.id, stream],
   );
 
   return {

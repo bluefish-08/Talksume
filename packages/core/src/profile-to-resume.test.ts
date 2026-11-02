@@ -173,6 +173,21 @@ describe("profileToResume", () => {
     expect(skillLine({ heading: "", bullets: [{ text: "Python", factIds: [] }] }).label).toBe("");
   });
 
+  it("熟悉与了解是两档，分别按原话程度分组", () => {
+    const profile = Profile.parse({
+      skills: [
+        { id: "a", name: "Go", level: "familiar" },
+        { id: "b", name: "MySQL", level: "familiar" },
+        { id: "c", name: "Python", level: "beginner" },
+      ],
+    });
+    const section = profileToResume(profile).sections.find((s) => s.kind === "skills");
+    expect(section?.items.map((i) => [i.heading, i.bullets[0]?.text])).toEqual([
+      ["熟悉", "Go、MySQL"],
+      ["了解", "Python"],
+    ]);
+  });
+
   it("获奖：日期作 period，描述作 bullet", () => {
     const section = profileToResume(full).sections.find((s) => s.kind === "awards");
     expect(section?.items).toEqual([

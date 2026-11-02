@@ -1,7 +1,7 @@
 import { Check, ChevronDown } from "lucide-react";
 import { Fragment, useState } from "react";
 import { SECTION_LABELS } from "../../api/types.ts";
-import { Button } from "../../components/ui.tsx";
+import { Button, Chip } from "../../components/ui.tsx";
 import { describeChange } from "./describe.ts";
 import styles from "./MessageList.module.css";
 import { type ChatMessage, type Conflict, messageText, type ProfileChange } from "./types.ts";
@@ -13,10 +13,22 @@ interface Props {
   resolving: boolean;
   onRetry: (key: string) => void;
   onResolve: (conflict: Conflict, choice: "proposed" | "previous") => void;
+  onQuickReply: (text: string) => void;
 }
 
-export function MessageList({ messages, conflicts, streaming, resolving, onRetry, onResolve }: Props) {
+export function MessageList({
+  messages,
+  conflicts,
+  streaming,
+  resolving,
+  onRetry,
+  onResolve,
+  onQuickReply,
+}: Props) {
   const pending = !streaming ? conflicts[0] : undefined;
+  const last = messages.at(-1);
+  const quickReplies =
+    !streaming && !pending && last?.role === "assistant" && last.state === "done" ? last.quickReplies : [];
   return (
     <div className={styles.thread} aria-busy={streaming}>
       {messages.map((m) =>
@@ -52,6 +64,15 @@ export function MessageList({ messages, conflicts, streaming, resolving, onRetry
               保留原来的
             </Button>
           </div>
+        </div>
+      )}
+      {quickReplies.length > 0 && (
+        <div className={styles.quickReplies}>
+          {quickReplies.map((text) => (
+            <Chip key={text} onClick={() => onQuickReply(text)}>
+              {text}
+            </Chip>
+          ))}
         </div>
       )}
     </div>

@@ -12,6 +12,7 @@ const SKILL_GROUPS = [
   { level: "expert", heading: "精通" },
   { level: "proficient", heading: "熟练" },
   { level: "familiar", heading: "熟悉" },
+  { level: "beginner", heading: "了解" },
   { level: undefined, heading: "其他" },
 ] as const;
 

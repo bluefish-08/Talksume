@@ -58,7 +58,7 @@ interface Owned {
   source: string;
 }
 
-const LEVEL_CREDIT = { familiar: 0.8, proficient: 1, expert: 1 } as const;
+const LEVEL_CREDIT = { beginner: 0.6, familiar: 0.8, proficient: 1, expert: 1 } as const;
 const EXPERIENCE_KIND = { internship: "实习", fulltime: "工作", parttime: "兼职" } as const;
 
 export function collectProfileSkills(profile: Profile): Map<string, Owned> {

@@ -53,7 +53,12 @@ export const Project = Sourced.extend({
 
 export const Skill = Sourced.extend({
   name: z.string(),
-  level: z.enum(["familiar", "proficient", "expert"]).optional(),
+  level: z
+    .enum(["beginner", "familiar", "proficient", "expert"])
+    .optional()
+    .describe(
+      "熟练度，仅在用户明确说了程度时填：了解/入门→beginner，熟悉→familiar，熟练/擅长→proficient，精通→expert；没说就不要填",
+    ),
 });
 
 export const Award = Sourced.extend({

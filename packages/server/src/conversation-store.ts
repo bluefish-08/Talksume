@@ -5,6 +5,7 @@ import {
   computeCompleteness,
   createIntakeState,
   type IntakeState,
+  type TurnMeta,
 } from "@talksume/agent";
 import { type Fact, Profile } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
@@ -31,6 +32,7 @@ export interface StoredMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  meta: TurnMeta;
   createdAt: Date;
 }
 
@@ -66,7 +68,7 @@ export async function loadMessages(db: Db, conversationId: string): Promise<Stor
     .orderBy(asc(messages.createdAt));
   return rows.flatMap((m) =>
     m.role === "user" || m.role === "assistant"
-      ? [{ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt }]
+      ? [{ id: m.id, role: m.role, content: m.content, meta: m.metadata as TurnMeta, createdAt: m.createdAt }]
       : [],
   );
 }
@@ -160,6 +162,7 @@ export async function persistState(
           conversationId,
           role: turn.role,
           content: turn.content,
+          metadata: turn.meta ?? {},
           createdAt: new Date(base + i),
         })),
       );

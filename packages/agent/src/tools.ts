@@ -8,6 +8,7 @@ import { describeSlot } from "./prompt.ts";
 import {
   AskUserArgs,
   CompleteSectionArgs,
+  cleanQuickReplies,
   type FactInput,
   formatZodIssues,
   TOOL_SPECS,
@@ -155,11 +156,13 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     const slot = nextSlotOf(state);
     ctx.flags.asked = true;
     noteAsked(state, slot);
+    const quickReplies = cleanQuickReplies(args.quickReplies);
     ctx.emit({
       type: "ask",
       kind: "followup",
       question: args.question,
       ...(slot ? { slot: slotRef(slot) } : {}),
+      ...(quickReplies.length > 0 ? { quickReplies } : {}),
     });
     return { ...text("问题已发送给用户，等待回答。"), terminate: true };
   });

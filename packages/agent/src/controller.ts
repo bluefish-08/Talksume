@@ -2,7 +2,7 @@ import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agen
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { errorKindOf } from "@talksume/llm-gateway";
 import { computeCompleteness } from "./completeness.ts";
-import { createIdGenerator, resolveConflict } from "./facts.ts";
+import { createIdGenerator, type ProfileChange, resolveConflict } from "./facts.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import {
   buildUserCorpus,
@@ -12,7 +12,7 @@ import {
   noteAsked,
   type RunContext,
 } from "./tools.ts";
-import type { IntakeEvent, IntakeState } from "./types.ts";
+import type { IntakeEvent, IntakeState, TurnMeta } from "./types.ts";
 
 export interface IntakeDeps {
   streamFn: StreamFn;
@@ -72,20 +72,23 @@ class EventQueue {
 
 function historyToMessages(state: IntakeState, model: Model<Api>, limit: number): AgentMessage[] {
   const now = Date.now();
-  return state.history.slice(-limit).map((turn): AgentMessage => {
-    if (turn.role === "user") return { role: "user", content: turn.content, timestamp: now };
-    const message: AssistantMessage = {
-      role: "assistant",
-      content: [{ type: "text", text: turn.content }],
-      api: model.api,
-      provider: model.provider,
-      model: model.id,
-      usage: ZERO_USAGE,
-      stopReason: "stop",
-      timestamp: now,
-    };
-    return message;
-  });
+  return state.history
+    .slice(-limit)
+    .filter((turn) => turn.content.trim())
+    .map((turn): AgentMessage => {
+      if (turn.role === "user") return { role: "user", content: turn.content, timestamp: now };
+      const message: AssistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: turn.content }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: ZERO_USAGE,
+        stopReason: "stop",
+        timestamp: now,
+      };
+      return message;
+    });
 }
 
 function clarifyQuestion(quote: string | undefined): string {
@@ -100,8 +103,15 @@ export interface IntakeController {
     message: UserMessage,
     options?: { signal?: AbortSignal },
   ): AsyncGenerator<IntakeEvent, void>;
-  /** 用户对「待确认」卡片做出选择后调用。 */
+  /** 只改画像不调模型，事件以 completeness 收尾。 */
   confirmConflict(state: IntakeState, factId: string, accept: boolean): IntakeEvent[];
+  /** 用户对「待确认」卡片做出选择后调用；没有剩余矛盾时同一轮内让模型接着追问。 */
+  resolveConflict(
+    state: IntakeState,
+    factId: string,
+    accept: boolean,
+    options?: { signal?: AbortSignal; continueTurn?: boolean },
+  ): AsyncGenerator<IntakeEvent, void>;
 }
 
 export function createIntakeController(deps: IntakeDeps): IntakeController {
@@ -118,23 +128,41 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     };
   }
 
-  async function* handleUserMessage(
+  interface Turn {
+    /** 助手回复的 id 为 `${id}:reply`；有 user 时 id 即用户消息 id。 */
+    id: string;
+    user?: UserMessage;
+    prompt: string;
+    /** 本轮之前已写入、需要一并挂到助手消息上的变更。 */
+    seedChanges?: ProfileChange[];
+  }
+
+  async function* runTurn(
     state: IntakeState,
-    message: UserMessage,
+    turn: Turn,
     options: { signal?: AbortSignal } = {},
   ): AsyncGenerator<IntakeEvent, void> {
+    const { user } = turn;
     const queue = new EventQueue();
     const asks: string[] = [];
+    const changes: ProfileChange[] = [...(turn.seedChanges ?? [])];
+    let quickReplies: string[] = [];
     const flags = { asked: false, changed: false };
-    const userTexts = [...state.history.filter((t) => t.role === "user").map((t) => t.content), message.text];
+    const userTexts = [
+      ...state.history.filter((t) => t.role === "user").map((t) => t.content),
+      ...(user ? [user.text] : []),
+    ];
     const ctx: RunContext = {
       state,
-      messageId: message.id,
+      messageId: turn.id,
       userCorpus: buildUserCorpus(userTexts),
       verifyQuote,
       genId,
       emit: (event) => {
-        if (event.type === "ask") asks.push(event.question);
+        if (event.type === "ask") {
+          asks.push(event.question);
+          if (event.quickReplies) quickReplies = event.quickReplies;
+        } else if (event.type === "profile_patch") changes.push(...event.changes);
         queue.push(event);
       },
       flags,
@@ -205,7 +233,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     options.signal?.addEventListener("abort", () => agent.abort(), { once: true });
 
     const run = agent
-      .prompt(message.text)
+      .prompt(turn.prompt)
       .catch((error: unknown) => {
         llmError = error instanceof Error ? error.message : String(error);
       })
@@ -248,11 +276,30 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     }
 
     const reply = [assistantText.trim(), ...asks].filter(Boolean).join("\n");
-    if (!llmError || flags.changed) {
-      state.history.push({ id: message.id, role: "user", content: message.text });
-      state.history.push({ id: `${message.id}:reply`, role: "assistant", content: reply || "（已记录）" });
+    const meta: TurnMeta = {
+      ...(changes.length > 0 ? { changes } : {}),
+      ...(quickReplies.length > 0 ? { quickReplies } : {}),
+    };
+    if (!llmError || flags.changed || changes.length > 0) {
+      if (user) state.history.push({ id: user.id, role: "user", content: user.text });
+      if (user || reply || changes.length > 0) {
+        state.history.push({
+          id: `${turn.id}:reply`,
+          role: "assistant",
+          content: reply || (user ? "（已记录）" : ""),
+          ...(Object.keys(meta).length > 0 ? { meta } : {}),
+        });
+      }
     }
     yield completenessEvent(state);
+  }
+
+  function handleUserMessage(
+    state: IntakeState,
+    message: UserMessage,
+    options: { signal?: AbortSignal } = {},
+  ): AsyncGenerator<IntakeEvent, void> {
+    return runTurn(state, { id: message.id, user: message, prompt: message.text }, options);
   }
 
   function confirmConflict(state: IntakeState, factId: string, accept: boolean): IntakeEvent[] {
@@ -284,5 +331,39 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     return events;
   }
 
-  return { handleUserMessage, confirmConflict };
+  async function* resolveConflictAndContinue(
+    state: IntakeState,
+    factId: string,
+    accept: boolean,
+    options: { signal?: AbortSignal; continueTurn?: boolean } = {},
+  ): AsyncGenerator<IntakeEvent, void> {
+    const conflict = state.conflicts.find((c) => c.factId === factId);
+    if (!conflict) return;
+    const events = confirmConflict(state, factId, accept);
+    const completeness = events.pop();
+    for (const event of events) yield event;
+
+    const id = `resolve_${factId}`;
+    const changes = events.flatMap((e) => (e.type === "profile_patch" ? e.changes : []));
+    if (state.conflicts.length > 0 || options.continueTurn === false) {
+      const question = events.flatMap((e) => (e.type === "ask" ? [e.question] : [])).join("\n");
+      if (changes.length > 0 || question) {
+        state.history.push({
+          id: `${id}:reply`,
+          role: "assistant",
+          content: question,
+          ...(changes.length > 0 ? { meta: { changes } } : {}),
+        });
+      }
+      if (completeness) yield completeness;
+      return;
+    }
+
+    const label = conflict.label;
+    const chosen = String(accept ? conflict.proposed : conflict.previous);
+    const prompt = `[系统通知，不是用户发言] 用户确认${label}以「${chosen}」为准，画像已更新。没有新的信息需要写入，请直接用 ask_user 接着问当前目标字段的下一个问题。`;
+    yield* runTurn(state, { id, prompt, seedChanges: changes }, options);
+  }
+
+  return { handleUserMessage, confirmConflict, resolveConflict: resolveConflictAndContinue };
 }

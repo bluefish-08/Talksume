@@ -52,8 +52,28 @@ export type UpsertFactsArgs = z.infer<typeof UpsertFactsArgs>;
 
 export const AskUserArgs = z.object({
   question: z.string().trim().min(1).describe("向用户提出的一个具体问题，口语化、一次只问一件事"),
+  quickReplies: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "2 到 4 条用户可一键发送的简短回答（每条 12 字以内，第一人称），如「是独立完成的」「跳过这个」；只给用户确实可能这样回答的选项，不确定就省略",
+    ),
 });
 export type AskUserArgs = z.infer<typeof AskUserArgs>;
+
+export const MAX_QUICK_REPLIES = 4;
+export const MAX_QUICK_REPLY_LENGTH = 20;
+
+/** 去空、去重、截断；不足 2 条视为模型没给。 */
+export function cleanQuickReplies(raw: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  for (const item of raw ?? []) {
+    const text = item.trim();
+    if (text && text.length <= MAX_QUICK_REPLY_LENGTH) seen.add(text);
+  }
+  const list = [...seen].slice(0, MAX_QUICK_REPLIES);
+  return list.length >= 2 ? list : [];
+}
 
 export const CompleteSectionArgs = z.object({
   section: z.enum(PROFILE_SECTIONS),
@@ -80,7 +100,8 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   },
   {
     name: "ask_user",
-    description: "向用户追问下一个问题。调用后本轮对话结束，等待用户回答。每轮最多调用一次。",
+    description:
+      "向用户追问下一个问题，可附带 quickReplies 作为用户的快捷回答。调用后本轮对话结束，等待用户回答。每轮最多调用一次。",
     schema: AskUserArgs,
   },
   {

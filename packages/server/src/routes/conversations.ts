@@ -8,10 +8,12 @@ import {
   noteAsked,
 } from "@talksume/agent";
 import { profileToResume } from "@talksume/core";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { LlmDeps, RouteModule } from "../app.ts";
 import {
   createConversation,
+  type LoadedConversation,
   listConversations,
   loadConversation,
   loadMessages,
@@ -74,22 +76,23 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         id: m.id,
         role: m.role,
         content: m.content,
+        changes: m.meta.changes ?? [],
+        quickReplies: m.meta.quickReplies ?? [],
         createdAt: m.createdAt.toISOString(),
       })),
       ...snapshotOf(loaded.state),
     };
   });
 
-  app.post("/api/v1/conversations/:id/messages", async (req, reply) => {
-    const llm = deps.llm;
-    if (!llm) return sendError(reply, 503, "llm_unavailable", "模型服务未配置", true);
-    const { id } = req.params as { id: string };
-    const body = MessageBody.safeParse(req.body);
-    if (!body.success) return sendError(reply, 400, "invalid_request", "content 不能为空且不超过 4000 字");
-    const loaded = await loadConversation(db, req.userId, id);
-    if (!loaded) return sendError(reply, 404, "conversation_not_found", "会话不存在");
-    if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
-
+  /** 接管响应，把一轮对话的事件流式推出，结束后落库并发 done。 */
+  async function streamTurn(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    id: string,
+    loaded: LoadedConversation,
+    replyId: string,
+    produce: (signal: AbortSignal) => AsyncGenerator<IntakeEvent, void>,
+  ) {
     busy.add(id);
     const sse = openSse(reply);
     const abort = new AbortController();
@@ -101,16 +104,8 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const emit = (event: IntakeEvent) => sse.send(event.type, event);
 
     try {
-      const controller = createIntakeController({ streamFn: llm.streamFn, model: llm.model, genId });
-      const messageId = randomUUID();
       try {
-        for await (const event of controller.handleUserMessage(
-          loaded.state,
-          { id: messageId, text: body.data.content },
-          { signal: abort.signal },
-        )) {
-          emit(event);
-        }
+        for await (const event of produce(abort.signal)) emit(event);
       } catch (error) {
         req.log.error({ err: error }, "intake failed");
         emit({ type: "error", code: "internal", message: "对话处理失败，请重试", recoverable: true });
@@ -127,8 +122,9 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         );
         const replied = persisted && loaded.state.history.length > loaded.snapshot.historyLength;
         sse.send("done", {
-          messageId: replied ? `${messageId}:reply` : null,
+          messageId: replied ? replyId : null,
           resume: profileToResume(loaded.state.profile),
+          conflicts: loaded.state.conflicts,
         });
       }
     } finally {
@@ -137,6 +133,23 @@ export const conversationRoutes: RouteModule = (app, deps) => {
       busy.delete(id);
       sse.end();
     }
+  }
+
+  app.post("/api/v1/conversations/:id/messages", async (req, reply) => {
+    const llm = deps.llm;
+    if (!llm) return sendError(reply, 503, "llm_unavailable", "模型服务未配置", true);
+    const { id } = req.params as { id: string };
+    const body = MessageBody.safeParse(req.body);
+    if (!body.success) return sendError(reply, 400, "invalid_request", "content 不能为空且不超过 4000 字");
+    const loaded = await loadConversation(db, req.userId, id);
+    if (!loaded) return sendError(reply, 404, "conversation_not_found", "会话不存在");
+    if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
+
+    const controller = createIntakeController({ streamFn: llm.streamFn, model: llm.model, genId });
+    const messageId = randomUUID();
+    await streamTurn(req, reply, id, loaded, `${messageId}:reply`, (signal) =>
+      controller.handleUserMessage(loaded.state, { id: messageId, text: body.data.content }, { signal }),
+    );
   });
 
   app.post("/api/v1/conversations/:id/conflicts/:conflictId", async (req, reply) => {
@@ -151,9 +164,12 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
 
     const controller = createIntakeController(deps.llm ?? NO_LLM);
-    const events = controller.confirmConflict(loaded.state, conflictId, body.data.choice === "proposed");
-    await persistState(db, req.userId, id, loaded);
-    return { events, ...snapshotOf(loaded.state) };
+    await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>
+      controller.resolveConflict(loaded.state, conflictId, body.data.choice === "proposed", {
+        signal,
+        continueTurn: Boolean(deps.llm),
+      }),
+    );
   });
 
   resumeRoutes(app, deps);

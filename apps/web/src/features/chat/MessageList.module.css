@@ -173,3 +173,9 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.quickReplies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

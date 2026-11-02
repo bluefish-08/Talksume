@@ -92,6 +92,10 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
               session.retry(key);
             }}
             onResolve={(c, choice) => void session.resolveConflict(c, choice)}
+            onQuickReply={(text) => {
+              stick.current = true;
+              session.send(text);
+            }}
           />
         </div>
 

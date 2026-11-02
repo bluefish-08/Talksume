@@ -9,6 +9,7 @@ import {
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
 import { createIntakeController } from "./controller.ts";
+import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
 import type { IntakeEvent } from "./types.ts";
 import { createIntakeState } from "./types.ts";
 
@@ -355,5 +356,159 @@ describe("intake controller: contradictions, fallbacks and errors", () => {
     );
     expect(events.some((e) => e.type === "ask" && e.kind === "confirm")).toBe(false);
     expect(state.history).toHaveLength(0);
+  });
+});
+
+describe("intake controller: resolving a conflict continues the conversation", () => {
+  async function conflicted(afterResolve: FauxResponseStep[], prompts: string[] = []) {
+    const state = createIntakeState();
+    const first = fake([
+      toolTurn(upsert([{ section: "basics", payload: { name: "林晓" }, quote: "我叫林晓" }])),
+      toolTurn(ask("手机号是多少？")),
+    ]);
+    await collect(first.controller.handleUserMessage(state, { id: "m1", text: "我叫林晓" }));
+    const second = fake(
+      [
+        toolTurn(upsert([{ section: "basics", payload: { name: "陈晓" }, quote: "不对，我叫陈晓" }])),
+        ...afterResolve,
+      ],
+      prompts,
+    );
+    await collect(second.controller.handleUserMessage(state, { id: "m2", text: "不对，我叫陈晓" }));
+    return { state, controller: second.controller, core: second.core };
+  }
+
+  it("adopting the new value streams the next question in the same turn", async () => {
+    const { state, controller } = await conflicted([
+      toolTurn(
+        fauxToolCall("ask_user", { question: "手机号是多少？", quickReplies: ["138 开头", "不想留"] }),
+      ),
+    ]);
+    const factId = state.conflicts[0]?.factId ?? "";
+    const events = await collect(controller.resolveConflict(state, factId, true));
+
+    expect(types(events)).toEqual(["profile_patch", "ask", "completeness"]);
+    expect(state.profile.basics.name).toBe("陈晓");
+    expect(state.conflicts).toHaveLength(0);
+    expect(asks(events)[0]).toMatchObject({
+      kind: "followup",
+      question: "手机号是多少？",
+      quickReplies: ["138 开头", "不想留"],
+    });
+    const reply = state.history.at(-1);
+    expect(reply).toMatchObject({ role: "assistant", content: "手机号是多少？" });
+    expect(reply?.meta?.changes).toMatchObject([{ field: "name", value: "陈晓", previous: "林晓" }]);
+    expect(reply?.meta?.quickReplies).toEqual(["138 开头", "不想留"]);
+  });
+
+  it("keeping the old value also continues, and the synthetic notice is not stored as a user turn", async () => {
+    const { state, controller } = await conflicted([fauxAssistantMessage("好的，保留林晓。")]);
+    const factId = state.conflicts[0]?.factId ?? "";
+    const before = state.history.filter((t) => t.role === "user").length;
+    const events = await collect(controller.resolveConflict(state, factId, false));
+
+    expect(state.profile.basics.name).toBe("林晓");
+    expect(asks(events)[0]).toMatchObject({ kind: "followup", slot: { field: "phone" } });
+    expect(events.some((e) => e.type === "token")).toBe(true);
+    expect(state.history.filter((t) => t.role === "user")).toHaveLength(before);
+  });
+
+  it("does not call the model while other conflicts are still pending", async () => {
+    const { state, controller, core } = await conflicted([]);
+    state.conflicts.push({ ...(state.conflicts[0] as (typeof state.conflicts)[number]), factId: "other" });
+    const callsBefore = core.state.callCount;
+    const events = await collect(controller.resolveConflict(state, state.conflicts[0]?.factId ?? "", true));
+    expect(core.state.callCount).toBe(callsBefore);
+    expect(types(events)).toEqual(["profile_patch", "ask", "completeness"]);
+    expect(asks(events)[0]?.kind).toBe("confirm");
+    expect(state.history.at(-1)?.meta?.changes).toHaveLength(1);
+  });
+
+  it("still records the change row when the model fails", async () => {
+    const { state, controller } = await conflicted([
+      fauxAssistantMessage([], { stopReason: "error", errorMessage: "boom" }),
+    ]);
+    const factId = state.conflicts[0]?.factId ?? "";
+    const events = await collect(controller.resolveConflict(state, factId, true));
+    expect(events.some((e) => e.type === "error")).toBe(true);
+    expect(state.history.at(-1)?.meta?.changes).toHaveLength(1);
+  });
+
+  it("skips the model when continueTurn is false", async () => {
+    const { state, controller, core } = await conflicted([]);
+    const callsBefore = core.state.callCount;
+    const events = await collect(
+      controller.resolveConflict(state, state.conflicts[0]?.factId ?? "", true, { continueTurn: false }),
+    );
+    expect(core.state.callCount).toBe(callsBefore);
+    expect(types(events)).toEqual(["profile_patch", "completeness"]);
+  });
+});
+
+describe("intake controller: quick replies", () => {
+  it("passes quickReplies of ask_user through and stores them on the assistant turn", async () => {
+    const { controller } = fake([
+      toolTurn(
+        fauxToolCall("ask_user", {
+          question: "这个项目是独立完成的吗？",
+          quickReplies: ["是独立完成的", "和同学合作，我负责存储层", "跳过这个"],
+        }),
+      ),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "你好" }));
+    expect(asks(events)[0]?.quickReplies).toEqual(["是独立完成的", "和同学合作，我负责存储层", "跳过这个"]);
+    expect(state.history.at(-1)?.meta?.quickReplies).toHaveLength(3);
+  });
+
+  it("shows nothing when the model gives none", async () => {
+    const { controller } = fake([toolTurn(ask("你叫什么？"))]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "你好" }));
+    expect(asks(events)[0]).not.toHaveProperty("quickReplies");
+    expect(state.history.at(-1)?.meta).toBeUndefined();
+  });
+
+  it("cleans dirty lists: dedupes, drops blanks and overlong items, caps at 4, needs at least 2", () => {
+    expect(cleanQuickReplies(["a", " a ", "", "b", "c", "d", "e"])).toEqual(["a", "b", "c", "d"]);
+    expect(cleanQuickReplies(["只有一条"])).toEqual([]);
+    expect(cleanQuickReplies(["x".repeat(40), "ok"])).toEqual([]);
+    expect(cleanQuickReplies(undefined)).toEqual([]);
+  });
+});
+
+describe("intake controller: skill levels", () => {
+  it("keeps 熟悉 as familiar and leaves the level empty when the user gave none", async () => {
+    const { controller } = fake([
+      toolTurn(
+        upsert([
+          {
+            section: "skills",
+            payload: { name: "Go", level: "familiar" },
+            quote: "技能上熟悉 Go、MySQL、Redis、Kafka",
+          },
+          { section: "skills", payload: { name: "Python" }, quote: "也写过 Python" },
+        ]),
+      ),
+      toolTurn(ask("还有别的技能吗？")),
+    ]);
+    const state = createIntakeState();
+    await collect(
+      controller.handleUserMessage(state, {
+        id: "m1",
+        text: "技能上熟悉 Go、MySQL、Redis、Kafka，也写过 Python",
+      }),
+    );
+    expect(state.profile.skills.find((s) => s.name === "Go")?.level).toBe("familiar");
+    expect(state.profile.skills.find((s) => s.name === "Python")?.level).toBeUndefined();
+  });
+
+  it("exposes a four-step level enum and the mapping rule to the model", async () => {
+    const prompts: string[] = [];
+    const { controller } = fake([toolTurn(ask("你叫什么？"))], prompts);
+    await collect(controller.handleUserMessage(createIntakeState(), { id: "m1", text: "你好" }));
+    expect(prompts[0]).toContain("熟悉→familiar");
+    const schema = JSON.stringify(toolJsonSchema(UpsertFactsArgs));
+    expect(schema).toContain('"beginner","familiar","proficient","expert"');
   });
 });

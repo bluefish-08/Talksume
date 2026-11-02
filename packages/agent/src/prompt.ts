@@ -44,6 +44,8 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
     "- 每次只问一件事，口语化、简短，像朋友聊天。可以先用一句话回应或确认用户刚说的内容。",
+    "- 技能熟练度 level 按用户原话映射：了解/入门→beginner，熟悉→familiar，熟练/擅长→proficient，精通→expert；用户没说程度就省略 level，不要自行填写或降级。",
+    "- ask_user 时尽量附带 quickReplies：2 到 4 条用户可能的简短回答（第一人称、12 字以内，可含「跳过这个」）。选项必须是用户真实可能的回答，不要替用户编造经历；不确定就不给。",
     "- 时间统一写成 YYYY-MM；学位用 associate/bachelor/master/phd；求职类型用 internship/campus/experienced。",
     "- 用户跑题或闲聊时，礼貌回应一句再拉回当前目标。用户不想回答某项时，不要强迫，用 complete_section（reason=user_skipped）跳过。",
     "- 如果用户说的内容与已记录的信息矛盾，照常写入，系统会自动请用户确认，你不要自行决定以哪个为准。",

@@ -11,7 +11,7 @@ import {
 import { makeJob, makeProfile } from "./fixtures.ts";
 import { buildScoreContext } from "./pipeline.ts";
 
-const skill = (name: string, level?: "familiar" | "proficient" | "expert") => ({
+const skill = (name: string, level?: "beginner" | "familiar" | "proficient" | "expert") => ({
   id: name,
   name,
   ...(level && { level }),
@@ -61,6 +61,8 @@ describe("技能维度", () => {
   it("熟悉程度影响得分；JD 没有技能要求时该维度不适用", () => {
     const owned = collectProfileSkills(makeProfile({ skills: [skill("Go", "familiar")] }));
     expect(owned.get("Go")?.credit).toBe(0.8);
+    const beginner = collectProfileSkills(makeProfile({ skills: [skill("Go", "beginner")] }));
+    expect(beginner.get("Go")?.credit).toBe(0.6);
     const res = scoreSkills(makeProfile(), makeJob({ title: "x", jdText: "沟通能力强，认真负责" }));
     expect(res.applicable).toBe(false);
   });

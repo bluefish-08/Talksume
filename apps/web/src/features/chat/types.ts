@@ -23,7 +23,15 @@ export interface Conflict {
 export interface ConversationDetail {
   id: string;
   title: string | null;
-  messages: { id: string; role: "user" | "assistant"; content: string; createdAt: string }[];
+  messages: {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    /** 该条助手消息写入简历的变更，刷新后据此重建「已写入」行。 */
+    changes: ProfileChange[];
+    quickReplies: string[];
+    createdAt: string;
+  }[];
   profile: Profile;
   completeness: Completeness;
   resume: ResumeContent;
@@ -38,6 +46,8 @@ export interface ChatMessage {
   /** 追问问题；服务端落库时与正文用换行拼接。 */
   asks: string[];
   changes: ProfileChange[];
+  /** 助手追问附带的快捷回复，只在最后一条消息上展示。 */
+  quickReplies: string[];
   /** 已落库的消息 ID；用户消息用它换算“第几轮”。 */
   serverId?: string;
   state: "done" | "streaming" | "failed";

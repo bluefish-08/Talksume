@@ -292,8 +292,15 @@ describe("矛盾确认", () => {
     toolTurn(ask("继续聊聊？")),
   ];
 
-  async function conflictConversation() {
-    await boot(fakeLlm([...cityTurns("上海", "我在上海"), ...cityTurns("杭州", "其实我在杭州")]));
+  async function conflictConversation(afterResolve: FauxResponseStep[] = []) {
+    await boot(
+      fakeLlm([
+        ...cityTurns("上海", "我在上海"),
+        // 矛盾出现后本轮不再追问，所以只有写入这一步
+        toolTurn(upsert([{ section: "basics", payload: { city: "杭州" }, quote: "其实我在杭州" }])),
+        ...afterResolve,
+      ]),
+    );
     const { id } = await createConversation();
     await send(id, "我在上海");
     const { events } = await send(id, "其实我在杭州");
@@ -304,20 +311,40 @@ describe("矛盾确认", () => {
     return { id, confirm };
   }
 
-  it("矛盾落库，确认后采用新值", async () => {
-    const { id, confirm } = await conflictConversation();
+  const resolve = async (id: string, factId: string, choice: string) => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/conversations/${id}/conflicts/${factId}`,
+      payload: { choice },
+    });
+    return { res, events: parseSse(res.body) };
+  };
+
+  it("矛盾落库，确认后采用新值，并在同一条 SSE 里接着追问", async () => {
+    const { id, confirm } = await conflictConversation([
+      toolTurn(
+        fauxToolCall("ask_user", {
+          question: "你的手机号是多少？",
+          quickReplies: ["138 开头的", "不方便留"],
+        }),
+      ),
+    ]);
     expect(confirm.kind).toBe("confirm");
     const before = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
     expect(before.profile.basics.city).toBe("上海");
     expect(before.conflicts).toHaveLength(1);
 
-    const url = `/api/v1/conversations/${id}/conflicts/${confirm.conflict.factId}`;
-    const res = await app.inject({ method: "POST", url, payload: { choice: "proposed" } });
+    const { res, events } = await resolve(id, confirm.conflict.factId, "proposed");
     expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.events.map((e: { type: string }) => e.type)).toEqual(["profile_patch", "completeness"]);
-    expect(body.profile.basics.city).toBe("杭州");
-    expect(body.conflicts).toEqual([]);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(events.map((e) => e.event)).toEqual(["profile_patch", "ask", "completeness", "done"]);
+    expect(events[1]?.data).toMatchObject({
+      kind: "followup",
+      question: "你的手机号是多少？",
+      quickReplies: ["138 开头的", "不方便留"],
+    });
+    const done = events.at(-1)?.data as { messageId: string; conflicts: unknown[] };
+    expect(done.conflicts).toEqual([]);
 
     const [row] = await handle.db.select().from(schema.profiles);
     expect(row?.data.basics.city).toBe("杭州");
@@ -328,19 +355,65 @@ describe("矛盾确认", () => {
       .where(eq(schema.profileFacts.id, confirm.conflict.factId));
     expect(fact?.status).toBe("confirmed");
 
-    const again = await app.inject({ method: "POST", url, payload: { choice: "proposed" } });
-    expect(again.statusCode).toBe(404);
-    expect(again.json().code).toBe("conflict_not_found");
+    const detail = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    const last = detail.messages.at(-1);
+    expect(last.id).toBe(done.messageId);
+    expect(last).toMatchObject({
+      role: "assistant",
+      content: "你的手机号是多少？",
+      quickReplies: ["138 开头的", "不方便留"],
+    });
+    expect(last.changes).toMatchObject([
+      { section: "basics", field: "city", value: "杭州", previous: "上海" },
+    ]);
+
+    const again = await resolve(id, confirm.conflict.factId, "proposed");
+    expect(again.res.statusCode).toBe(404);
+    expect(again.res.json().code).toBe("conflict_not_found");
   });
 
-  it("选择保留旧值时画像不变，事实被标为被覆盖", async () => {
+  it("「已写入」变更和快捷回复随消息历史返回", async () => {
+    await boot(
+      fakeLlm([
+        toolTurn(upsert([{ section: "basics", payload: { name: "李明" }, quote: "我叫李明" }])),
+        toolTurn(
+          fauxToolCall("ask_user", {
+            question: "项目是独立做的吗？",
+            quickReplies: ["是独立完成的", "和同学合作", "跳过这个"],
+          }),
+        ),
+      ]),
+    );
+    const { id } = await createConversation();
+    await send(id, "我叫李明");
+    const detail = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    const [greeting, userMsg, replyMsg] = detail.messages;
+    expect(greeting).toMatchObject({ changes: [], quickReplies: [] });
+    expect(userMsg).toMatchObject({ role: "user", changes: [], quickReplies: [] });
+    expect(replyMsg.changes).toMatchObject([{ section: "basics", field: "name", value: "李明" }]);
+    expect(replyMsg.quickReplies).toEqual(["是独立完成的", "和同学合作", "跳过这个"]);
+  });
+
+  it("没配模型时仍能处理待确认项，变更行照样落库", async () => {
     const { id, confirm } = await conflictConversation();
-    const res = await app.inject({
-      method: "POST",
-      url: `/api/v1/conversations/${id}/conflicts/${confirm.conflict.factId}`,
-      payload: { choice: "previous" },
-    });
-    expect(res.json().profile.basics.city).toBe("上海");
+    await app.close();
+    app = buildApp({ edition: "cloud", version: "t", db: handle.db });
+    await app.ready();
+
+    const { res, events } = await resolve(id, confirm.conflict.factId, "proposed");
+    expect(res.statusCode).toBe(200);
+    expect(events.map((e) => e.event)).toEqual(["profile_patch", "completeness", "done"]);
+    const detail = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    expect(detail.profile.basics.city).toBe("杭州");
+    expect(detail.messages.at(-1).changes).toHaveLength(1);
+  });
+
+  it("选择保留旧值时画像不变，事实被标为被覆盖，助手仍接着追问", async () => {
+    const { id, confirm } = await conflictConversation([toolTurn(ask("你的手机号是多少？"))]);
+    const { events } = await resolve(id, confirm.conflict.factId, "previous");
+    expect(events.map((e) => e.event)).toEqual(["ask", "completeness", "done"]);
+    const detail = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    expect(detail.profile.basics.city).toBe("上海");
     const [fact] = await handle.db
       .select()
       .from(schema.profileFacts)
