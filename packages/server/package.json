@@ -1,0 +1,13 @@
+{
+  "name": "@talksume/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@talksume/core": "workspace:*",
+    "fastify": "^5.12.7"
+  }
+}
