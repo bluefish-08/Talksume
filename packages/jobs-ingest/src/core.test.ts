@@ -1,7 +1,16 @@
 import type { Job } from "@talksume/core";
 import { describe, expect, it } from "vitest";
-import { type FetchContext, normalizeCities, paginate, parseDegree, roundRobin } from "./common.ts";
+import {
+  degreeFromJd,
+  type FetchContext,
+  normalizeCities,
+  paginate,
+  parseDegree,
+  parseTime,
+  roundRobin,
+} from "./common.ts";
 import { createHttpClient, HttpError, RobotsBlockedError } from "./http.ts";
+import { mergeJobs } from "./merge.ts";
 import { isAllowed, parseRobots } from "./robots.ts";
 import { classifyRole } from "./role.ts";
 import { selectSeed } from "./seed.ts";
@@ -229,5 +238,44 @@ describe("selectSeed / computeStats", () => {
     expect(s.withCity).toBe(31);
     expect(s.withJd).toBe(31);
     expect(s.byType.internship).toBe(10);
+    expect(s.missing.cities).toBe(1);
+    expect(s.missing.degree).toBe(32);
+  });
+});
+
+describe("degreeFromJd / parseTime", () => {
+  it("取「及以上」的最低学历，忽略「优先」", () => {
+    expect(degreeFromJd("本科及以上学历，硕士及以上优先")).toBe("bachelor");
+    expect(degreeFromJd("硕士研究生及以上学历")).toBe("master");
+    expect(degreeFromJd("博士在读")).toBe("phd");
+    expect(degreeFromJd("本科或研究生，专业不限，大三、研一学生优先")).toBe("bachelor");
+    expect(degreeFromJd("相关领域博士或硕士；")).toBe("master");
+    expect(degreeFromJd("硕士/博士优先")).toBeUndefined();
+    expect(degreeFromJd("有相关经验")).toBeUndefined();
+  });
+
+  it("解析时间戳与中文日期", () => {
+    expect(parseTime(1793631607000)?.getTime()).toBe(1793631607000);
+    expect(parseTime("2026年11月02日")?.toISOString()).toBe("2026-11-01T16:00:00.000Z");
+    expect(parseTime(null)).toBeUndefined();
+  });
+});
+
+describe("mergeJobs", () => {
+  it("同一 source+sourceJobId 合并城市与标签，字段取较新的", () => {
+    const old = job({ id: "s:1", sourceJobId: "1", cities: ["北京"], tags: ["a"], fetchedAt: new Date(1) });
+    const fresh = job({
+      id: "s:1",
+      sourceJobId: "1",
+      cities: ["上海"],
+      title: "新标题",
+      fetchedAt: new Date(2),
+    });
+    const other = job({ id: "s:2", sourceJobId: "2" });
+    const merged = mergeJobs([fresh, other, old]);
+    expect(merged).toHaveLength(2);
+    expect(merged[0]?.cities).toEqual(["上海", "北京"]);
+    expect(merged[0]?.tags).toEqual(["a"]);
+    expect(merged[0]?.title).toBe("新标题");
   });
 });

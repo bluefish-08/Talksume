@@ -1,6 +1,7 @@
 import { Job } from "@talksume/core";
 import {
   clean,
+  degreeFromJd,
   type FetchContext,
   joinJd,
   normalizeCities,
@@ -43,6 +44,7 @@ export function normalizeMihoyo(d: MihoyoDetail, fetchedAt: Date): Job {
     title: clean(d.title),
     cities: normalizeCities((d.addressDetailList ?? []).map((a) => a.addressDetail ?? "")),
     jobType: type,
+    degree: degreeFromJd(d.jobRequire),
     jdText: joinJd([
       ["岗位职责", d.description],
       ["任职要求", d.jobRequire],
@@ -67,7 +69,7 @@ export const mihoyo: SourceAdapter = {
       return { items: r.data.list ?? [], hasMore: n * 50 < r.data.total };
     });
     for await (const it of list) {
-      if (!wantType(ctx, jobTypeOf(it))) continue;
+      if (!wantType(ctx, jobTypeOf(it)) || ctx.skip?.(`mihoyo:${it.id}`)) continue;
       try {
         const r = await ctx.http.json<{ data: MihoyoDetail }>(`${BASE}/job/info`, {
           json: { id: it.id, ...CHANNEL },

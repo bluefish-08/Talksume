@@ -1,6 +1,7 @@
 import { Job } from "@talksume/core";
 import {
   clean,
+  degreeFromJd,
   type FetchContext,
   joinJd,
   normalizeCities,
@@ -50,6 +51,7 @@ export function normalizeTencentCampus(d: TencentCampusDetail, fetchedAt: Date):
     title: clean(d.title),
     cities: normalizeCities(d.workCityList),
     jobType: jobTypeOf(`${d.projectName} ${d.recruitLabelName}`),
+    degree: degreeFromJd(`${d.request ?? ""}\n${d.topicRequirement ?? ""}`),
     jdText: joinJd([
       ["岗位职责", d.desc],
       ["任职要求", d.request],
@@ -100,11 +102,17 @@ export const tencentCampus: SourceAdapter = {
     }
     async function* details(list: TencentCampusListItem[]) {
       for (const it of list) {
+        if (ctx.skip?.(`tencent_campus:${it.postId}`)) continue;
         try {
-          const r = await ctx.http.json<{ data: TencentCampusDetail }>(
+          const r = await ctx.http.json<{ data: TencentCampusDetail | null; message?: string }>(
             `${BASE}/jobDetails/getJobDetailsByPostId?postId=${it.postId}`,
           );
-          yield normalizeTencentCampus(r.data, ctx.now());
+          if (!r.data) {
+            ctx.onError(`tencent_campus 详情 ${it.postId} 为空: ${r.message ?? ""}`);
+            continue;
+          }
+          // 项目实习生的详情不带 postId，用列表里的
+          yield normalizeTencentCampus({ ...r.data, postId: r.data.postId ?? it.postId }, ctx.now());
         } catch (e) {
           ctx.onError(`tencent_campus 详情 ${it.postId} 失败: ${(e as Error).message}`);
         }

@@ -26,7 +26,8 @@ import {
   type Weights,
 } from "./types.ts";
 
-export const DEFAULT_RECALL_LIMIT = 100;
+// 8000+ 岗位库实测：100 时全量打分的前 10 只召回 8 个，500 时前 20 全中、耗时只多约 80ms
+export const DEFAULT_RECALL_LIMIT = 500;
 /** 规则分低于此值的岗位只是「专业/城市沾边」，不推荐给用户。 */
 export const MIN_RECOMMEND_SCORE = 30;
 
@@ -181,7 +182,9 @@ export function recall(
   const query = tokenize(profileQueryText(profile));
   const lexical = normalize(jobs.map((_, i) => bm25.score(query, i)));
   const hasVectors = vectorScores !== undefined && vectorScores.size > 0;
-  const vector = hasVectors ? jobs.map((j) => clamp01(vectorScores.get(j.id) ?? 0)) : [];
+  // 没进向量近邻或还没算向量的岗位按已知最低相似度计，避免向量补到一半时整体被压到底
+  const floor = hasVectors ? Math.min(...vectorScores.values()) : 0;
+  const vector = hasVectors ? jobs.map((j) => clamp01(vectorScores.get(j.id) ?? floor)) : [];
   const ranked = jobs.map((job, i) => ({
     job,
     s: hasVectors ? 0.7 * (vector[i] ?? 0) + 0.3 * (lexical[i] ?? 0) : (lexical[i] ?? 0),

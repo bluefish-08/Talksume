@@ -10,6 +10,8 @@ export interface FetchContext {
   types?: JobType[] | undefined;
   now: () => Date;
   onError: (message: string) => void;
+  /** 断点续抓：返回 true 的岗位 id 不再请求详情 */
+  skip?: ((id: string) => boolean) | undefined;
 }
 
 export interface SourceAdapter {
@@ -47,6 +49,31 @@ export function parseDegree(text: string | null | undefined): Job["degree"] {
   if (/大专|专科/.test(text)) return "associate";
   if (/不限/.test(text)) return "any";
   return undefined;
+}
+
+const DEGREE_RANK = { associate: 0, bachelor: 1, master: 2, phd: 3 } as const;
+
+/** 从 JD 里找「X及以上/在读」「X或Y」的最低学历门槛；"优先"不算门槛。 */
+export function degreeFromJd(text: string | null | undefined): Job["degree"] {
+  let lowest: keyof typeof DEGREE_RANK | undefined;
+  const words = (s: string) =>
+    [...s.matchAll(/博士|硕士|研究生|本科|大专|专科/g)].map((w) => parseDegree(w[0]));
+  for (const m of (text ?? "").matchAll(
+    /(博士|硕士|研究生|本科|大专|专科)(?:研究生|学历|学位)?\s*(?:及|或)?\s*(以上|在读)(?!.{0,4}优先)|(?:博士|硕士|研究生|本科)\s*[或/、]\s*(?:博士|硕士|研究生|本科)(?:学位|学历|学生|毕业生)?(?![^，。；\n]{0,6}优先)/g,
+  )) {
+    for (const d of words(m[0]) as (keyof typeof DEGREE_RANK)[]) {
+      if (!lowest || DEGREE_RANK[d] < DEGREE_RANK[lowest]) lowest = d;
+    }
+  }
+  return lowest;
+}
+
+/** 毫秒时间戳或「2026年11月02日」，按北京时间解析。 */
+export function parseTime(v: number | string | null | undefined): Date | undefined {
+  if (typeof v === "number") return v > 0 ? new Date(v) : undefined;
+  const m = v?.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/);
+  if (!m) return undefined;
+  return new Date(`${m[1]}-${m[2]?.padStart(2, "0")}-${m[3]?.padStart(2, "0")}T00:00:00+08:00`);
 }
 
 export function clean(text: string | null | undefined): string {

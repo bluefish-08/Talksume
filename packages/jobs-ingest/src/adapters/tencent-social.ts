@@ -1,10 +1,12 @@
 import { Job } from "@talksume/core";
 import {
   clean,
+  degreeFromJd,
   type FetchContext,
   joinJd,
   normalizeCities,
   paginate,
+  parseTime,
   type SourceAdapter,
   wantType,
 } from "../common.ts";
@@ -19,6 +21,7 @@ export interface TencentSocialListItem {
   BGName?: string | null;
   ProductName?: string | null;
   PostURL?: string | null;
+  LastUpdateTime?: string | null;
 }
 
 export interface TencentSocialDetail extends TencentSocialListItem {
@@ -35,6 +38,7 @@ export function normalizeTencentSocial(d: TencentSocialDetail, fetchedAt: Date):
     title: clean(d.RecruitPostName),
     cities: normalizeCities(d.LocationName),
     jobType: "experienced",
+    degree: degreeFromJd(d.Requirement),
     jdText: joinJd([
       ["岗位职责", d.Responsibility],
       ["任职要求", d.Requirement],
@@ -44,6 +48,7 @@ export function normalizeTencentSocial(d: TencentSocialDetail, fetchedAt: Date):
       "https:",
     ),
     tags: [d.CategoryName, d.BGName, d.ProductName].filter((x): x is string => !!x),
+    postedAt: parseTime(d.LastUpdateTime),
     fetchedAt,
   });
 }
@@ -61,6 +66,7 @@ export const tencentSocial: SourceAdapter = {
       return { items: r.Data.Posts ?? [], hasMore: n * 50 < r.Data.Count };
     });
     for await (const it of list) {
+      if (ctx.skip?.(`tencent_social:${it.PostId}`)) continue;
       try {
         const r = await ctx.http.json<{ Data: TencentSocialDetail }>(
           `${BASE}/ByPostId?postId=${it.PostId}&language=zh-cn`,

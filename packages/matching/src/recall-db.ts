@@ -8,9 +8,15 @@ import { profileQueryText } from "./pipeline.ts";
 const t = schema.jobs;
 
 /** 给还没有向量的岗位补向量，返回处理条数；单批失败直接抛出，下次重跑会续上。 */
-export async function embedPendingJobs(db: Db, embedder: Embedder, batchSize = 32): Promise<number> {
+export async function embedPendingJobs(
+  db: Db,
+  embedder: Embedder,
+  batchSize = 32,
+  opts: { delayMs?: number; onBatch?: (done: number) => void } = {},
+): Promise<number> {
   let done = 0;
   for (;;) {
+    if (done > 0 && opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
     const rows = await db
       .select({ id: t.id, company: t.company, title: t.title, jdText: t.jdText })
       .from(t)
@@ -24,6 +30,7 @@ export async function embedPendingJobs(db: Db, embedder: Embedder, batchSize = 3
       if (embedding) await db.update(t).set({ embedding }).where(eq(t.id, row.id));
     }
     done += rows.length;
+    opts.onBatch?.(done);
   }
 }
 
@@ -44,5 +51,6 @@ export async function vectorScores(
     .where(and(eq(t.status, "open"), visibleTo(userId), sql`${t.embedding} is not null`))
     .orderBy(distance)
     .limit(limit);
-  return new Map(rows.map((r) => [r.id, Number(r.sim)]));
+  // 零向量的余弦是 NaN，这类岗位当作没有向量
+  return new Map(rows.map((r) => [r.id, Number(r.sim)] as const).filter(([, sim]) => Number.isFinite(sim)));
 }

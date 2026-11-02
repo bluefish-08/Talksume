@@ -39,6 +39,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       TALKSUME_DEMO: ${TALKSUME_DEMO:-1}
     depends_on:
       postgres: { condition: service_healthy }

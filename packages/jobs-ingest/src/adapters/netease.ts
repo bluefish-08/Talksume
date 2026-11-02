@@ -1,12 +1,14 @@
 import { Job } from "@talksume/core";
 import {
   clean,
+  degreeFromJd,
   type FetchContext,
   type JobType,
   joinJd,
   normalizeCities,
   paginate,
   parseDegree,
+  parseTime,
   roundRobin,
   type SourceAdapter,
   wantType,
@@ -26,6 +28,7 @@ export interface NeteasePosition {
   requirement?: string | null;
   reqEducationName?: string | null;
   workPlaceNameList?: string[] | string | null;
+  updateTime?: number | null;
 }
 
 // 0 社招、1 实习；2 为外包派遣，不属于官方直招，不采集
@@ -46,13 +49,14 @@ export function normalizeNetease(p: NeteasePosition, fetchedAt: Date): Job | und
     title: clean(p.name),
     cities: normalizeCities(p.workPlaceNameList),
     jobType,
-    degree: parseDegree(p.reqEducationName),
+    degree: parseDegree(p.reqEducationName) ?? degreeFromJd(p.requirement),
     jdText: joinJd([
       ["岗位职责", p.description],
       ["任职要求", p.requirement],
     ]),
     url: `https://hr.163.com/job-detail.html?id=${id}`,
     tags: [p.firstPostTypeName, p.firstDepName, p.productName].filter((x): x is string => !!x),
+    postedAt: parseTime(p.updateTime),
     fetchedAt,
   });
 }

@@ -68,6 +68,37 @@ describe("tencent_campus", () => {
     expect(c.errors[0]).toContain("bad");
   });
 
+  it("已下架返回空详情时跳过，详情缺 postId 时用列表的", async () => {
+    const [a, b] = fx.items;
+    const http = {
+      async json<T>(url: string): Promise<T> {
+        if (url.includes("searchPosition")) return { data: { positionList: [a, b], count: 2 } } as T;
+        if (url.includes(`postId=${a?.postId}`)) return { data: null, message: "岗位已下架" } as T;
+        return { data: { ...fx.details[1], postId: null } } as T;
+      },
+    };
+    const c = ctx(http);
+    const jobs = await collect(tencentCampus.fetch(c));
+    expect(jobs.map((j) => j.sourceJobId)).toEqual([b?.postId]);
+    expect(c.errors[0]).toContain("岗位已下架");
+  });
+
+  it("续抓时已抓过的岗位不再请求详情", async () => {
+    const [a, b] = fx.items;
+    const urls: string[] = [];
+    const http = {
+      async json<T>(url: string): Promise<T> {
+        urls.push(url);
+        if (url.includes("searchPosition")) return { data: { positionList: [a, b], count: 2 } } as T;
+        return { data: fx.details[1] } as T;
+      },
+    };
+    const c = { ...ctx(http), skip: (id: string) => id === `tencent_campus:${a?.postId}` };
+    const jobs = await collect(tencentCampus.fetch(c));
+    expect(jobs).toHaveLength(1);
+    expect(urls.some((u) => u.includes(`postId=${a?.postId}`))).toBe(false);
+  });
+
   it("types 过滤在取详情前生效", async () => {
     const urls: string[] = [];
     const [a, b] = fx.items;

@@ -11,6 +11,8 @@ export interface Stats {
   byRole: Record<string, number>;
   byCompany: Record<string, number>;
   topCities: [string, number][];
+  /** 各字段缺失条数 */
+  missing: Record<"jd" | "cities" | "jobType" | "degree" | "postedAt" | "url" | "tags", number>;
 }
 
 const JD_MIN = 50;
@@ -34,5 +36,14 @@ export function computeStats(jobs: Job[]): Stats {
     topCities: Object.entries(cities)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8),
+    missing: {
+      jd: jobs.filter((j) => j.jdText.length < JD_MIN).length,
+      cities: jobs.filter((j) => j.cities.length === 0).length,
+      jobType: jobs.filter((j) => !j.jobType).length,
+      degree: jobs.filter((j) => !j.degree).length,
+      postedAt: jobs.filter((j) => !j.postedAt).length,
+      url: jobs.filter((j) => !j.url).length,
+      tags: jobs.filter((j) => j.tags.length === 0).length,
+    },
   };
 }

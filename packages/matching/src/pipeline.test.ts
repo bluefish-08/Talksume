@@ -76,9 +76,29 @@ describe("matchProfile", () => {
     const c = makeJob({ title: "市场C", id: "c", jdText: "推广" });
     const out = matchProfile(profile, [a, b, c], {
       recallLimit: 1,
-      vectorScores: new Map([["c", 0.9]]),
+      vectorScores: new Map([
+        ["a", 0.2],
+        ["c", 0.9],
+      ]),
     });
     expect(out.matches[0]?.job.id).toBe("c");
+  });
+
+  it("没有向量的岗位按已知最低相似度参与，不会被压到最后", () => {
+    const relevant = makeJob({
+      id: "r",
+      title: "后端开发工程师",
+      jdText: "Java Spring MySQL Redis 后端开发",
+    });
+    const others = ["x", "y"].map((id) => makeJob({ id, title: "市场专员", jdText: "推广" }));
+    const out = matchProfile(profile, [relevant, ...others], {
+      recallLimit: 1,
+      vectorScores: new Map([
+        ["x", 0.5],
+        ["y", 0.5],
+      ]),
+    });
+    expect(out.matches[0]?.job.id).toBe("r");
   });
 });
 
@@ -150,6 +170,11 @@ describe("Embedder", () => {
       fetch: fakeFetch,
     });
     await expect(wrongDims.embed(["a", "b"])).rejects.toThrow("维度");
+
+    const mrl = new OpenAiEmbedder({ baseUrl: "http://x", model: "m", dimensions: 2, fetch: fakeFetch });
+    const [first] = await mrl.embed(["a", "b"]);
+    expect(first).toHaveLength(2);
+    for (const x of first ?? []) expect(x).toBeCloseTo(Math.SQRT1_2, 6);
   });
 
   it("没配置环境变量时不启用", () => {

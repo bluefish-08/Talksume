@@ -8,7 +8,8 @@
   },
   "scripts": {
     "seed": "node --env-file-if-exists=../../.env src/seed-cli.ts",
-    "eval": "node eval/run.ts"
+    "eval": "node eval/run.ts",
+    "sync": "node --env-file-if-exists=../../.env src/sync-cli.ts"
   },
   "dependencies": {
     "@talksume/core": "workspace:*",

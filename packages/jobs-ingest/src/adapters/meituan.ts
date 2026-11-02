@@ -1,11 +1,13 @@
 import { Job } from "@talksume/core";
 import {
   clean,
+  degreeFromJd,
   type FetchContext,
   type JobType,
   joinJd,
   normalizeCities,
   paginate,
+  parseTime,
   roundRobin,
   type SourceAdapter,
   wantType,
@@ -25,6 +27,8 @@ export interface MeituanJob {
   jobDuty?: string | null;
   jobRequirement?: string | null;
   highLight?: string | null;
+  firstPostTime?: number | null;
+  refreshTime?: number | null;
 }
 
 const TYPES: Record<string, { type: JobType; highlight: string }> = {
@@ -44,6 +48,7 @@ export function normalizeMeituan(p: MeituanJob, fetchedAt: Date): Job | undefine
     title: clean(p.name),
     cities: normalizeCities((p.cityList ?? []).map((c) => c.name ?? "")),
     jobType: t.type,
+    degree: degreeFromJd(p.jobRequirement),
     jdText: joinJd([
       ["岗位职责", p.jobDuty],
       ["任职要求", p.jobRequirement],
@@ -53,6 +58,7 @@ export function normalizeMeituan(p: MeituanJob, fetchedAt: Date): Job | undefine
     tags: [p.jobFamily, p.jobFamilyGroup, ...(p.department ?? []).map((d) => d.name)].filter(
       (x): x is string => !!x,
     ),
+    postedAt: parseTime(p.firstPostTime ?? p.refreshTime),
     fetchedAt,
   });
 }

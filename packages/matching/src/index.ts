@@ -9,6 +9,7 @@ export * from "./rerank.ts";
 export * from "./role.ts";
 export * from "./seed.ts";
 export * from "./service.ts";
+export * from "./sync.ts";
 export * from "./synonyms.ts";
 export * from "./text.ts";
 export * from "./types.ts";

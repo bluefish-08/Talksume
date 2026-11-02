@@ -12,8 +12,11 @@ export class JobRepo {
     this.#db = db;
   }
 
-  /** 按 (source, source_job_id) 幂等写入；已存在则更新内容并保留原 id 与已有向量。 */
-  async upsertMany(items: Job[]): Promise<void> {
+  /**
+   * 按 (source, source_job_id) 幂等写入；已存在则更新内容并保留原 id，标题或 JD 变了才清掉向量。
+   * `reopen` 用于抓取同步：官网重新出现的岗位恢复为 open。
+   */
+  async upsertMany(items: Job[], opts: { reopen?: boolean } = {}): Promise<void> {
     const latest = new Map<string, Job>();
     for (const job of items) latest.set(`${job.source}\u0000${job.sourceJobId}`, job);
     const rows = [...latest.values()].map((job) => ({
@@ -53,6 +56,8 @@ export class JobRepo {
             tags: sql`excluded.tags`,
             postedAt: sql`excluded.posted_at`,
             fetchedAt: sql`excluded.fetched_at`,
+            embedding: sql`case when (${jobs.company}, ${jobs.title}, ${jobs.jdText}) is distinct from (excluded.company, excluded.title, excluded.jd_text) then null else ${jobs.embedding} end`,
+            ...(opts.reopen && { status: sql`'open'` }),
           },
         });
     }
