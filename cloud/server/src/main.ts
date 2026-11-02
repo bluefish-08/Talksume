@@ -9,6 +9,7 @@ const app = buildApp({
   edition: "cloud",
   version: process.env.APP_VERSION ?? "dev",
   logger: true,
+  ...(database && { db: database.db }),
 });
 
 const port = Number(process.env.PORT ?? 8080);

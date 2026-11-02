@@ -8,6 +8,8 @@
   },
   "dependencies": {
     "@talksume/core": "workspace:*",
+    "@talksume/db": "workspace:*",
+    "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.7"
   }
 }
