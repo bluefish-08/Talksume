@@ -7,11 +7,14 @@ export type ResumeTemplate = (typeof RESUME_TEMPLATES)[number];
 export type ResumeAccent = (typeof RESUME_ACCENTS)[number];
 
 export const TEMPLATE_INFO: Record<ResumeTemplate, { label: string; hint: string }> = {
-  campus: { label: "经典校园", hint: "居中抬头、色线分区，校招通用" },
-  modern: { label: "现代强调色", hint: "姓名色块、分区色条，适合产品、运营、设计" },
-  minimal: { label: "极简黑白", hint: "大留白、细线条，适合外企与打印" },
-  tech: { label: "技术紧凑", hint: "侧栏标题、技能标签，信息密度高，适合技术岗" },
+  campus: { label: "经典校园", hint: "居中抬头、色标题配通栏细线，校招通用" },
+  modern: { label: "现代强调色", hint: "抬头色块、分区色条，适合产品、运营、设计" },
+  minimal: { label: "极简黑白", hint: "全黑白灰、细线条，适合外企与打印" },
+  tech: { label: "技术紧凑", hint: "侧栏标题、技能标签、行距紧凑，适合技术岗" },
 };
+
+/** 极简黑白不用强调色，选了也不生效。 */
+export const templateUsesAccent = (template: ResumeTemplate): boolean => template !== "minimal";
 
 export const ACCENT_INFO: Record<ResumeAccent, { label: string; hex: string }> = {
   blue: { label: "品牌蓝", hex: "#2563eb" },

@@ -1,4 +1,4 @@
-import type { ResumeContent, ResumeSection } from "./resume.ts";
+import type { ResumeContent, ResumeItem, ResumeSection } from "./resume.ts";
 
 export const POLISHABLE_KINDS = [
   "experiences",
@@ -39,6 +39,12 @@ export function polishItemKey(kind: ResumeSection["kind"], heading: string): str
   return `${kind}:${heading.trim()}`;
 }
 
+// 技术栈从副标题里拆出去以后，给模型的上下文仍按原来的「角色 · 技术栈」拼回去
+function optionalSubheading(item: ResumeItem): { subheading?: string } {
+  const parts = [item.subheading, item.techStack?.join(" / ")].filter(Boolean);
+  return parts.length > 0 ? { subheading: parts.join(" · ") } : {};
+}
+
 export function polishTargets(resume: ResumeContent): PolishTarget[] {
   const kinds: readonly string[] = POLISHABLE_KINDS;
   return resume.sections
@@ -49,7 +55,7 @@ export function polishTargets(resume: ResumeContent): PolishTarget[] {
           itemKey: polishItemKey(section.kind, item.heading),
           sectionKind: section.kind,
           heading: item.heading,
-          ...(item.subheading && { subheading: item.subheading }),
+          ...optionalSubheading(item),
           slot,
           text: bullet.text,
           sourceHash: polishSourceHash(bullet.text),

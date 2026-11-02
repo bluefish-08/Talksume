@@ -1,10 +1,13 @@
 import type { ResumeAccent, ResumeTemplate } from "@talksume/core";
+import type { Density } from "./layout.ts";
 
 export type TemplateName = ResumeTemplate;
 
 export interface RenderOptions {
   template?: ResumeTemplate;
   accent?: ResumeAccent;
+  /** 不传时按内容量自动选档。 */
+  density?: Density;
 }
 
 export const FONT_STACK_CSS = [

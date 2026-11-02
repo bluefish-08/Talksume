@@ -4,13 +4,17 @@ import {
   DEFAULT_RESUME_STYLE,
   RESUME_ACCENTS,
   RESUME_TEMPLATES,
+  type ResumeBullet,
   type ResumeContent,
   type ResumeItem,
+  type ResumeLink,
   type ResumeSection,
   type ResumeStyle,
   type ResumeTemplate,
-  skillLine,
+  templateUsesAccent,
 } from "@talksume/core";
+import { type Layout, layoutFor } from "./layout.ts";
+import { richSpans, typeset } from "./text.ts";
 import { FONT_STACK_CSS, type RenderOptions, SERIF_STACK_CSS } from "./types.ts";
 
 const ESCAPES: Record<string, string> = {
@@ -34,135 +38,115 @@ export function resolveRenderStyle(options: RenderOptions = {}): ResumeStyle {
 }
 
 interface TemplateSpec {
-  /** 同时用于 PDF 的 @page 页边距和网页预览的纸张内边距。 */
-  margin: string;
   skills: "line" | "tags";
   css: string;
 }
 
+const MONO_STACK = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
+
 const BASE_CSS = `
-.resume { font-family: ${FONT_STACK_CSS}; color: #1f2937; background: #fff; font-variant-ligatures: none;
-  -webkit-print-color-adjust: exact; print-color-adjust: exact; text-rendering: optimizeLegibility;
-  --accent-soft: color-mix(in srgb, var(--accent) 9%, #fff); --accent-line: color-mix(in srgb, var(--accent) 35%, #fff); }
+.resume { font-family: ${FONT_STACK_CSS}; font-size: var(--fs); line-height: var(--lh); background: #fff;
+  font-variant-ligatures: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-rendering: optimizeLegibility;
+  --ink: #111827; --body: #374151; --label: #4b5563; --muted: #6b7280; --faint: #9ca3af; --rule: #e5e7eb; color: var(--body);
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, #fff); --accent-deep: color-mix(in srgb, var(--accent) 78%, #000); }
 .resume *, .resume *::before, .resume *::after { box-sizing: border-box; margin: 0; padding: 0; }
 .resume h1, .resume h2 { font-size: inherit; font-weight: 700; }
-.resume .contacts { overflow-wrap: anywhere; }
-.resume .summary, .resume li { text-align: justify; }
-.resume section { break-inside: auto; }
+.resume h1 { font-size: var(--name); line-height: 1.2; color: var(--ink); }
+.resume .headline { margin-top: 2.5pt; font-size: 1.08em; font-weight: 500; color: var(--ink); }
+.resume .contacts { margin-top: 2.5pt; font-size: 0.92em; color: var(--label); }
+.resume .contacts span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.resume .summary, .resume li { text-align: justify; text-wrap: pretty; }
+.resume .summary { margin-top: 4pt; }
+.resume section { margin-top: var(--sec-gap); break-inside: auto; }
 .resume h2 { break-after: avoid; }
 .resume .item { break-inside: avoid; }
+.resume .item + .item { margin-top: var(--item-gap); }
 .resume .item-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12pt; }
 .resume .item-main { min-width: 0; }
-.resume .item-title { font-weight: 700; color: #111827; }
-.resume .item-period { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.resume ul { list-style: none; }
-.resume li { position: relative; }
-.resume .skill-line { break-inside: avoid; }
+.resume .item-title { font-weight: 700; color: var(--ink); font-size: 1.04em; }
+.resume .item-sub::before, .resume .item-meta::before { content: "·"; margin: 0 0.4em; color: var(--faint); }
+.resume .item-aside { flex: none; white-space: nowrap; font-size: 0.92em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.resume .item-stack { margin-top: 0.5pt; font-size: 0.88em; color: var(--muted); }
+.resume .item-stack .label { color: var(--label); }
+.resume ul { list-style: none; margin-top: 1pt; }
+.resume li { position: relative; padding-left: 1em; }
+.resume li + li { margin-top: var(--li-gap); }
+.resume ul.lines li { padding-left: 0; }
+.resume ul.lines li::before { display: none; }
+.resume .lead, .resume .num { font-weight: 700; color: var(--ink); }
+.resume .num { white-space: nowrap; }
+.resume .skill-line { break-inside: avoid; text-wrap: pretty; }
+.resume .skill-line + .skill-line { margin-top: calc(var(--li-gap) + 1pt); }
+.resume .skill-line .item-title { font-size: 1em; }
+.resume .lvl { color: var(--muted); }
 `;
+
+const dot = (size: string, color: string, radius = "50%") =>
+  `li::before { content: ""; position: absolute; left: 0.28em; top: calc(var(--lh) * 0.5em - ${size} / 2); width: ${size}; height: ${size}; border-radius: ${radius}; background: ${color}; }`;
 
 const TEMPLATES: Record<ResumeTemplate, TemplateSpec> = {
   campus: {
-    margin: "14mm 16mm",
     skills: "line",
     css: `
-.resume { font-size: 9.75pt; line-height: 1.62; }
-.head { text-align: center; padding-bottom: 4pt; }
-.head h1 { font-size: 21pt; line-height: 1.25; letter-spacing: 0.14em; color: #111827; }
-.contacts { margin-top: 4pt; font-size: 9pt; color: #4b5563; }
-.contacts span + span::before { content: ""; display: inline-block; width: 1px; height: 0.8em; margin: 0 0.75em; background: #c7ccd4; vertical-align: -0.05em; }
-.summary { margin-top: 6pt; color: #374151; text-align: center; text-wrap: balance; }
-section { margin-top: 11pt; }
-h2 { font-size: 11pt; line-height: 1.4; color: var(--accent); letter-spacing: 0.08em; padding-bottom: 2pt; border-bottom: 1pt solid var(--accent); margin-bottom: 5pt; }
-.item + .item { margin-top: 6pt; }
-.item-title { font-size: 10pt; }
-.item-sub { margin-left: 1.1em; color: #374151; font-weight: 500; }
-.item-period { font-size: 9pt; color: #4b5563; }
-ul { margin-top: 2pt; }
-li { padding-left: 1em; color: #374151; }
-li + li { margin-top: 1.5pt; }
-li::before { content: ""; position: absolute; left: 0.25em; top: calc(0.81em - 1.5pt); width: 3pt; height: 3pt; border-radius: 50%; background: #6b7280; }
-.skill-line + .skill-line { margin-top: 2pt; }
-.skill-line .item-title { color: #111827; }
+.head { text-align: center; }
+.head h1 { letter-spacing: 0.16em; }
+.headline { color: var(--accent); }
+.contacts span + span::before { content: ""; display: inline-block; width: 0.75pt; height: 0.8em; margin: 0 0.7em; background: #c7ccd4; vertical-align: -0.05em; }
+.summary { text-align: center; text-wrap: balance; }
+h2 { font-size: 1.12em; line-height: 1.4; color: var(--accent); letter-spacing: 0.1em; padding-bottom: 1.5pt; border-bottom: 0.75pt solid var(--accent); margin-bottom: 4pt; }
+${dot("3pt", "#6b7280")}
 `,
   },
   modern: {
-    margin: "12mm 14mm",
     skills: "line",
     css: `
-.resume { font-size: 9.75pt; line-height: 1.6; }
-.head { background: var(--accent); color: #fff; border-radius: 4pt; padding: 13pt 16pt 12pt; }
-.head h1 { font-size: 22pt; line-height: 1.2; letter-spacing: 0.08em; }
-.contacts { margin-top: 5pt; font-size: 9pt; color: rgba(255, 255, 255, 0.9); }
+.head { background: var(--accent); border-radius: 3pt; padding: 12pt 15pt 11pt; }
+.head h1 { color: #fff; letter-spacing: 0.08em; }
+.headline { color: #fff; opacity: 0.95; }
+.contacts { color: #fff; opacity: 0.88; }
 .contacts span + span::before { content: "·"; margin: 0 0.6em; opacity: 0.7; }
-.summary { margin-top: 7pt; font-size: 9.25pt; color: rgba(255, 255, 255, 0.92); }
-section { margin-top: 12pt; }
-h2 { display: flex; align-items: center; gap: 6pt; font-size: 11.5pt; line-height: 1.4; color: #111827; letter-spacing: 0.06em; margin-bottom: 5pt; }
-h2::before { content: ""; flex: none; width: 3.5pt; height: 12pt; border-radius: 1.5pt; background: var(--accent); }
-h2::after { content: ""; flex: 1; height: 0.75pt; background: #e5e7eb; }
-.item + .item { margin-top: 7pt; }
-.item-title { font-size: 10pt; }
-.item-sub { margin-left: 0.9em; color: var(--accent); font-weight: 500; }
-.item-period { font-size: 9pt; color: #6b7280; }
-ul { margin-top: 2.5pt; }
-li { padding-left: 1em; color: #374151; }
-li + li { margin-top: 1.5pt; }
-li::before { content: ""; position: absolute; left: 0.2em; top: calc(0.8em - 2pt); width: 4pt; height: 4pt; border-radius: 1pt; background: var(--accent); }
-.skill-line { padding-left: 2pt; }
-.skill-line + .skill-line { margin-top: 2.5pt; }
-.skill-line .item-title { color: var(--accent); }
+.summary { color: #fff; opacity: 0.92; }
+h2 { display: flex; align-items: center; gap: 6pt; font-size: 1.15em; line-height: 1.4; color: var(--ink); letter-spacing: 0.06em; margin-bottom: 3.5pt; }
+h2::before { content: ""; flex: none; width: 3.5pt; height: 1.05em; border-radius: 1.5pt; background: var(--accent); }
+h2::after { content: ""; flex: 1; height: 0.75pt; background: var(--rule); }
+.item-sub { color: var(--accent); font-weight: 500; }
+.lead { color: var(--accent-deep); }
+.skill-line .item-title { color: var(--accent-deep); }
+${dot("3.5pt", "var(--accent)", "1pt")}
 `,
   },
   minimal: {
-    margin: "18mm 20mm",
     skills: "line",
     css: `
-.resume { font-size: 9.75pt; line-height: 1.66; color: #222; }
-.head { padding-bottom: 9pt; border-bottom: 0.75pt solid #111; }
-.head h1 { font-family: ${SERIF_STACK_CSS}; font-size: 24pt; line-height: 1.2; letter-spacing: 0.2em; color: #111; font-weight: 700; }
-.contacts { margin-top: 6pt; font-size: 9pt; color: #444; letter-spacing: 0.02em; }
-.contacts span + span::before { content: "/"; margin: 0 0.8em; color: #aaa; }
-.summary { margin-top: 6pt; color: #333; }
-section { margin-top: 15pt; }
-h2 { font-size: 9.5pt; line-height: 1.4; letter-spacing: 0.32em; color: var(--accent); margin-bottom: 6pt; }
-.item + .item { margin-top: 8pt; }
-.item-title { font-size: 10pt; color: #111; font-weight: 600; }
-.item-sub { color: #444; }
-.item-sub::before { content: "·"; margin: 0 0.5em; color: #999; }
-.item-period { font-size: 9pt; color: #555; }
-ul { margin-top: 2.5pt; }
-li { padding-left: 1.05em; color: #333; }
-li + li { margin-top: 2pt; }
-li::before { content: "–"; position: absolute; left: 0; color: #777; }
-.skill-line + .skill-line { margin-top: 2.5pt; }
-.skill-line .item-title { font-weight: 600; }
+.resume { --ink: #111111; --body: #333333; --label: #444444; --muted: #666666; --faint: #999999; --rule: #bbbbbb; }
+.head { padding-bottom: 7pt; border-bottom: 0.75pt solid #111111; }
+.head h1 { font-family: ${SERIF_STACK_CSS}; letter-spacing: 0.18em; }
+.headline { font-weight: 400; color: #333333; letter-spacing: 0.04em; }
+.contacts span + span::before { content: "/"; margin: 0 0.7em; color: #aaaaaa; }
+h2 { display: flex; align-items: center; gap: 8pt; font-size: 1em; line-height: 1.4; letter-spacing: 0.3em; color: #111111; margin-bottom: 3.5pt; }
+h2::after { content: ""; flex: 1; height: 0.5pt; background: var(--rule); }
+li::before { content: ""; position: absolute; left: 0.1em; top: calc(var(--lh) * 0.5em); width: 0.45em; height: 0.75pt; background: #777777; }
 `,
   },
   tech: {
-    margin: "11mm 13mm",
     skills: "tags",
     css: `
-.resume { font-size: 9pt; line-height: 1.48; }
-.head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 16pt; padding-bottom: 6pt; border-bottom: 1.5pt solid var(--accent); }
-.head h1 { font-size: 19pt; line-height: 1.2; letter-spacing: 0.06em; color: #111827; }
-.contacts { font-size: 8.75pt; color: #4b5563; text-align: right; }
-.contacts span + span::before { content: "|"; margin: 0 0.55em; color: #c7ccd4; }
-.summary { flex-basis: 100%; margin-top: 4pt; color: #374151; }
-section { display: grid; grid-template-columns: 17mm minmax(0, 1fr); column-gap: 4mm; margin-top: 8pt; }
-h2 { font-size: 9.75pt; line-height: 1.48; color: var(--accent); letter-spacing: 0.04em; text-align: right; }
-.sec-body { padding-left: 4mm; border-left: 0.75pt solid #e5e7eb; }
-.item + .item { margin-top: 4.5pt; }
-.item-title { font-size: 9.5pt; }
-.item-sub { margin-left: 0.8em; color: #4b5563; }
-.item-period { font-size: 8.5pt; color: #6b7280; }
-ul { margin-top: 1pt; }
-li { padding-left: 0.95em; color: #374151; }
-li + li { margin-top: 0.5pt; }
-li::before { content: ""; position: absolute; left: 0.15em; top: calc(0.74em - 1.25pt); width: 2.5pt; height: 2.5pt; border-radius: 50%; background: var(--accent); }
+.head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; column-gap: 14pt; padding-bottom: 5pt; border-bottom: 1.5pt solid var(--accent); }
+.head h1 { letter-spacing: 0.04em; }
+.headline { font-size: 1em; font-weight: 600; color: var(--accent); }
+.contacts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 9pt; max-width: 60%; margin: 0 0 0 auto; font-size: 0.9em; }
+.summary { flex-basis: 100%; }
+section { display: grid; grid-template-columns: 16mm minmax(0, 1fr); column-gap: 4mm; }
+h2 { font-size: 1.02em; line-height: var(--lh); color: var(--accent); letter-spacing: 0.04em; text-align: right; }
+.sec-body { padding-left: 4mm; border-left: 0.75pt solid var(--rule); }
+.item-stack .stack { font-family: ${MONO_STACK}; font-size: 0.95em; }
+${dot("2.5pt", "var(--accent)")}
 .skill-line { display: flex; align-items: baseline; gap: 6pt; }
-.skill-line + .skill-line { margin-top: 3pt; }
-.skill-line .item-title { flex: none; min-width: 2.6em; font-size: 9pt; }
-.tags { display: flex; flex-wrap: wrap; gap: 2.5pt 3pt; }
-.tag { padding: 0 4.5pt; border-radius: 2pt; background: var(--accent-soft); color: #1f2937; font-size: 8.5pt; line-height: 1.55; }
+.skill-line .item-title { flex: none; min-width: 4.2em; }
+.tags { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2.5pt 3pt; }
+.tag { padding: 0 4pt; border-radius: 2pt; background: var(--accent-soft); color: #1f2937; font-size: 0.92em; line-height: 1.5; }
+.tags .lvl { font-size: 0.92em; }
+.tags .lvl:not(:first-child) { margin-left: 4pt; }
 `,
   },
 };
@@ -179,31 +163,53 @@ function scopeCss(css: string): string {
   });
 }
 
-function bulletList(item: ResumeItem, at: string): string {
-  if (item.bullets.length === 0) return "";
-  const lis = item.bullets.map((b, i) => `<li data-bullet="${at}-${i}">${escapeHtml(b.text)}</li>`).join("");
-  return `<ul>${lis}</ul>`;
+const text = (raw: string) => escapeHtml(typeset(raw));
+
+function rich(raw: string): string {
+  return richSpans(raw)
+    .map((s) => (s.strong ? `<b class="num">${escapeHtml(s.text)}</b>` : escapeHtml(s.text)))
+    .join("");
 }
 
-function renderItem(item: ResumeItem, at: string): string {
-  const sub = item.subheading ? `<span class="item-sub">${escapeHtml(item.subheading)}</span>` : "";
-  const period = item.period ? `<span class="item-period">${escapeHtml(item.period)}</span>` : "";
-  const head = `<div class="item-head"><div class="item-main"><span class="item-title">${escapeHtml(item.heading)}</span>${sub}</div>${period}</div>`;
-  return `<div class="item" data-item="${at}">${head}${bulletList(item, at)}</div>`;
+function bulletHtml(b: ResumeBullet): string {
+  const lead = b.lead?.trim() ? `<b class="lead">${text(b.lead)}</b>：` : "";
+  return `${lead}${rich(b.text)}`;
+}
+
+function bulletList(item: ResumeItem, at: string, plain: boolean): string {
+  if (item.bullets.length === 0) return "";
+  const lis = item.bullets.map((b, i) => `<li data-bullet="${at}-${i}">${bulletHtml(b)}</li>`).join("");
+  return `<ul${plain ? ' class="lines"' : ""}>${lis}</ul>`;
+}
+
+function renderItem(item: ResumeItem, at: string, plain: boolean): string {
+  const sub = item.subheading ? `<span class="item-sub">${text(item.subheading)}</span>` : "";
+  const aside = [
+    item.period ? `<span class="item-period">${escapeHtml(item.period)}</span>` : "",
+    item.meta ? `<span class="item-meta">${text(item.meta)}</span>` : "",
+  ].join("");
+  const head = `<div class="item-head"><div class="item-main"><span class="item-title">${text(item.heading)}</span>${sub}</div>${aside ? `<div class="item-aside">${aside}</div>` : ""}</div>`;
+  const stack = item.techStack?.length
+    ? `<p class="item-stack"><span class="label">技术栈：</span><span class="stack">${item.techStack.map(text).join(" / ")}</span></p>`
+    : "";
+  return `<div class="item" data-item="${at}">${head}${stack}${bulletList(item, at, plain)}</div>`;
 }
 
 function renderSkillLine(item: ResumeItem, at: string): string {
-  const { label, text } = skillLine(item);
-  const head = label ? `<span class="item-title">${escapeHtml(label)}：</span>` : "";
-  return `<p class="skill-line" data-item="${at}">${head}${escapeHtml(text)}</p>`;
+  const label = item.heading.trim();
+  const head = label ? `<span class="item-title">${text(label)}：</span>` : "";
+  const body = item.bullets
+    .map((b) => `${b.lead ? `<span class="lvl">${text(b.lead)}</span> ` : ""}${text(b.text)}`)
+    .join("；");
+  return `<p class="skill-line" data-item="${at}">${head}${body}</p>`;
 }
 
 /** 按顿号、分号切词，括号里的顿号不切。 */
-export function skillTokens(text: string): string[] {
+export function skillTokens(value: string): string[] {
   const tokens: string[] = [];
   let depth = 0;
   let current = "";
-  for (const ch of text) {
+  for (const ch of value) {
     if ("（(".includes(ch)) depth++;
     if ("）)".includes(ch)) depth = Math.max(0, depth - 1);
     if (depth === 0 && "、；;".includes(ch)) {
@@ -221,20 +227,35 @@ const TAG_MAX_LENGTH = 16;
 
 /** 标签之间保留空格，抽取出的纯文本仍是分隔开的词；整句式的技能描述退回成一行文字。 */
 function renderSkillTags(item: ResumeItem, at: string): string {
-  const { label, text } = skillLine(item);
-  const tokens = skillTokens(text);
+  const groups = item.bullets.map((b) => ({ lead: b.lead, tokens: skillTokens(b.text) }));
+  const tokens = groups.flatMap((g) => g.tokens);
   if (tokens.some((t) => t.length > TAG_MAX_LENGTH || /[，。,]/.test(t))) return renderSkillLine(item, at);
-  const tags = tokens.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(" ");
-  const head = label ? `<span class="item-title">${escapeHtml(label)}</span>` : "";
+  const tags = groups
+    .map(
+      (g) =>
+        `${g.lead ? `<span class="lvl">${text(g.lead)}</span> ` : ""}${g.tokens.map((t) => `<span class="tag">${text(t)}</span>`).join(" ")}`,
+    )
+    .join(" ");
+  const label = item.heading.trim();
+  const head = label ? `<span class="item-title">${text(label)}</span>` : "";
   return `<p class="skill-line" data-item="${at}">${head}<span class="tags">${tags}</span></p>`;
 }
 
 function renderSection(section: ResumeSection, index: number, spec: TemplateSpec): string {
   if (section.items.length === 0) return "";
   const skills = spec.skills === "tags" ? renderSkillTags : renderSkillLine;
-  const render = section.kind === "skills" ? skills : renderItem;
-  const items = section.items.map((item, i) => render(item, `${index}-${i}`)).join("");
+  const plain = section.kind === "education";
+  const items = section.items
+    .map((item, i) =>
+      section.kind === "skills" ? skills(item, `${index}-${i}`) : renderItem(item, `${index}-${i}`, plain),
+    )
+    .join("");
   return `<section data-kind="${section.kind}" data-section="${index}"><h2>${escapeHtml(section.title)}</h2><div class="sec-body">${items}</div></section>`;
+}
+
+export function linkText({ label, url }: ResumeLink): string {
+  const shown = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return label && !shown.toLowerCase().includes(label.toLowerCase()) ? `${label}：${shown}` : shown;
 }
 
 export interface ResumeFragment {
@@ -242,23 +263,38 @@ export interface ResumeFragment {
   html: string;
   margin: string;
   style: ResumeStyle;
+  layout: Layout;
 }
 
 /** 不含 html/body 的简历片段：PDF 包成整页文档，网页预览直接挂进 shadow DOM，两边同源。 */
 export function renderFragment(content: ResumeContent, options: RenderOptions = {}): ResumeFragment {
   const style = resolveRenderStyle(options);
   const spec = TEMPLATES[style.template];
-  const { name, contacts, summary } = content.basics;
-  const contactHtml = contacts.length
-    ? `<div class="contacts">${contacts.map((c) => `<span>${escapeHtml(c)}</span>`).join("")}</div>`
+  const layout = layoutFor(content, style.template, options.density);
+  const { name, headline, contacts, links = [], summary } = content.basics;
+  const contactItems = [...contacts.map(text), ...links.map((l) => escapeHtml(linkText(l)))];
+  const contactHtml = contactItems.length
+    ? `<div class="contacts">${contactItems.map((c) => `<span>${c}</span>`).join("")}</div>`
     : "";
-  const summaryHtml = summary ? `<p class="summary">${escapeHtml(summary)}</p>` : "";
+  const headlineHtml = headline ? `<p class="headline">${text(headline)}</p>` : "";
+  const summaryHtml = summary ? `<p class="summary">${text(summary)}</p>` : "";
   const sections = content.sections.map((s, i) => renderSection(s, i, spec)).join("\n");
-  const html = `<div class="resume t-${style.template}" style="--accent: ${ACCENT_INFO[style.accent].hex}">
-<header class="head"><h1>${escapeHtml(name)}</h1>${contactHtml}${summaryHtml}</header>
+  const accent = templateUsesAccent(style.template) ? ACCENT_INFO[style.accent].hex : "#111111";
+  const vars = [
+    `--accent: ${accent}`,
+    `--fs: ${layout.fs}pt`,
+    `--lh: ${layout.lh}`,
+    `--name: ${layout.name}pt`,
+    `--sec-gap: ${layout.secGap}pt`,
+    `--item-gap: ${layout.itemGap}pt`,
+    `--li-gap: ${layout.liGap}pt`,
+  ].join("; ");
+  const html = `<div class="resume t-${style.template} d-${layout.density}" style="${vars}">
+<header class="head"><div class="head-main"><h1>${escapeHtml(name)}</h1>${headlineHtml}</div>${contactHtml}${summaryHtml}</header>
 ${sections}
 </div>`;
-  return { css: BASE_CSS + scopeCss(spec.css), html, margin: spec.margin, style };
+  const margin = `${layout.margin.y}mm ${layout.margin.x}mm`;
+  return { css: BASE_CSS + scopeCss(spec.css), html, margin, style, layout };
 }
 
 export function renderHtml(content: ResumeContent, options: RenderOptions = {}): string {

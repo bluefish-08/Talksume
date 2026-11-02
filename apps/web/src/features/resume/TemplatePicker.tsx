@@ -5,6 +5,7 @@ import {
   type ResumeAccent,
   type ResumeTemplate,
   TEMPLATE_INFO,
+  templateUsesAccent,
 } from "@talksume/core";
 import { sampleResume } from "@talksume/resume-render/browser";
 import { Check, ChevronDown, Sparkles } from "lucide-react";
@@ -28,6 +29,7 @@ export function TemplatePicker({ resume }: { resume: ResumeContent | undefined }
   const { style } = useResumeStyle();
   const save = useSaveResumeStyle();
   const recommend = useRecommendStyle();
+  const accentOn = templateUsesAccent(style.template);
   const thumbContent = resume && (resume.basics.name || resume.sections.length > 0) ? resume : sampleResume;
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export function TemplatePicker({ resume }: { resume: ResumeContent | undefined }
       >
         <span
           className={styles.dot}
-          style={{ background: ACCENT_INFO[style.accent].hex }}
+          style={{ background: accentOn ? ACCENT_INFO[style.accent].hex : "#111" }}
           aria-hidden="true"
         />
         {TEMPLATE_INFO[style.template].label}
@@ -146,7 +148,7 @@ export function TemplatePicker({ resume }: { resume: ResumeContent | undefined }
 
           <div className={styles.accents}>
             <span className={styles.accentLabel}>强调色</span>
-            <fieldset className={styles.swatches} aria-label="强调色">
+            <fieldset className={styles.swatches} aria-label="强调色" disabled={!accentOn}>
               {RESUME_ACCENTS.map((accent) => (
                 <button
                   key={accent}
@@ -160,7 +162,9 @@ export function TemplatePicker({ resume }: { resume: ResumeContent | undefined }
                 />
               ))}
             </fieldset>
-            <span className={styles.accentName}>{ACCENT_INFO[style.accent].label}</span>
+            <span className={styles.accentName}>
+              {accentOn ? ACCENT_INFO[style.accent].label : "极简黑白不使用强调色"}
+            </span>
           </div>
         </div>
       )}

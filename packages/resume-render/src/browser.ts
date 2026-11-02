@@ -1,2 +1,2 @@
 export { escapeHtml, type ResumeFragment, renderFragment } from "./html.ts";
-export { sampleResume } from "./sample-resume.ts";
+export { sampleProfile, sampleResume, sparseProfile, sparseResume } from "./sample-resume.ts";

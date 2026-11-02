@@ -226,6 +226,14 @@
     0 0 0 4px var(--text-3);
 }
 
+.swatches:disabled {
+  opacity: 0.35;
+}
+
+.swatches:disabled .swatch {
+  cursor: not-allowed;
+}
+
 .accentName {
   font-size: 12px;
   color: var(--muted);

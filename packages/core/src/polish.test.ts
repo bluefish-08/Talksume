@@ -76,6 +76,29 @@ describe("applyPolish", () => {
     );
   });
 
+  it("highlight 要点只润色细节，加粗短语和 factIds 保留", () => {
+    const withHighlights = profileToResume(
+      Profile.parse({
+        ...profile,
+        projects: [
+          { ...profile.projects[0], highlights: [{ title: "缓存", detail: "我用 Redis 做了个缓存" }] },
+        ],
+      }),
+    );
+    const [target] = polishTargets(withHighlights);
+    expect(target?.text).toBe("我用 Redis 做了个缓存");
+    const next = applyPolish(withHighlights, [
+      {
+        itemKey: target?.itemKey ?? "",
+        sourceHash: target?.sourceHash ?? "",
+        text: "引入 Redis 缓存热点数据",
+      },
+    ]);
+    expect(next.sections.find((s) => s.kind === "projects")?.items[0]?.bullets).toEqual([
+      { lead: "缓存", text: "引入 Redis 缓存热点数据", factIds: ["f1", "f2"] },
+    ]);
+  });
+
   it("同样原文但条目不同不串用", () => {
     const next = applyPolish(resume, [
       { itemKey: polishItemKey("projects", "别的项目"), sourceHash: action.sourceHash, text: "改写" },
