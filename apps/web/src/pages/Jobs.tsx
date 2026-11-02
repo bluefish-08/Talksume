@@ -6,6 +6,7 @@ import { useStartConversation } from "../api/queries.ts";
 import { useToast } from "../components/Toast.tsx";
 import { Button, Chip, EmptyState, Spinner } from "../components/ui.tsx";
 import { ApplyDialog, type ManualApply } from "../features/jobs/ApplyDialog.tsx";
+import { BrowseJobs } from "../features/jobs/BrowseJobs.tsx";
 import { applyFilter, buildChips, totalOpenJobs } from "../features/jobs/format.ts";
 import {
   useAppliedJobs,
@@ -23,6 +24,7 @@ import { ImportDialog } from "../features/jobs/ImportDialog.tsx";
 import { JobDetail, JobDetailSkeleton } from "../features/jobs/JobDetail.tsx";
 import { JobList, JobListSkeleton, type JobRow } from "../features/jobs/JobList.tsx";
 import styles from "../features/jobs/Jobs.module.css";
+import { JobsTabs } from "../features/jobs/JobsTabs.tsx";
 import type { ImportResult } from "../features/jobs/types.ts";
 
 const NARROW = "(max-width: 999px)";
@@ -51,6 +53,11 @@ function useDebounced<T>(value: T, ms: number): T {
 const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "出了点问题，请稍后再试");
 
 export function JobsPage() {
+  const [params] = useSearchParams();
+  return params.get("tab") === "all" ? <BrowseJobs /> : <RecommendJobs />;
+}
+
+function RecommendJobs() {
   const toast = useToast();
   const narrow = useNarrow();
   const [params, setParams] = useSearchParams();
@@ -315,7 +322,7 @@ export function JobsPage() {
     <div ref={pageRef} className={styles.page} data-detail={showDetail ? "open" : "closed"}>
       <header className={styles.header}>
         <div className={styles.heading}>
-          <h1 className={styles.h1}>为你推荐</h1>
+          <JobsTabs current="recommend" />
           <p className={styles.sub}>{subtitle}</p>
         </div>
         <div className={styles.tools}>

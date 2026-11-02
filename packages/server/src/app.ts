@@ -10,6 +10,7 @@ import type { NotificationBus } from "./notifications/bus.ts";
 import { conversationTitleRoutes } from "./routes/conversation-title.ts";
 import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
+import { jobsBrowseRoutes } from "./routes/jobs-browse.ts";
 import { matchingRoutes } from "./routes/matching.ts";
 import { polishRoutes } from "./routes/polish.ts";
 import type { TemplateAdvisor } from "./template-advisor.ts";
@@ -51,6 +52,7 @@ const routes: RouteModule[] = [
   conversationRoutes,
   conversationTitleRoutes,
   flowRoutes,
+  jobsBrowseRoutes,
   matchingRoutes,
   polishRoutes,
 ];

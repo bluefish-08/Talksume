@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { vector } from "@electric-sql/pglite-pgvector";
 import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import { migrate as migrateNodePg } from "drizzle-orm/node-postgres/migrator";
@@ -31,7 +32,7 @@ export async function createDb(options: DbOptions): Promise<DbHandle> {
       close: () => pool.end(),
     };
   }
-  const client = await PGlite.create(options.pglite, { extensions: { vector } });
+  const client = await PGlite.create(options.pglite, { extensions: { vector, pg_trgm } });
   return {
     db: drizzlePglite(client, { schema }),
     driver: "pglite",

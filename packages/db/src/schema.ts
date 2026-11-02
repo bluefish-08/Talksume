@@ -224,6 +224,16 @@ export const jobs = pgTable(
     index("jobs_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
     index("jobs_status_idx").on(t.status),
     index("jobs_owner_idx").on(t.ownerId),
+    index("jobs_open_recent_idx")
+      .on(sql`coalesce(${t.postedAt}, ${t.fetchedAt})`, t.id)
+      .where(sql`${t.status} = 'open'`),
+    index("jobs_company_idx").on(t.company),
+    index("jobs_cities_idx").using("gin", t.cities),
+    // 查询必须写成同一个表达式才能命中，见 server/routes/jobs-browse.ts
+    index("jobs_search_trgm_idx").using(
+      "gin",
+      sql`(${t.title} || ' ' || ${t.company} || ' ' || ${t.jdText}) gin_trgm_ops`,
+    ),
     check("jobs_status_check", sql`${t.status} in ('open', 'closed')`),
   ],
 );

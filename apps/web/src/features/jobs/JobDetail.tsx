@@ -1,4 +1,5 @@
 import { ArrowLeft, ChevronDown, ExternalLink } from "lucide-react";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Button, IconButton, Spinner } from "../../components/ui.tsx";
 import {
@@ -17,6 +18,9 @@ export interface DetailProps {
   job: JobSummary;
   match: MatchItem | undefined;
   excluded?: keyof typeof EXCLUDED_NOTICE | undefined;
+  /** 有匹配时显示在维度上方，没有匹配时替换默认提示。 */
+  matchNote?: ReactNode;
+  dimsTitle?: string | undefined;
   jdText: string | undefined;
   jdLoading: boolean;
   application: ApplicationRef | undefined;
@@ -81,6 +85,7 @@ export function JobDetail(props: DetailProps) {
 
         {match ? (
           <>
+            {props.matchNote}
             {report?.summary ? (
               <p className={styles.summary}>{report.summary}</p>
             ) : (
@@ -107,7 +112,7 @@ export function JobDetail(props: DetailProps) {
 
             <section className={styles.section} aria-labelledby="dim-h">
               <h3 id="dim-h" className={styles.h3}>
-                为什么推荐
+                {props.dimsTitle ?? "为什么推荐"}
               </h3>
               <div className={styles.dims}>
                 {dimRows(match).map((d) => (
@@ -170,11 +175,13 @@ export function JobDetail(props: DetailProps) {
             )}
           </>
         ) : (
-          <p className={styles.note}>
-            {excluded
-              ? `没有计算匹配度：${EXCLUDED_NOTICE[excluded]}。你仍然可以查看岗位并投递。`
-              : "这个岗位不在你的推荐列表里，暂无匹配度。"}
-          </p>
+          (props.matchNote ?? (
+            <p className={styles.note}>
+              {excluded
+                ? `没有计算匹配度：${EXCLUDED_NOTICE[excluded]}。你仍然可以查看岗位并投递。`
+                : "这个岗位不在你的推荐列表里，暂无匹配度。"}
+            </p>
+          ))
         )}
 
         <details className={styles.jd}>
