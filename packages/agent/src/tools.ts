@@ -3,7 +3,7 @@ import type { TSchema } from "@earendil-works/pi-ai";
 import type { ProfileSection } from "@talksume/core";
 import type { z } from "zod";
 import { computeCompleteness, pickNextSlot, SECTION_BY_NAME, type Slot } from "./completeness.ts";
-import { applyFacts, type Conflict } from "./facts.ts";
+import { applyFacts, type Conflict, describeDrafted, draftLabel, draftMissing } from "./facts.ts";
 import { describeSlot } from "./prompt.ts";
 import {
   AskUserArgs,
@@ -49,7 +49,36 @@ function slotRef(slot: Slot): SlotRef {
   };
 }
 
+/** 暂存的条目优先补齐，问过两次仍不答就放过，回到正常顺序。 */
+function draftSlot(state: IntakeState): Slot | null {
+  for (const draft of state.drafts) {
+    const spec = SECTION_BY_NAME[draft.section];
+    const id = String(draft.item.id);
+    for (const field of draftMissing(draft)) {
+      const key = `${draft.section}:${id}:${field}`;
+      if ((state.askCounts[key] ?? 0) >= 2) continue;
+      const f = spec.fields.find((x) => x.field === field);
+      return {
+        key,
+        section: draft.section,
+        itemId: id,
+        itemLabel: draftLabel(draft),
+        field,
+        label: f?.label ?? field,
+        weight: f?.weight ?? 1,
+        required: true,
+        kind: "field",
+        question: f?.question ?? `请补充${f?.label ?? field}`,
+        strategy: f?.strategy ?? "",
+      };
+    }
+  }
+  return null;
+}
+
 export function nextSlotOf(state: IntakeState): Slot | null {
+  const draft = draftSlot(state);
+  if (draft) return draft;
   return pickNextSlot(state.profile, {
     completedSections: state.completedSections,
     askCounts: state.askCounts,
@@ -113,14 +142,16 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       const result = applyFacts(
         state.profile,
         accepted.map((a) => a.input),
-        { messageId: ctx.messageId, genId: ctx.genId },
+        { messageId: ctx.messageId, genId: ctx.genId, drafts: state.drafts },
       );
       for (const r of result.rejected) {
         rejected.push(`第 ${(accepted[r.index]?.index ?? r.index) + 1} 条：${r.reason}`);
       }
 
       state.profile = result.profile;
+      state.drafts = result.drafts;
       state.facts.push(...result.facts);
+      if (result.drafted.length > 0) ctx.flags.changed = true;
       if (result.changes.length > 0 || result.facts.length > 0) {
         ctx.flags.changed = true;
         ctx.emit({
@@ -144,6 +175,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
           `有 ${result.conflicts.length} 处与已记录内容矛盾，已自动向用户发起确认，本轮请不要再追问其他内容，也不要调用 ask_user。`,
         );
       }
+      if (result.drafted.length > 0) lines.push(result.drafted.map(describeDrafted).join("\n"));
       if (rejected.length > 0) lines.push(`被拒绝：\n${rejected.join("\n")}`);
       const next = nextSlotOf(state);
       lines.push(next ? `下一个目标：\n${describeSlot(next)}` : "下一个目标：无，信息已基本完整。");

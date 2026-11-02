@@ -13,7 +13,7 @@ import { SECTION_BY_NAME } from "./completeness.ts";
 import { type FactInput, formatZodIssues, SectionPayload } from "./schemas.ts";
 
 type Rec = Record<string, unknown>;
-type ListSection = "education" | "experiences" | "projects" | "skills" | "awards";
+export type ListSection = "education" | "experiences" | "projects" | "skills" | "awards";
 type ObjectSection = "basics" | "intention";
 
 export interface ProfileChange {
@@ -43,6 +43,19 @@ export interface RejectedFact {
 export interface ApplyContext {
   messageId: string;
   genId?: (prefix: string) => string;
+  drafts?: readonly Draft[];
+}
+
+/** 必填项还没问齐的新条目，先暂存，补齐后再写进画像。 */
+export interface Draft {
+  section: ListSection;
+  item: Rec;
+}
+
+export interface Drafted {
+  section: ListSection;
+  label: string;
+  missing: string[];
 }
 
 export interface ApplyResult {
@@ -52,6 +65,8 @@ export interface ApplyResult {
   conflicts: Conflict[];
   rejected: RejectedFact[];
   changes: ProfileChange[];
+  drafts: Draft[];
+  drafted: Drafted[];
 }
 
 const ITEM_SCHEMA: Record<ListSection, z.ZodType> = {
@@ -168,11 +183,24 @@ function mergeInto(
   return outcome;
 }
 
-function describeRequired(section: ListSection, error: z.ZodError): string {
-  const fields = [...new Set(error.issues.map((i) => String(i.path[0] ?? "")))]
-    .filter((f) => f && f !== "id" && f !== "sourceFactIds")
-    .map((f) => `${f}（${fieldLabel(section, f)}）`);
-  return `新建${SECTION_BY_NAME[section].label}缺少必填字段 ${fields.join("、") || formatZodIssues(error)}，请先向用户问清楚再写入`;
+function missingFields(error: z.ZodError): string[] {
+  return [...new Set(error.issues.map((i) => String(i.path[0] ?? "")))].filter(
+    (f) => f && f !== "id" && f !== "sourceFactIds",
+  );
+}
+
+export function draftMissing(draft: Draft): string[] {
+  const checked = ITEM_SCHEMA[draft.section].safeParse(draft.item);
+  return checked.success ? [] : missingFields(checked.error);
+}
+
+export function draftLabel(draft: Draft): string {
+  return String(draft.item[ITEM_KEY[draft.section]] ?? "");
+}
+
+export function describeDrafted(d: Drafted): string {
+  const fields = d.missing.map((f) => `${f}（${fieldLabel(d.section, f)}）`).join("、");
+  return `「${d.label}」已暂存，还缺 ${fields}；问到后带上 ${ITEM_KEY[d.section]} 再写入即可补齐`;
 }
 
 export function applyFacts(
@@ -182,7 +210,16 @@ export function applyFacts(
 ): ApplyResult {
   const genId = context.genId ?? createIdGenerator();
   const next = structuredClone(profile);
-  const result: ApplyResult = { profile: next, facts: [], conflicts: [], rejected: [], changes: [] };
+  const drafts = structuredClone([...(context.drafts ?? [])]);
+  const result: ApplyResult = {
+    profile: next,
+    facts: [],
+    conflicts: [],
+    rejected: [],
+    changes: [],
+    drafts,
+    drafted: [],
+  };
 
   for (const [index, input] of inputs.entries()) {
     const reject = (reason: string) => result.rejected.push({ index, reason });
@@ -221,16 +258,31 @@ export function applyFacts(
           existing.sourceFactIds = union(existing.sourceFactIds as unknown[], [factId]);
         }
       } else {
-        itemId = genId(ID_PREFIX[section]);
-        const candidate: Rec = { id: itemId, sourceFactIds: [factId] };
+        const draft = drafts.find((d) => d.section === section && normKey(d.item[keyField]) === keyValue);
+        const candidate: Rec = draft?.item ?? { id: genId(ID_PREFIX[section]), sourceFactIds: [] };
+        itemId = String(candidate.id);
+        candidate.sourceFactIds = union(candidate.sourceFactIds as unknown[], [factId]);
         outcome = mergeInto(candidate, payload, section, itemId);
-        const checked = ITEM_SCHEMA[section].safeParse(candidate);
-        if (!checked.success) {
-          reject(describeRequired(section, checked.error));
-          continue;
+        // 草稿还没进画像，用户改口直接以新说法为准
+        for (const [field, value] of Object.entries(outcome.conflicted)) {
+          candidate[field] = value;
+          outcome.applied[field] = value;
         }
-        list.push(checked.data as Rec);
-        outcome.changes = [{ section, itemId, field: "_item", value: checked.data }];
+        outcome.conflicted = {};
+        const checked = ITEM_SCHEMA[section].safeParse(candidate);
+        if (checked.success) {
+          if (draft) drafts.splice(drafts.indexOf(draft), 1);
+          list.push(checked.data as Rec);
+          outcome.changes = [{ section, itemId, field: "_item", value: checked.data }];
+        } else {
+          if (!draft) drafts.push({ section, item: candidate });
+          result.drafted.push({
+            section,
+            label: String(candidate[keyField]),
+            missing: missingFields(checked.error),
+          });
+          outcome.changes = [];
+        }
       }
     }
 

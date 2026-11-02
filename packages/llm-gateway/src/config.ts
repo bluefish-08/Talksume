@@ -8,6 +8,8 @@ export interface GatewayConfig {
   fallbackModel: string;
   /** 单次请求（含流式读取）的总超时。 */
   timeoutMs: number;
+  /** 两次流事件之间的最长静默；服务端偶尔卡住不返回，早断早重试。 */
+  idleTimeoutMs: number;
   /** 每个模型在首次请求之外的最大重试次数。 */
   maxRetries: number;
   retryBaseDelayMs: number;
@@ -32,6 +34,7 @@ export function loadGatewayConfig(
     model: env.LLM_MODEL || DEFAULT_MODEL,
     fallbackModel: env.LLM_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL,
     timeoutMs: 60_000,
+    idleTimeoutMs: 20_000,
     maxRetries: 3,
     retryBaseDelayMs: 500,
     redactPii: true,

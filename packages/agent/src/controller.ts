@@ -160,8 +160,13 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       genId,
       emit: (event) => {
         if (event.type === "ask") {
-          asks.push(event.question);
           if (event.quickReplies) quickReplies = event.quickReplies;
+          // 每条回复恰好带一个问题：正文已经问了就以正文为准，没问才用 ask_user 的 question
+          if (event.kind === "followup" && /[?？]/.test(assistantText)) {
+            queue.push({ ...event, inText: true });
+            return;
+          }
+          asks.push(event.question);
         } else if (event.type === "profile_patch") changes.push(...event.changes);
         queue.push(event);
       },
@@ -175,6 +180,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       slot: nextSlotOf(state),
       completedSections: state.completedSections,
       conflicts: state.conflicts,
+      drafts: state.drafts,
     });
 
     let assistantText = "";
@@ -244,7 +250,9 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
 
     if (options.signal?.aborted) return;
 
-    if (llmError && !flags.asked) {
+    // 问题已经说出口后才卡住的，用户拿到的回复是完整的，不再报错
+    const delivered = flags.asked || /[?？]/.test(assistantText);
+    if (llmError && !delivered) {
       const kind = errorKindOf(llmError) ?? "unknown";
       yield {
         type: "error",
@@ -258,7 +266,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       yield { type: "ask", kind: "clarify", question };
     } else if (!flags.asked) {
       const slot = nextSlotOf(state);
-      if (slot && !/[?？]\s*$/.test(assistantText.trim())) {
+      if (slot && !/[?？]/.test(assistantText)) {
         noteAsked(state, slot);
         asks.push(slot.question);
         yield {

@@ -61,11 +61,36 @@ describe("applyFacts", () => {
     expect(project?.sourceFactIds).toContain(second.facts[0]?.id);
   });
 
-  it("rejects new items missing required core fields with a useful reason", () => {
-    const result = applyFacts(Profile.parse({}), [fact("education", { school: "清华大学" })], ctx);
-    expect(result.profile.education).toHaveLength(0);
-    expect(result.facts).toHaveLength(0);
-    expect(result.rejected[0]?.reason).toContain("degree");
+  it("keeps a new item missing required fields as a draft and commits it once complete", () => {
+    const first = applyFacts(Profile.parse({}), [fact("education", { school: "清华大学" })], ctx);
+    expect(first.profile.education).toHaveLength(0);
+    expect(first.rejected).toEqual([]);
+    expect(first.drafted).toEqual([{ section: "education", label: "清华大学", missing: ["degree"] }]);
+    expect(first.drafts).toHaveLength(1);
+
+    const second = applyFacts(
+      first.profile,
+      [fact("education", { school: "清华大学", major: "计算机" }, "计算机专业")],
+      {
+        ...ctx,
+        drafts: first.drafts,
+      },
+    );
+    expect(second.drafts[0]?.item).toMatchObject({ school: "清华大学", major: "计算机" });
+
+    const done = applyFacts(
+      second.profile,
+      [fact("education", { school: "清华大学", degree: "bachelor" }, "本科")],
+      {
+        ...ctx,
+        drafts: second.drafts,
+      },
+    );
+    expect(done.drafts).toEqual([]);
+    expect(done.profile.education).toEqual([
+      expect.objectContaining({ school: "清华大学", major: "计算机", degree: "bachelor" }),
+    ]);
+    expect(done.changes).toEqual([expect.objectContaining({ section: "education", field: "_item" })]);
   });
 
   it("rejects invalid payloads", () => {
@@ -82,7 +107,7 @@ describe("applyFacts", () => {
     const result = applyFacts(
       Profile.parse({}),
       [
-        fact("education", { school: "清华大学" }),
+        fact("education", { school: "清华大学", degree: "本科" }),
         fact("skills", { name: "Go" }),
         fact("skills", { name: "Python", level: "proficient" }),
       ],

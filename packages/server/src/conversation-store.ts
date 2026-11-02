@@ -4,6 +4,7 @@ import {
   type Conflict,
   computeCompleteness,
   createIntakeState,
+  type Draft,
   type IntakeState,
   type TurnMeta,
 } from "@talksume/agent";
@@ -52,6 +53,7 @@ function intakeOf(state: IntakeState) {
     completedSections: state.completedSections,
     askCounts: state.askCounts,
     conflicts: state.conflicts,
+    drafts: state.drafts,
   };
 }
 
@@ -105,6 +107,7 @@ export async function loadConversation(
     completedSections: intake.completedSections ?? [],
     askCounts: intake.askCounts ?? {},
     conflicts: (intake.conflicts ?? []) as Conflict[],
+    drafts: (intake.drafts ?? []) as Draft[],
   });
   return {
     state,

@@ -1,6 +1,6 @@
 import { type Fact, Profile, type ProfileSection } from "@talksume/core";
 import type { Completeness, Slot } from "./completeness.ts";
-import type { Conflict, ProfileChange } from "./facts.ts";
+import type { Conflict, Draft, ProfileChange } from "./facts.ts";
 
 /** 随助手消息落库的附加信息：本轮写入的变更与快捷回复。 */
 export type TurnMeta = {
@@ -24,6 +24,7 @@ export interface IntakeState {
   askCounts: Record<string, number>;
   /** 等待用户确认的矛盾。 */
   conflicts: Conflict[];
+  drafts: Draft[];
 }
 
 export function createIntakeState(init: Partial<IntakeState> = {}): IntakeState {
@@ -34,6 +35,7 @@ export function createIntakeState(init: Partial<IntakeState> = {}): IntakeState 
     completedSections: [],
     askCounts: {},
     conflicts: [],
+    drafts: [],
     ...init,
   };
 }
@@ -57,6 +59,8 @@ export type IntakeEvent =
       slot?: SlotRef;
       conflict?: Conflict;
       quickReplies?: string[];
+      /** 问题已写在助手正文里，前端不必再单独显示。 */
+      inText?: boolean;
     }
   | { type: "completeness"; completeness: Completeness; nextSlot: Slot | null }
   | { type: "error"; code: string; message: string; recoverable: boolean };

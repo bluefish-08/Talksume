@@ -47,6 +47,7 @@ export type ConversationIntakeState = {
   completedSections?: ProfileSection[];
   askCounts?: Record<string, number>;
   conflicts?: unknown[];
+  drafts?: unknown[];
 };
 
 export const users = pgTable("users", {

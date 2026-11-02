@@ -106,7 +106,7 @@ export function useChatSession(detail: ConversationDetail) {
               const quickReplies = Array.isArray(data.quickReplies) ? (data.quickReplies as string[]) : [];
               patch(replyKey, (m) => ({
                 ...m,
-                asks: m.text.includes(question) || m.asks.includes(question) ? m.asks : [...m.asks, question],
+                asks: data.inText || m.asks.includes(question) ? m.asks : [...m.asks, question],
                 quickReplies,
               }));
               const conflict = data.conflict as Conflict | undefined;

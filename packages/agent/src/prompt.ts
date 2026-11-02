@@ -1,6 +1,6 @@
 import type { Profile, ProfileSection } from "@talksume/core";
 import { type Completeness, SECTION_BY_NAME, type Slot } from "./completeness.ts";
-import type { Conflict } from "./facts.ts";
+import { type Conflict, type Draft, draftMissing } from "./facts.ts";
 
 export interface PromptInput {
   profile: Profile;
@@ -8,6 +8,7 @@ export interface PromptInput {
   slot: Slot | null;
   completedSections: readonly ProfileSection[];
   conflicts: readonly Conflict[];
+  drafts?: readonly Draft[];
 }
 
 function stripIds(value: unknown): unknown {
@@ -39,7 +40,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    "- 只能通过三个工具工作：upsert_facts 写入事实、ask_user 向用户提问、complete_section 结束分区。不要用文字提问，提问一律调用 ask_user。",
+    "- 三个工具：upsert_facts 写入事实、ask_user 结束本轮等用户回答、complete_section 结束分区。回应和下一个问题直接用文字写出来，写完调用 ask_user，question 填你刚问的那句。",
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -56,6 +57,12 @@ export function buildSystemPrompt(input: PromptInput): string {
     "",
     `## 完整度：${percent}%`,
   ];
+  if (input.drafts && input.drafts.length > 0) {
+    lines.push("", "## 暂存中（必填项没齐，还没写进画像）");
+    for (const d of input.drafts) {
+      lines.push(`- ${d.section}：${JSON.stringify(stripIds(d.item))}，还缺 ${draftMissing(d).join("、")}`);
+    }
+  }
   if (input.completedSections.length > 0) {
     lines.push(`已完成的分区：${input.completedSections.map((s) => SECTION_BY_NAME[s].label).join("、")}`);
   }

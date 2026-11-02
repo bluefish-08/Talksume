@@ -244,7 +244,7 @@ describe("intake controller: tool argument validation", () => {
     expect(state.facts[0]?.quote).toBe("我叫李明");
   });
 
-  it("rejects a new item with missing required fields and tells the model to ask", async () => {
+  it("drafts a new item with missing required fields and targets the missing field next", async () => {
     const { controller, core } = fake([
       toolTurn(upsert([{ section: "education", payload: { school: "清华大学" }, quote: "清华大学" }])),
       toolTurn(ask("读的是本科还是研究生？")),
@@ -252,7 +252,11 @@ describe("intake controller: tool argument validation", () => {
     const state = createIntakeState();
     const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "我是清华大学的" }));
     expect(state.profile.education).toHaveLength(0);
-    expect(asks(events)[0]).toMatchObject({ kind: "followup" });
+    expect(state.drafts).toEqual([expect.objectContaining({ section: "education" })]);
+    expect(asks(events)[0]).toMatchObject({
+      kind: "followup",
+      slot: { section: "education", field: "degree" },
+    });
     expect(core.state.callCount).toBe(2);
   });
 });
@@ -302,6 +306,62 @@ describe("intake controller: contradictions, fallbacks and errors", () => {
     expect(state.askCounts["basics:_:phone"]).toBe(1);
     expect(state.history.at(-1)?.content).toContain("好的，记下了。");
     expect(state.history.at(-1)?.content).toContain(fallback?.question ?? "?");
+  });
+
+  it("does not tack the slot question onto a reply that already asks something mid-text", async () => {
+    const { controller } = fake([fauxAssistantMessage("这段时间有没有做过项目？比如课程设计都算。")]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "专科的" }));
+    expect(asks(events)).toEqual([]);
+    expect(state.history.at(-1)?.content).toBe("这段时间有没有做过项目？比如课程设计都算。");
+  });
+
+  it("uses the model's text as the reply and marks the ask_user question as already in it", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage(
+        [fauxText("好的，李明～方便留一个手机号吗？投递简历时 HR 会用到。"), ask("方便留一个手机号吗？")],
+        { stopReason: "toolUse" },
+      ),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "李明" }));
+    expect(asks(events)).toEqual([expect.objectContaining({ inText: true })]);
+    expect(state.history.at(-1)?.content).toBe("好的，李明～方便留一个手机号吗？投递简历时 HR 会用到。");
+  });
+
+  it("falls back to the ask_user question when the model writes no text", async () => {
+    const { controller } = fake([toolTurn(ask("方便留一个手机号吗？"))]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "李明" }));
+    expect(asks(events)[0]?.inText).toBeUndefined();
+    expect(state.history.at(-1)?.content).toBe("方便留一个手机号吗？");
+  });
+
+  it("appends the ask_user question when the text only acknowledges", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage([fauxText("你好李明！"), ask("方便留一个手机号吗？")], { stopReason: "toolUse" }),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "李明" }));
+    expect(asks(events)[0]?.inText).toBeUndefined();
+    expect(state.history.at(-1)?.content).toBe("你好李明！\n方便留一个手机号吗？");
+  });
+
+  it("keeps the reply without an error when the stream breaks after the question was already said", async () => {
+    const { controller } = fake([
+      toolTurn(
+        upsert([{ section: "intention", payload: { roles: ["全栈工程师"] }, quote: "我想找全栈工程师" }]),
+      ),
+      fauxAssistantMessage([fauxText("记下了。先认识一下，怎么称呼你？")], {
+        stopReason: "error",
+        errorMessage: "[llm:timeout] 响应中断（20000ms 无数据）",
+      }),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "我想找全栈工程师" }));
+    expect(events.find((e) => e.type === "error")).toBeUndefined();
+    expect(state.history.at(-1)?.content).toBe("记下了。先认识一下，怎么称呼你？");
+    expect(state.profile.intention.roles).toEqual(["全栈工程师"]);
   });
 
   it("reports an unrecoverable quota error from the gateway without touching history", async () => {

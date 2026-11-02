@@ -218,6 +218,42 @@ describe("gateway retry and fallback", () => {
     expect(logs.every((l) => l.errorKind === "timeout")).toBe(true);
   });
 
+  it("gives up on a silent stream long before the total timeout and retries", async () => {
+    const logs: LlmCallLog[] = [];
+    const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }, { id: "glm-5.3" }] });
+    core.setResponses([fauxAssistantMessage("好的")]);
+    let calls = 0;
+    const gateway = createGateway(
+      loadGatewayConfig(baseEnv, {
+        timeoutMs: 60_000,
+        idleTimeoutMs: 20,
+        maxRetries: 1,
+        retryBaseDelayMs: 1,
+      }),
+      {
+        baseStream: (model, context, options) => {
+          if (++calls > 1) return core.streamSimple(model, context, options);
+          const stream = createAssistantMessageEventStream();
+          options?.signal?.addEventListener("abort", () => {
+            const message: AssistantMessage = {
+              ...fauxAssistantMessage([], { stopReason: "aborted" }),
+              model: model.id,
+            };
+            stream.push({ type: "error", reason: "aborted", error: message });
+          });
+          return stream;
+        },
+        onLog: (l) => logs.push(l),
+      },
+    );
+    const started = Date.now();
+    const result = await gateway.complete({ purpose: "p", prompt: "x" });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(result.text).toBe("好的");
+    expect(logs.map((l) => l.errorKind ?? "ok")).toEqual(["timeout", "ok"]);
+    expect(logs[0]?.errorMessage).toContain("无数据");
+  });
+
   it("propagates caller aborts without retrying", async () => {
     const controller = new AbortController();
     controller.abort();

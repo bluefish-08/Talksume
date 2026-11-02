@@ -132,14 +132,9 @@ const defaultSleep = (ms: number, signal?: AbortSignal) =>
     );
   });
 
+/** 只有用户看得见的正文才算已送出；工具调用先攒着，中途卡住仍可整段重试。 */
 function isContentEvent(event: AssistantMessageEvent): boolean {
-  return (
-    event.type === "text_start" ||
-    event.type === "thinking_start" ||
-    event.type === "toolcall_start" ||
-    event.type === "text_delta" ||
-    event.type === "toolcall_delta"
-  );
+  return event.type === "text_start" || event.type === "thinking_start" || event.type === "text_delta";
 }
 
 function emptyAssistantMessage(
@@ -296,11 +291,20 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         attempt++;
         const startedAt = Date.now();
         const timeout = new AbortController();
-        let timedOut = false;
+        let timedOut: "total" | "idle" | undefined;
         const timer = setTimeout(() => {
-          timedOut = true;
+          timedOut = "total";
           timeout.abort();
         }, config.timeoutMs);
+        let idleTimer: ReturnType<typeof setTimeout> | undefined;
+        const touch = () => {
+          clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            timedOut ??= "idle";
+            timeout.abort();
+          }, config.idleTimeoutMs);
+        };
+        touch();
         const signal = callerSignal ? AbortSignal.any([callerSignal, timeout.signal]) : timeout.signal;
 
         const buffered: AssistantMessageEvent[] = [];
@@ -324,6 +328,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
             }),
           });
           for await (const event of upstream) {
+            touch();
             if (event.type === "done" || event.type === "error") {
               terminalEvent = event;
               terminal = event.type === "done" ? event.message : event.error;
@@ -341,6 +346,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
           terminal = emptyAssistantMessage(model, "error", text);
         } finally {
           clearTimeout(timer);
+          clearTimeout(idleTimer);
         }
 
         const durationMs = Date.now() - startedAt;
@@ -384,7 +390,11 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         }
 
         const raw = scrub(
-          timedOut ? `请求超时（${config.timeoutMs}ms）` : (terminal.errorMessage ?? "unknown error"),
+          timedOut === "idle"
+            ? `响应中断（${config.idleTimeoutMs}ms 无数据）`
+            : timedOut
+              ? `请求超时（${config.timeoutMs}ms）`
+              : (terminal.errorMessage ?? "unknown error"),
         );
         const kind: LlmErrorKind = timedOut ? "timeout" : classifyErrorMessage(raw);
         log(false, kind, raw);
