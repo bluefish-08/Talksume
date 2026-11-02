@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import {
   APPLICATION_STATUSES,
   type ApplicationOutcome,
@@ -10,6 +11,7 @@ import {
 } from "@talksume/core";
 import { schema, type TransitionOptions } from "@talksume/db";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { polishedResume } from "../polish-store.ts";
 import { loadResumeStyle } from "../resume-style.ts";
 import type { FlowContext } from "./context.ts";
 import { HttpError, isUniqueViolation } from "./http.ts";
@@ -113,16 +115,19 @@ async function snapshotResume(ctx: FlowContext, userId: string): Promise<string 
       profileVersion: resumeVersions.profileVersion,
       template: resumeVersions.template,
       accent: resumeVersions.accent,
+      content: resumeVersions.content,
     })
     .from(resumeVersions)
     .where(eq(resumeVersions.userId, userId))
     .orderBy(desc(resumeVersions.createdAt))
     .limit(1);
   if (!profile) return latest?.id ?? null;
+  const content = await polishedResume(ctx.db, userId, profileToResume(Profile.parse(profile.data)));
   const same =
     latest?.profileVersion === profile.version &&
     latest.template === style.template &&
-    latest.accent === style.accent;
+    latest.accent === style.accent &&
+    isDeepStrictEqual(latest.content, JSON.parse(JSON.stringify(content)));
   if (latest && same) return latest.id;
   const [created] = await ctx.db
     .insert(resumeVersions)
@@ -131,7 +136,7 @@ async function snapshotResume(ctx: FlowContext, userId: string): Promise<string 
       profileVersion: profile.version,
       template: style.template,
       accent: style.accent,
-      content: profileToResume(Profile.parse(profile.data)),
+      content,
     })
     .returning({ id: resumeVersions.id });
   return created?.id ?? null;
