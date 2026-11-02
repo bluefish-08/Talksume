@@ -45,7 +45,7 @@ export interface TransitionOptions {
 
 export interface TransitionResult {
   change: StatusChange;
-  notification: Notification & { id: string; createdAt: string };
+  notification: (Notification & { id: string; createdAt: string }) | null;
 }
 
 export class ApplicationRepo {
@@ -109,6 +109,9 @@ export class ApplicationRepo {
         payload: options.payload ?? {},
         createdAt: change.at,
       });
+
+      // 候选人自己的操作不再通知自己
+      if (source === "user") return { change, notification: null };
 
       const title = statusChangeTitle(current.company, current.jobTitle, change.to, change.outcome);
       const [row] = await tx

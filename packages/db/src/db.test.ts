@@ -141,7 +141,7 @@ describe("ApplicationRepo.transition", () => {
     ]);
   });
 
-  it("每次迁移同事务写一条候选人通知，非法迁移不写", async () => {
+  it("每次迁移同事务写一条候选人通知，候选人自己操作和非法迁移不写", async () => {
     const app = await seedApplication();
     const repo = new ApplicationRepo(handle.db);
 
@@ -150,6 +150,8 @@ describe("ApplicationRepo.transition", () => {
       payload: { note: "已阅" },
     });
     await expect(repo.transition(app.id, "applied", "hr")).rejects.toBeInstanceOf(InvalidTransitionError);
+    const own = await repo.transitionAndNotify(app.id, "closed", "user", "withdrawn");
+    expect(own.notification).toBeNull();
 
     const rows = await handle.db
       .select()
@@ -161,7 +163,7 @@ describe("ApplicationRepo.transition", () => {
       "「示例科技·后端实习生」状态更新为：已查看",
     ]);
     expect(rows.every((r) => r.userId === app.userId && r.kind === "status_changed")).toBe(true);
-    expect(notification.id).toBe(rows[1]?.id);
+    expect(notification?.id).toBe(rows[1]?.id);
   });
 
   it("非法迁移抛错且不留下事件", async () => {

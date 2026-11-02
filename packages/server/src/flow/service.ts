@@ -92,7 +92,7 @@ export async function move(
     outcome,
     options,
   );
-  await publish(ctx, notification);
+  if (notification) await publish(ctx, notification);
   return change;
 }
 
