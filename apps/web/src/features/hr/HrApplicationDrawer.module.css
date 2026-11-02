@@ -1,0 +1,92 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.line {
+  margin: 0;
+}
+
+.meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tags {
+  margin-top: 4px;
+}
+
+.pitch {
+  align-self: stretch;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.h {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+.hint {
+  flex: 1;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.confirm {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.formError {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}

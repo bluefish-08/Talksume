@@ -1,0 +1,42 @@
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.neutral {
+  background: var(--surface-sunken);
+  color: var(--text-3);
+}
+
+.accent {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.muted {
+  background: var(--surface-sunken);
+  color: var(--muted);
+}
+
+.outline {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-3);
+  font-weight: 400;
+}
