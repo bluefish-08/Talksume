@@ -6,14 +6,14 @@
 
 ## 目录
 
-| 路径 | 内容 |
-|---|---|
-| `packages/core` | 领域模型与端口接口：投递状态机、`Notifier` / `JobQueue` / `BlobStore` / `PlatformConnector` |
-| `packages/server` | 两个版本共用的 Fastify 应用工厂 `buildApp(deps)` |
-| `cloud/server` | 云端版入口，注入云端适配器 |
-| `apps/web` | Web 端（Vite + React），桌面端复用同一套渲染层 |
-| `deploy` | Docker Compose 部署：PostgreSQL（pgvector）、Redis、server、web |
-| `docs` | 设计文档与图 |
+| 路径              | 内容                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `packages/core`   | 领域模型与端口接口：投递状态机、`Notifier` / `JobQueue` / `BlobStore` / `PlatformConnector` |
+| `packages/server` | 两个版本共用的 Fastify 应用工厂 `buildApp(deps)`                                            |
+| `cloud/server`    | 云端版入口，注入云端适配器                                                                  |
+| `apps/web`        | Web 端（Vite + React），桌面端复用同一套渲染层                                              |
+| `deploy`          | Docker Compose 部署：PostgreSQL（pgvector）、Redis、server、web                             |
+| `docs`            | 设计文档与图                                                                                |
 
 ## 开发
 
