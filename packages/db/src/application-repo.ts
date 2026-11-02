@@ -41,6 +41,8 @@ export interface TransitionOptions {
   expectedFrom?: ApplicationStatus;
   /** 写入事件的附加信息，如 HR 备注、面试时间。 */
   payload?: Record<string, unknown>;
+  /** 由候选人本次请求直接触发的迁移，不再通知候选人。 */
+  silent?: boolean;
 }
 
 export interface TransitionResult {
@@ -110,8 +112,7 @@ export class ApplicationRepo {
         createdAt: change.at,
       });
 
-      // 候选人自己的操作不再通知自己
-      if (source === "user") return { change, notification: null };
+      if (source === "user" || options.silent) return { change, notification: null };
 
       const title = statusChangeTitle(current.company, current.jobTitle, change.to, change.outcome);
       const [row] = await tx

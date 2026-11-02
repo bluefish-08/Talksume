@@ -187,21 +187,20 @@ describe("投递全流程", () => {
     expect(timeline.body.timeline[4].outcome).toBe("offer");
 
     const list = await call("GET", "/api/v1/notifications", candidate);
-    expect(list.body.unreadCount).toBe(4);
+    expect(list.body.unreadCount).toBe(3);
     expect(list.body.items.map((n: Item) => n.title)).toEqual([
       "「腾讯·后端开发实习生」状态更新为：已录用",
       "「腾讯·后端开发实习生」状态更新为：面试中",
       "「腾讯·后端开发实习生」状态更新为：已查看",
-      "「腾讯·后端开发实习生」状态更新为：已投递",
     ]);
     expect(list.body.items[0]).toMatchObject({ kind: "status_changed", refId: appId, readAt: null });
 
     const some = await call("POST", "/api/v1/notifications/read", candidate, {
       ids: [list.body.items[0].id],
     });
-    expect(some.body).toEqual({ updated: 1, unreadCount: 3 });
+    expect(some.body).toEqual({ updated: 1, unreadCount: 2 });
     const all = await call("POST", "/api/v1/notifications/read", candidate, {});
-    expect(all.body).toEqual({ updated: 3, unreadCount: 0 });
+    expect(all.body).toEqual({ updated: 2, unreadCount: 0 });
 
     const hrList = await call("GET", "/api/v1/hr/jobs", hr);
     expect(hrList.body.items[0]).toMatchObject({ id: jobId, applicationCount: 1, byStatus: { closed: 1 } });
@@ -458,7 +457,8 @@ describe("SSE 推送", () => {
     };
 
     await readUntil((t) => t.includes(": ping"));
-    await call("POST", "/api/v1/applications", candidate, { jobId });
+    const created = await call("POST", "/api/v1/applications", candidate, { jobId });
+    await call("GET", `/api/v1/hr/applications/${created.body.application.id}`, hr);
     await readUntil((t) => t.includes("event: notification"));
 
     expect(received).toContain("event: notification");
@@ -467,7 +467,7 @@ describe("SSE 推送", () => {
     expect(pushed).toMatchObject({
       userId: candidate,
       kind: "status_changed",
-      title: "「腾讯·后端开发实习生」状态更新为：已投递",
+      title: "「腾讯·后端开发实习生」状态更新为：已查看",
     });
     expect(pushed.id).toBeTruthy();
 

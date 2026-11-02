@@ -167,7 +167,7 @@ export async function createApplication(ctx: FlowContext, userId: string, input:
 
   let submitError: string | undefined;
   if (plan.channel === "hr_workspace") {
-    await move(ctx, applicationId, "applied", "system");
+    await move(ctx, applicationId, "applied", "system", undefined, { silent: true });
   } else if (plan.channel === "platform_api") {
     try {
       const [user] = await ctx.db.select().from(users).where(eq(users.id, userId));
