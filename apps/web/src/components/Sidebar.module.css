@@ -28,9 +28,10 @@
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-weight: 500;
+  text-decoration: none;
 }
 
-.newChat:hover:not(:disabled) {
+.newChat:hover {
   background: #e2ecfd;
 }
 

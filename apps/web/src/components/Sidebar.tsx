@@ -1,6 +1,6 @@
 import { FileText, ListChecks, Plus, Search } from "lucide-react";
 import { NavLink } from "react-router";
-import { useConversations, useProfile, useStartConversation } from "../api/queries.ts";
+import { useConversations, useProfile } from "../api/queries.ts";
 import { NotificationsBell } from "../features/notifications/NotificationsBell.tsx";
 import { Logo } from "./Logo.tsx";
 import styles from "./Sidebar.module.css";
@@ -17,7 +17,6 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const conversations = useConversations();
   const profile = useProfile();
-  const start = useStartConversation();
   const name = profile.data?.profile.basics.name || "我";
 
   return (
@@ -28,18 +27,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
       </div>
 
-      <button
-        type="button"
-        className={styles.newChat}
-        disabled={start.isPending}
-        onClick={() => {
-          start.mutate();
-          onNavigate?.();
-        }}
-      >
+      {/* 只回到首页输入框，发出第一句话时才建对话，避免连点堆出空对话 */}
+      <NavLink to="/" end className={styles.newChat} onClick={onNavigate}>
         <Plus size={16} strokeWidth={2} aria-hidden="true" />
         新对话
-      </button>
+      </NavLink>
 
       <div className={styles.group}>
         {NAV.map(({ to, label, icon: Icon }) => (
