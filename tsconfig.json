@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/server" },
+    { "path": "packages/db" },
     { "path": "packages/resume-render" },
     { "path": "cloud/server" },
     { "path": "apps/web" }

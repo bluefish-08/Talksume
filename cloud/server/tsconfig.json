@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
   "include": ["src"],
-  "references": [{ "path": "../../packages/server" }]
+  "references": [{ "path": "../../packages/server" }, { "path": "../../packages/db" }]
 }
