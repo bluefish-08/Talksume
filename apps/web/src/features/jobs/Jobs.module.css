@@ -90,11 +90,6 @@
   flex: 1 1 400px;
   min-width: 0;
   max-width: 560px;
-  position: sticky;
-  top: 0;
-  max-height: calc(100dvh - 56px);
-  overflow: auto;
-  border-radius: 20px;
 }
 
 .status {
@@ -119,6 +114,36 @@
   margin-top: 16px;
 }
 
+@media (min-width: 1000px) {
+  .page {
+    overflow: hidden;
+  }
+
+  .header,
+  .chips {
+    flex: none;
+  }
+
+  .layout {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .listCol {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 2px;
+    margin: 0 -2px;
+  }
+
+  .detailCol {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+}
+
 @media (max-width: 999px) {
   .layout {
     flex-direction: column;
@@ -130,12 +155,6 @@
     flex: none;
     max-width: none;
     width: 100%;
-  }
-
-  .detailCol {
-    position: static;
-    max-height: none;
-    overflow: visible;
   }
 
   .page[data-detail="open"] .listCol,

@@ -61,150 +61,159 @@ export function JobDetail(props: DetailProps) {
 
   return (
     <article className={styles.pane} aria-label="岗位详情">
-      <IconButton label="返回列表" className={styles.back} onClick={props.onBack}>
-        <ArrowLeft size={18} strokeWidth={1.6} aria-hidden="true" />
-      </IconButton>
+      <div className={styles.scroll}>
+        <IconButton label="返回列表" className={styles.back} onClick={props.onBack}>
+          <ArrowLeft size={18} strokeWidth={1.6} aria-hidden="true" />
+        </IconButton>
 
-      <header className={styles.head}>
-        <div className={styles.headText}>
-          <h2 className={styles.title}>{job.title}</h2>
-          <p className={styles.meta}>{meta}</p>
-        </div>
-        {match && (
-          <div className={styles.bigScore}>
-            <span className="sr-only">匹配度 </span>
-            {Math.round(match.score)}
+        <header className={styles.head}>
+          <div className={styles.headText}>
+            <h2 className={styles.title}>{job.title}</h2>
+            <p className={styles.meta}>{meta}</p>
           </div>
-        )}
-      </header>
-
-      {match ? (
-        <>
-          {report?.summary ? (
-            <p className={styles.summary}>{report.summary}</p>
-          ) : (
-            !hasReport(match.report) &&
-            (match.reportStatus === "pending" ? (
-              <p className={styles.pending} role="status">
-                <Spinner label="生成中" />
-                AI 解读生成中…
-              </p>
-            ) : match.reportStatus === "failed" ? (
-              <p className={styles.pending} role="status">
-                AI 解读没有生成成功。
-                <Button variant="secondary" size="sm" disabled={retryingReport} onClick={props.onRetryReport}>
-                  {retryingReport && <Spinner label="重试中" />}重试
-                </Button>
-              </p>
-            ) : null)
+          {match && (
+            <div className={styles.bigScore}>
+              <span className="sr-only">匹配度 </span>
+              {Math.round(match.score)}
+            </div>
           )}
+        </header>
 
-          <section className={styles.section} aria-labelledby="dim-h">
-            <h3 id="dim-h" className={styles.h3}>
-              为什么推荐
-            </h3>
-            <div className={styles.dims}>
-              {dimRows(match).map((d) => (
-                <div key={d.key} className={styles.dimRow} data-na={d.applicable ? undefined : true}>
-                  <span className={styles.dimLabel}>{d.label}</span>
-                  <div
-                    className={styles.track}
-                    role="progressbar"
-                    aria-label={d.label}
-                    aria-valuemin={0}
-                    aria-valuemax={1}
-                    aria-valuenow={d.applicable ? d.score : undefined}
-                    aria-valuetext={d.applicable ? d.score.toFixed(2) : "未填写"}
+        {match ? (
+          <>
+            {report?.summary ? (
+              <p className={styles.summary}>{report.summary}</p>
+            ) : (
+              !hasReport(match.report) &&
+              (match.reportStatus === "pending" ? (
+                <p className={styles.pending} role="status">
+                  <Spinner label="生成中" />
+                  AI 解读生成中…
+                </p>
+              ) : match.reportStatus === "failed" ? (
+                <p className={styles.pending} role="status">
+                  AI 解读没有生成成功。
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={retryingReport}
+                    onClick={props.onRetryReport}
                   >
-                    {d.applicable && (
-                      <div className={styles.fill} style={{ width: `${Math.round(d.score * 100)}%` }} />
-                    )}
+                    {retryingReport && <Spinner label="重试中" />}重试
+                  </Button>
+                </p>
+              ) : null)
+            )}
+
+            <section className={styles.section} aria-labelledby="dim-h">
+              <h3 id="dim-h" className={styles.h3}>
+                为什么推荐
+              </h3>
+              <div className={styles.dims}>
+                {dimRows(match).map((d) => (
+                  <div key={d.key} className={styles.dimRow} data-na={d.applicable ? undefined : true}>
+                    <span className={styles.dimLabel}>{d.label}</span>
+                    <div
+                      className={styles.track}
+                      role="progressbar"
+                      aria-label={d.label}
+                      aria-valuemin={0}
+                      aria-valuemax={1}
+                      aria-valuenow={d.applicable ? d.score : undefined}
+                      aria-valuetext={d.applicable ? d.score.toFixed(2) : "未填写"}
+                    >
+                      {d.applicable && (
+                        <div className={styles.fill} style={{ width: `${Math.round(d.score * 100)}%` }} />
+                      )}
+                    </div>
+                    <span className={styles.dimValue}>{d.applicable ? d.score.toFixed(2) : "未填写"}</span>
                   </div>
-                  <span className={styles.dimValue}>{d.applicable ? d.score.toFixed(2) : "未填写"}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
 
-          {(strengths.length > 0 || gaps.length > 0) && (
-            <ul className={styles.points}>
-              {strengths.map((s) => (
-                <li key={`s-${s}`}>
-                  <span className={styles.ok} aria-hidden="true">
-                    ✓
-                  </span>
-                  <span>
-                    <span className="sr-only">优势：</span>
-                    {s}
-                  </span>
-                </li>
-              ))}
-              {gaps.map((g) => (
-                <li key={`g-${g}`}>
-                  <span className={styles.warn} aria-hidden="true">
-                    !
-                  </span>
-                  <span>
-                    <span className="sr-only">待补充：</span>
-                    {g}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+            {(strengths.length > 0 || gaps.length > 0) && (
+              <ul className={styles.points}>
+                {strengths.map((s) => (
+                  <li key={`s-${s}`}>
+                    <span className={styles.ok} aria-hidden="true">
+                      ✓
+                    </span>
+                    <span>
+                      <span className="sr-only">优势：</span>
+                      {s}
+                    </span>
+                  </li>
+                ))}
+                {gaps.map((g) => (
+                  <li key={`g-${g}`}>
+                    <span className={styles.warn} aria-hidden="true">
+                      !
+                    </span>
+                    <span>
+                      <span className="sr-only">待补充：</span>
+                      {g}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-          {gaps[0] && (
-            <div className={styles.tip}>
-              <span className={styles.tipTitle}>投之前可以补一句</span>
-              <span className={styles.tipBody}>
-                匹配报告提到：{gaps[0]}
-                。如果你有相关经历，点下面的「针对这个岗位优化简历」聊聊，补进简历再投。
-              </span>
-            </div>
-          )}
-        </>
-      ) : (
-        <p className={styles.note}>
-          {excluded
-            ? `没有计算匹配度：${EXCLUDED_NOTICE[excluded]}。你仍然可以查看岗位并投递。`
-            : "这个岗位不在你的推荐列表里，暂无匹配度。"}
-        </p>
-      )}
-
-      <div className={styles.actions}>
-        <Button size="lg" className={styles.optimize} disabled={busy.optimize} onClick={props.onOptimize}>
-          {busy.optimize && <Spinner label="准备中" />}针对这个岗位优化简历
-        </Button>
-        {applyButton(props)}
-      </div>
-      <div className={styles.minor}>
-        <button type="button" className={styles.link} disabled={busy.dislike} onClick={props.onDislike}>
-          不感兴趣
-        </button>
-        {job.url && (
-          <a className={styles.link} href={job.url} target="_blank" rel="noreferrer">
-            查看原岗位
-            <ExternalLink size={13} strokeWidth={1.6} aria-hidden="true" />
-          </a>
-        )}
-        {application && (
-          <Link className={styles.link} to="/applications">
-            查看投递进度
-          </Link>
-        )}
-      </div>
-
-      <details className={styles.jd}>
-        <summary>
-          <ChevronDown size={16} strokeWidth={1.6} aria-hidden="true" />
-          岗位描述原文
-        </summary>
-        {jdText ? (
-          <p className={styles.jdText}>{jdText}</p>
+            {gaps[0] && (
+              <div className={styles.tip}>
+                <span className={styles.tipTitle}>投之前可以补一句</span>
+                <span className={styles.tipBody}>
+                  匹配报告提到：{gaps[0]}
+                  。如果你有相关经历，点下面的「针对这个岗位优化简历」聊聊，补进简历再投。
+                </span>
+              </div>
+            )}
+          </>
         ) : (
-          <p className={styles.jdText}>{jdLoading ? "加载中…" : job.snippet}</p>
+          <p className={styles.note}>
+            {excluded
+              ? `没有计算匹配度：${EXCLUDED_NOTICE[excluded]}。你仍然可以查看岗位并投递。`
+              : "这个岗位不在你的推荐列表里，暂无匹配度。"}
+          </p>
         )}
-      </details>
+
+        <details className={styles.jd}>
+          <summary>
+            <ChevronDown size={16} strokeWidth={1.6} aria-hidden="true" />
+            岗位描述原文
+          </summary>
+          {jdText ? (
+            <p className={styles.jdText}>{jdText}</p>
+          ) : (
+            <p className={styles.jdText}>{jdLoading ? "加载中…" : job.snippet}</p>
+          )}
+        </details>
+      </div>
+
+      <div className={styles.foot}>
+        <div className={styles.actions}>
+          <Button size="lg" className={styles.optimize} disabled={busy.optimize} onClick={props.onOptimize}>
+            {busy.optimize && <Spinner label="准备中" />}针对这个岗位优化简历
+          </Button>
+          {applyButton(props)}
+        </div>
+        <div className={styles.minor}>
+          <button type="button" className={styles.link} disabled={busy.dislike} onClick={props.onDislike}>
+            不感兴趣
+          </button>
+          {job.url && (
+            <a className={styles.link} href={job.url} target="_blank" rel="noreferrer">
+              查看原岗位
+              <ExternalLink size={13} strokeWidth={1.6} aria-hidden="true" />
+            </a>
+          )}
+          {application && (
+            <Link className={styles.link} to="/applications">
+              查看投递进度
+            </Link>
+          )}
+        </div>
+      </div>
     </article>
   );
 }
@@ -212,10 +221,12 @@ export function JobDetail(props: DetailProps) {
 export function JobDetailSkeleton() {
   return (
     <div className={styles.pane} aria-hidden="true">
-      <span className={styles.sk} style={{ width: "60%", height: 20 }} />
-      <span className={styles.sk} style={{ width: "80%" }} />
-      <span className={styles.sk} style={{ width: "100%", height: 120 }} />
-      <span className={styles.sk} style={{ width: "100%", height: 44 }} />
+      <div className={styles.scroll}>
+        <span className={styles.sk} style={{ width: "60%", height: 20 }} />
+        <span className={styles.sk} style={{ width: "80%" }} />
+        <span className={styles.sk} style={{ width: "100%", height: 120 }} />
+        <span className={styles.sk} style={{ width: "100%", height: 44 }} />
+      </div>
     </div>
   );
 }

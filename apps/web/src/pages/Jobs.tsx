@@ -274,6 +274,7 @@ export function JobsPage() {
     if (job) {
       return (
         <JobDetail
+          key={job.id}
           job={job}
           match={match}
           excluded={importedHit?.excluded}
