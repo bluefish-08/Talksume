@@ -72,6 +72,8 @@ export interface CompleteRequest {
 
 export interface StreamTuning {
   maxRetries?: number;
+  /** 不传则按 config.disableThinking。 */
+  thinking?: boolean;
 }
 
 export interface CompleteResult {
@@ -258,6 +260,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     options: SimpleStreamOptions | undefined,
     out: AssistantMessageEventStream,
     maxRetries: number,
+    thinkingOff: boolean,
   ): Promise<void> {
     const redactor = config.redactPii ? createPiiRedactor() : undefined;
     const safeContext = redactor ? redactor.redactDeep(context) : context;
@@ -322,7 +325,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
             ...options,
             apiKey: config.apiKey,
             signal,
-            ...(config.disableThinking && {
+            ...(thinkingOff && {
               onPayload: async (payload, m) =>
                 withThinkingOff((await options?.onPayload?.(payload, m)) ?? payload),
             }),
@@ -423,19 +426,22 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
   }
 
   function streamFn(purpose: string, tuning: StreamTuning = {}): GatewayStreamFn {
+    const thinkingOff = tuning.thinking === undefined ? config.disableThinking : !tuning.thinking;
     return (model, context, options) => {
       const out = createAssistantMessageEventStream();
-      run(purpose, model, context, options, out, tuning.maxRetries ?? config.maxRetries).catch((error) => {
-        const text = error instanceof Error ? error.message : String(error);
-        out.push({
-          type: "error",
-          reason: "error",
-          error: {
-            ...emptyAssistantMessage(model, "error", ""),
-            errorMessage: tagErrorMessage("unknown", scrub(text)),
-          },
-        });
-      });
+      run(purpose, model, context, options, out, tuning.maxRetries ?? config.maxRetries, thinkingOff).catch(
+        (error) => {
+          const text = error instanceof Error ? error.message : String(error);
+          out.push({
+            type: "error",
+            reason: "error",
+            error: {
+              ...emptyAssistantMessage(model, "error", ""),
+              errorMessage: tagErrorMessage("unknown", scrub(text)),
+            },
+          });
+        },
+      );
       return out;
     };
   }

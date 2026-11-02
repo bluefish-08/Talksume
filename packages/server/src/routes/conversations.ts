@@ -25,15 +25,21 @@ import { resumeRoutes } from "./resume.ts";
 const GREETING = "你好，我是简聊助手。接下来我们边聊边整理简历，聊到哪里都可以先停，下次接着来。";
 const KEEPALIVE_MS = 15_000;
 
-const MessageBody = z.object({ content: z.string().trim().min(1).max(4000) });
+const MessageBody = z.object({
+  content: z.string().trim().min(1).max(4000),
+  model: z.string().optional(),
+  thinking: z.boolean().optional(),
+});
 const ConflictBody = z.object({ choice: z.enum(["proposed", "previous"]) });
 
+const DEFAULT_THINKING = true;
+
 // confirmConflict 不调用模型，没配 LLM 时也要能处理待确认项
-const NO_LLM: LlmDeps = {
+const NO_LLM: ReturnType<LlmDeps["resolve"]> = {
   streamFn: () => {
     throw new Error("llm unavailable");
   },
-  model: {} as LlmDeps["model"],
+  model: {} as ReturnType<LlmDeps["resolve"]>["model"],
 };
 
 const genId = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
@@ -47,6 +53,16 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     completeness: computeCompleteness(state.profile, { completedSections: state.completedSections }),
     resume: profileToResume(state.profile),
     conflicts: state.conflicts,
+  });
+
+  const defaultModel = deps.llm?.models[0]?.id ?? "";
+  const resolveDefault = () =>
+    deps.llm ? deps.llm.resolve({ model: defaultModel, thinking: DEFAULT_THINKING }) : NO_LLM;
+
+  app.get("/api/v1/llm/options", async (_req, reply) => {
+    const llm = deps.llm;
+    if (!llm) return sendError(reply, 503, "llm_unavailable", "模型服务未配置", true);
+    return { models: llm.models, default: { model: defaultModel, thinking: DEFAULT_THINKING } };
   });
 
   app.post("/api/v1/conversations", async (req, reply) => {
@@ -141,11 +157,15 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const { id } = req.params as { id: string };
     const body = MessageBody.safeParse(req.body);
     if (!body.success) return sendError(reply, 400, "invalid_request", "content 不能为空且不超过 4000 字");
+    const { model = defaultModel, thinking = DEFAULT_THINKING } = body.data;
+    if (!llm.models.some((m) => m.id === model)) {
+      return sendError(reply, 400, "invalid_model", "不支持的模型");
+    }
     const loaded = await loadConversation(db, req.userId, id);
     if (!loaded) return sendError(reply, 404, "conversation_not_found", "会话不存在");
     if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
 
-    const controller = createIntakeController({ streamFn: llm.streamFn, model: llm.model, genId });
+    const controller = createIntakeController({ ...llm.resolve({ model, thinking }), genId });
     const messageId = randomUUID();
     await streamTurn(req, reply, id, loaded, `${messageId}:reply`, (signal) =>
       controller.handleUserMessage(loaded.state, { id: messageId, text: body.data.content }, { signal }),
@@ -163,7 +183,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     }
     if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
 
-    const controller = createIntakeController(deps.llm ?? NO_LLM);
+    const controller = createIntakeController(resolveDefault());
     await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>
       controller.resolveConflict(loaded.state, conflictId, body.data.choice === "proposed", {
         signal,

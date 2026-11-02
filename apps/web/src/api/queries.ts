@@ -13,6 +13,7 @@ export const qk = {
   matches: ["matches"] as const,
   jobs: ["jobs"] as const,
   applications: ["applications"] as const,
+  llmOptions: ["llm-options"] as const,
 };
 
 export function useConversations() {

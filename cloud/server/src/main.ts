@@ -4,6 +4,7 @@ import { createEmbedderFromEnv, embedPendingJobs, seedJobsIfEmpty } from "@talks
 import {
   buildApp,
   createRedisNotifier,
+  gatewayLlm,
   InProcessNotifier,
   type NotificationBus,
   runReminderSweep,
@@ -38,7 +39,7 @@ const app = buildApp({
   logger: true,
   flow: { notifier },
   ...(database && { db: database.db }),
-  ...(gateway && { llm: { streamFn: gateway.streamFn("intake"), model: gateway.primaryModel } }),
+  ...(gateway && { llm: gatewayLlm(gateway) }),
 });
 logCall = (log) => app.log.info({ llm: log }, "llm call");
 if (!gateway) app.log.warn("LLM_API_KEY 未设置，对话接口将返回 503");

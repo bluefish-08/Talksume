@@ -12,6 +12,7 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AppDeps, buildApp } from "../app.ts";
+import { gatewayLlm } from "../llm.ts";
 
 interface Sse {
   event: string;
@@ -37,10 +38,16 @@ let handle: DbHandle;
 let app: FastifyInstance;
 const n = 0;
 
+type Resolved = ReturnType<NonNullable<AppDeps["llm"]>["resolve"]>;
+
+function single(resolved: Resolved): NonNullable<AppDeps["llm"]> {
+  return { models: [{ id: resolved.model.id, label: "测试模型", hint: "" }], resolve: () => resolved };
+}
+
 function fakeLlm(steps: FauxResponseStep[]): NonNullable<AppDeps["llm"]> {
   const core = createFauxCore({ models: [{ id: "fake-model" }] });
   core.setResponses(steps);
-  return { streamFn: (m, c, o) => core.streamSimple(m, c, o), model: core.getModel() };
+  return single({ streamFn: (m, c, o) => core.streamSimple(m, c, o), model: core.getModel() });
 }
 
 async function boot(llm?: AppDeps["llm"]) {
@@ -140,6 +147,63 @@ describe("发送消息（SSE）", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("模型选项：没配模型 503，配了返回模型列表和默认开思考", async () => {
+    await boot();
+    const off = await app.inject({ method: "GET", url: "/api/v1/llm/options" });
+    expect(off.statusCode).toBe(503);
+    await app.close();
+
+    const gateway = createGateway(loadGatewayConfig({ LLM_BASE_URL: "http://x/v1", LLM_API_KEY: "k" }));
+    await boot(gatewayLlm(gateway));
+    const res = await app.inject({ method: "GET", url: "/api/v1/llm/options" });
+    expect(res.json()).toEqual({
+      models: [
+        { id: "deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", hint: expect.any(String) },
+        { id: "glm-5.3", label: "GLM-5.3", hint: expect.any(String) },
+      ],
+      default: { model: "deepseek-v4.1-flash", thinking: true },
+    });
+  });
+
+  it("按请求里的 model / thinking 选模型，不传时默认首个模型并开思考，未知模型 400", async () => {
+    const core = createFauxCore({ models: [{ id: "model-a" }, { id: "model-b" }] });
+    core.setResponses([toolTurn(ask("继续？")), toolTurn(ask("继续？"))]);
+    const choices: unknown[] = [];
+    await boot({
+      models: [
+        { id: "model-a", label: "A", hint: "" },
+        { id: "model-b", label: "B", hint: "" },
+      ],
+      resolve: (choice) => {
+        choices.push(choice);
+        return {
+          streamFn: (m, c, o) => core.streamSimple(m, c, o),
+          model: core.getModel(choice.model) ?? core.getModel(),
+        };
+      },
+    });
+    const { id } = await createConversation();
+    await send(id, "你好");
+    const picked = await app.inject({
+      method: "POST",
+      url: `/api/v1/conversations/${id}/messages`,
+      payload: { content: "换个模型", model: "model-b", thinking: false },
+    });
+    expect(picked.statusCode).toBe(200);
+    expect(choices).toEqual([
+      { model: "model-a", thinking: true },
+      { model: "model-b", thinking: false },
+    ]);
+
+    const bad = await app.inject({
+      method: "POST",
+      url: `/api/v1/conversations/${id}/messages`,
+      payload: { content: "你好", model: "gpt-x" },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toMatchObject({ code: "invalid_model" });
+  });
+
   it("一轮对话：事件顺序、SSE 头，画像与消息落库", async () => {
     await boot(
       fakeLlm([
@@ -234,7 +298,7 @@ describe("发送消息（SSE）", () => {
     const gateway = createGateway(loadGatewayConfig({ LLM_BASE_URL: "http://x/v1", LLM_API_KEY: "k" }), {
       baseStream: (m, c, o) => core.streamSimple(m, c, o),
     });
-    await boot({ streamFn: gateway.streamFn("intake"), model: gateway.primaryModel });
+    await boot(gatewayLlm(gateway));
     const { id } = await createConversation();
     const { events } = await send(id, "你好");
 
@@ -248,13 +312,15 @@ describe("发送消息（SSE）", () => {
     const core = createFauxCore({ models: [{ id: "fake-model" }], tokensPerSecond: 20 });
     core.setResponses([fauxAssistantMessage("这是一段很长的回复。".repeat(40))]);
     let signal: AbortSignal | undefined;
-    await boot({
-      streamFn: (m, c, o) => {
-        signal = o?.signal;
-        return core.streamSimple(m, c, o);
-      },
-      model: core.getModel(),
-    });
+    await boot(
+      single({
+        streamFn: (m, c, o) => {
+          signal = o?.signal;
+          return core.streamSimple(m, c, o);
+        },
+        model: core.getModel(),
+      }),
+    );
     const { id } = await createConversation();
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     const controller = new AbortController();
@@ -275,7 +341,7 @@ describe("发送消息（SSE）", () => {
   it("同一会话并发发送第二条消息返回 409", async () => {
     const core = createFauxCore({ models: [{ id: "fake-model" }], tokensPerSecond: 50 });
     core.setResponses([fauxAssistantMessage("好的。".repeat(30)), fauxAssistantMessage("好的。")]);
-    await boot({ streamFn: (m, c, o) => core.streamSimple(m, c, o), model: core.getModel() });
+    await boot(single({ streamFn: (m, c, o) => core.streamSimple(m, c, o), model: core.getModel() }));
     const { id } = await createConversation();
     const first = send(id, "第一条");
     await expect.poll(() => core.state.callCount, { timeout: 2000 }).toBe(1);

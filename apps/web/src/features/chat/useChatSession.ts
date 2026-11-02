@@ -7,6 +7,7 @@ import type { Completeness, ProfileSection, ResumeContent } from "../../api/type
 import { useToast } from "../../components/Toast.tsx";
 import { factsKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
+import { useModelChoice } from "./modelChoice.ts";
 import type { ChatMessage, Conflict, ConversationDetail, ProfileChange } from "./types.ts";
 
 interface Frame {
@@ -48,6 +49,7 @@ export function useChatSession(detail: ConversationDetail) {
   const resumeRef = useRef(resume);
   resumeRef.current = resume;
   const busy = useRef(false);
+  const { choice } = useModelChoice();
 
   const patch = useCallback((key: string, fn: (m: ChatMessage) => ChatMessage) => {
     setMessages((all) => all.map((m) => (m.key === key ? fn(m) : m)));
@@ -174,8 +176,8 @@ export function useChatSession(detail: ConversationDetail) {
 
   const run = useCallback(
     (userKey: string, content: string) =>
-      stream(`/api/v1/conversations/${detail.id}/messages`, { content }, userKey),
-    [detail.id, stream],
+      stream(`/api/v1/conversations/${detail.id}/messages`, { content, ...choice }, userKey),
+    [detail.id, stream, choice],
   );
 
   const send = useCallback(

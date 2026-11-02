@@ -86,6 +86,26 @@ describe("disableThinking", () => {
   it("LLM_DISABLE_THINKING=0 时不改请求体", async () => {
     expect(await payloadSeenBy({ LLM_DISABLE_THINKING: "0" })).toBeUndefined();
   });
+
+  async function hookFor(env: Record<string, string>, thinking: boolean) {
+    const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }] });
+    core.setResponses([fauxAssistantMessage("ok")]);
+    let hook: unknown;
+    const gateway = createGateway(loadGatewayConfig({ ...baseEnv, ...env }), {
+      baseStream: (m, c, o) => {
+        hook = o?.onPayload;
+        return core.streamSimple(m, c, o);
+      },
+    });
+    const context = normalizeContext({ messages: [{ role: "user", content: "hi", timestamp: 0 }] });
+    await gateway.streamFn("intake", { thinking })(gateway.primaryModel, context).result();
+    return hook;
+  }
+
+  it("streamFn 的 thinking 覆盖全局配置", async () => {
+    expect(await hookFor({}, true)).toBeUndefined();
+    expect(await hookFor({ LLM_DISABLE_THINKING: "0" }, false)).toBeTypeOf("function");
+  });
 });
 
 describe("pii redactor", () => {
@@ -154,6 +174,17 @@ describe("gateway retry and fallback", () => {
     expect(result.text).toBe("备用回答");
     expect(calls.map((c) => c.model)).toEqual(["deepseek-v4.1-flash", "glm-5.3"]);
     expect(sleeps).toEqual([]);
+  });
+
+  it("puts the requested fallback model first and keeps the primary as backup", async () => {
+    const { gateway, calls } = setup(
+      (_n, model) => (model === "glm-5.3" ? err("503 service unavailable") : "主模型兜底"),
+      { maxRetries: 0 },
+    );
+    const context = normalizeContext({ messages: [{ role: "user", content: "hi", timestamp: 0 }] });
+    const message = await gateway.streamFn("intake")(gateway.fallbackModel, context).result();
+    expect(message.content).toEqual([{ type: "text", text: "主模型兜底" }]);
+    expect(calls.map((c) => c.model)).toEqual(["glm-5.3", "deepseek-v4.1-flash"]);
   });
 
   it("fails with the last error when both models are down", async () => {

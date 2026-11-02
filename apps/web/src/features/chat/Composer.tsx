@@ -1,6 +1,7 @@
 import { ArrowUp, Paperclip, Square } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, type Ref, useEffect, useId, useRef } from "react";
 import styles from "./Composer.module.css";
+import { ModelPicker } from "./ModelPicker.tsx";
 
 export const MAX_MESSAGE_LENGTH = 4000;
 
@@ -17,7 +18,7 @@ interface Props {
   label: string;
   placeholder: string;
   rows: number;
-  /** 附件按钮后面的位置：意向胶囊或快捷键提示。 */
+  /** 模型选择器后面的位置：意向胶囊或快捷键提示。 */
   tools?: ReactNode;
   inputRef?: Ref<HTMLTextAreaElement>;
 }
@@ -89,6 +90,7 @@ export function Composer({
             <Paperclip size={16} strokeWidth={1.6} aria-hidden="true" />
           </button>
         </span>
+        <ModelPicker />
         {tools}
         <span className={styles.grow} />
         {streaming ? (

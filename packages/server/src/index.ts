@@ -1,5 +1,13 @@
-export { type AppDeps, buildApp, type LlmDeps, type RouteModule } from "./app.ts";
+export {
+  type AppDeps,
+  buildApp,
+  type LlmChoice,
+  type LlmDeps,
+  type LlmModelOption,
+  type RouteModule,
+} from "./app.ts";
 export { ConnectorRegistry } from "./flow/channels.ts";
+export { gatewayLlm } from "./llm.ts";
 export {
   createRedisNotifier,
   InProcessNotifier,

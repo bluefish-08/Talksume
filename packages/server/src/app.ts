@@ -9,8 +9,22 @@ import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
 import { matchingRoutes } from "./routes/matching.ts";
 
-/** 对话模型：生产由 llm-gateway 提供，测试注入假的 streamFn。 */
-export type LlmDeps = Pick<IntakeDeps, "streamFn" | "model">;
+export interface LlmModelOption {
+  id: string;
+  label: string;
+  hint: string;
+}
+
+export interface LlmChoice {
+  model: string;
+  thinking: boolean;
+}
+
+/** 对话模型：生产由 llm-gateway 提供，测试注入假的 streamFn。models[0] 为默认模型。 */
+export interface LlmDeps {
+  models: LlmModelOption[];
+  resolve(choice: LlmChoice): Pick<IntakeDeps, "streamFn" | "model">;
+}
 
 export interface AppDeps {
   edition: Edition;
