@@ -1,31 +1,35 @@
-import { useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createBrowserRouter, RouterProvider } from "react-router";
+import { AppShell } from "./components/AppShell.tsx";
+import { ApplicationsPage } from "./pages/Applications.tsx";
+import { ChatPage } from "./pages/Chat.tsx";
+import { HomePage } from "./pages/Home.tsx";
+import { HrPage } from "./pages/Hr.tsx";
+import { JobsPage } from "./pages/Jobs.tsx";
+import { ResumePage } from "./pages/Resume.tsx";
 
-interface Meta {
-  edition: string;
-  version: string;
-}
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } },
+});
+
+const router = createBrowserRouter([
+  {
+    element: <AppShell />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: "c/:id", element: <ChatPage /> },
+      { path: "resume", element: <ResumePage /> },
+      { path: "jobs", element: <JobsPage /> },
+      { path: "applications", element: <ApplicationsPage /> },
+    ],
+  },
+  { path: "hr", element: <HrPage /> },
+]);
 
 export function App() {
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/v1/meta")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then(setMeta)
-      .catch((err: Error) => setError(err.message));
-  }, []);
-
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: 32 }}>
-      <h1>简聊 Talksume</h1>
-      <p>聊出好简历，投中好岗位</p>
-      {meta && (
-        <p>
-          服务端：{meta.edition} · {meta.version}
-        </p>
-      )}
-      {error && <p role="alert">服务端不可用：{error}</p>}
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   );
 }

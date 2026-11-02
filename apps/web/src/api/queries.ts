@@ -1,0 +1,46 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
+import { api } from "./client.ts";
+import type { ConversationSummary, NotificationList, ProfileResponse } from "./types.ts";
+
+/** 全局 query key，跨页面失效时用这里的 key，避免拼错。 */
+export const qk = {
+  conversations: ["conversations"] as const,
+  conversation: (id: string) => ["conversations", id] as const,
+  profile: ["profile"] as const,
+  resume: ["resume"] as const,
+  notifications: ["notifications"] as const,
+  matches: ["matches"] as const,
+  jobs: ["jobs"] as const,
+  applications: ["applications"] as const,
+};
+
+export function useConversations() {
+  return useQuery({
+    queryKey: qk.conversations,
+    queryFn: () => api.get<{ items: ConversationSummary[] }>("/api/v1/conversations").then((r) => r.items),
+  });
+}
+
+export function useProfile() {
+  return useQuery({ queryKey: qk.profile, queryFn: () => api.get<ProfileResponse>("/api/v1/profile") });
+}
+
+export function useNotifications() {
+  return useQuery({
+    queryKey: qk.notifications,
+    queryFn: () => api.get<NotificationList>("/api/v1/notifications?limit=50"),
+  });
+}
+
+export function useStartConversation() {
+  const navigate = useNavigate();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ id: string; greeting: string }>("/api/v1/conversations"),
+    onSuccess: ({ id }) => {
+      void client.invalidateQueries({ queryKey: qk.conversations });
+      navigate(`/c/${id}`);
+    },
+  });
+}

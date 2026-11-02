@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>简聊 · 晨雾 · 首页</title>
+
+</head>
+<body>
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F5F8FC}
+a{color:#0F1B2E}a:hover{color:#1D4ED8}
+button{font-family:inherit;cursor:pointer}
+textarea::placeholder{color:#8593A8}
+</style>
+
+<div style="min-height: 960px; background: #F5F8FC; color: #0F1B2E; font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif; font-size: 14px; line-height: 1.6; display: flex; flex-wrap: wrap">
+
+  <nav aria-label="侧边栏" style="flex: 1 1 236px; max-width: 256px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E3E9F2; padding: 16px 12px; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: flex-start; gap: 1px; padding: 6px 8px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="3.4" stroke-linecap="square" aria-hidden="true"><path d="M17 3.5H6.5V16"></path></svg>
+      <span style="font-size: 19px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; padding-top: 2px">简聊</span>
+    </div>
+    <button type="button" style="height: 40px; border: 0; border-radius: 12px; background: #EDF3FE; color: #1D4ED8; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; padding: 0 12px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>新对话</button>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#" style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #2A3A52">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>我的简历</a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #2A3A52">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg>
+        <span style="flex: 1">职位推荐</span><span style="padding: 0 7px; border-radius: 9px; background: #EDF3FE; color: #1D4ED8; font-size: 12px">12 新</span></a>
+      <a href="#" style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #2A3A52">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"></path></svg>投递进度</a>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <span style="padding: 0 10px 4px; font-size: 12px; color: #5B6B82">最近对话</span>
+      <a href="#" style="height: 34px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #2A3A52; display: flex; align-items: center">美团后端实习经历</a>
+      <a href="#" style="height: 34px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #2A3A52; display: flex; align-items: center">大创项目：校园二手交易平台</a>
+      <a href="#" style="height: 34px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #2A3A52; display: flex; align-items: center">求职意向梳理</a>
+    </div>
+    <div style="margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; background: #F5F8FC">
+      <div style="width: 30px; height: 30px; border-radius: 15px; background: #DCE7FB; color: #1D4ED8; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500">林</div>
+      <span style="flex: 1">林晓</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B6B82" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"></path><path d="M10.3 20a1.9 1.9 0 0 0 3.4 0"></path></svg>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; min-height: 960px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px 120px">
+    <div style="width: 100%; max-width: 700px; display: flex; flex-direction: column; gap: 28px">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+        <h1 style="margin: 0; font-weight: 300; font-size: 36px; line-height: 1.35; letter-spacing: -0.01em">聊几句，<span style="font-weight: 500; color: #1D4ED8">简历就写好了</span></h1>
+        <p style="margin: 0; color: #5B6B82; font-size: 15px">讲讲你做过的事，我来追问细节、整理成简历、找到合适的岗位。</p>
+      </div>
+
+      <div style="display: flex; flex-direction: column">
+        <form style="position: relative; z-index: 1; margin: 0; background: #FFFFFF; border: 1px solid #DCE5F1; border-radius: 24px; box-shadow: 0 10px 30px rgba(29, 78, 216, 0.07); padding: 18px 16px 12px 20px; display: flex; flex-direction: column; gap: 12px">
+          <label for="mi-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">说说你的经历</label>
+          <textarea id="mi-msg" rows="3" placeholder="比如：暑假在美团做后端实习，负责优惠券服务的重构……" style="resize: none; border: 0; padding: 0; font: inherit; font-size: 15px; line-height: 1.7; color: #0F1B2E; background: transparent"></textarea>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <button type="button" aria-label="添加附件" style="width: 34px; height: 34px; border: 1px solid #DCE5F1; border-radius: 17px; background: #FFFFFF; color: #2A3A52; display: flex; align-items: center; justify-content: center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"></path></svg></button>
+            <button type="button" style="height: 34px; padding: 0 12px; border: 1px solid #DCE5F1; border-radius: 17px; background: #FFFFFF; color: #2A3A52; font-size: 13px; display: flex; align-items: center; gap: 6px">
+              <span style="width: 6px; height: 6px; border-radius: 3px; background: #2563EB"></span>后端开发 · 实习 · 上海</button>
+            <span style="flex: 1"></span>
+            <button type="button" aria-label="语音输入" style="width: 36px; height: 36px; border: 0; border-radius: 18px; background: transparent; color: #2A3A52; display: flex; align-items: center; justify-content: center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg></button>
+            <button type="button" aria-label="发送" style="width: 36px; height: 36px; border: 0; border-radius: 18px; background: #2563EB; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+          </div>
+        </form>
+        <div style="margin: -16px 18px 0; padding: 24px 18px 12px; background: #EDF2F9; border-radius: 0 0 18px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; color: #4A5A72">
+          <span>试试：</span>
+          <button type="button" style="border: 0; background: none; padding: 2px 0; color: #2A3A52; font-size: 13px">聊一段实习</button>
+          <span aria-hidden="true" style="color: #B4C1D4">·</span>
+          <button type="button" style="border: 0; background: none; padding: 2px 0; color: #2A3A52; font-size: 13px">整理课程项目</button>
+          <span aria-hidden="true" style="color: #B4C1D4">·</span>
+          <button type="button" style="border: 0; background: none; padding: 2px 0; color: #2A3A52; font-size: 13px">对着 JD 改简历</button>
+          <span aria-hidden="true" style="color: #B4C1D4">·</span>
+          <button type="button" style="border: 0; background: none; padding: 2px 0; color: #2A3A52; font-size: 13px">导入旧简历</button>
+        </div>
+      </div>
+
+      <a href="#" style="margin-top: 8px; text-decoration: none; color: #0F1B2E; background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; gap: 14px">
+        <div style="width: 40px; height: 48px; border-radius: 6px; border: 1px solid #DCE5F1; background: #F8FAFD; display: flex; flex-direction: column; gap: 4px; padding: 7px 6px; box-sizing: border-box">
+          <span style="height: 3px; width: 70%; background: #1D4ED8; border-radius: 2px"></span><span style="height: 2px; background: #C9D5E6; border-radius: 1px"></span><span style="height: 2px; background: #C9D5E6; border-radius: 1px"></span><span style="height: 2px; width: 60%; background: #C9D5E6; border-radius: 1px"></span>
+        </div>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+          <div style="display: flex; justify-content: space-between; gap: 12px"><span style="font-weight: 500">继续完善简历</span><span style="font-size: 13px; color: #1D4ED8">62%</span></div>
+          <div style="height: 4px; border-radius: 2px; background: #E6EDF7"><div style="width: 62%; height: 4px; border-radius: 2px; background: #2563EB"></div></div>
+          <span style="font-size: 12.5px; color: #5B6B82">上次聊到美团实习的技术方案，还差项目经历和专业技能</span>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6B82" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </a>
+    </div>
+  </main>
+</div>
+
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#2563EB","options":["#2563EB","#1D4ED8","#3B6FE0","#0B63CE"]},"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#2563EB' };
+  }
+}
+</script>
+</body>
+</html>

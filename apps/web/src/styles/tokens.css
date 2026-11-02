@@ -1,0 +1,46 @@
+:root {
+  --font-sans: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  --bg: #f5f8fc;
+  --surface: #ffffff;
+  --surface-hover: #f0f4fa;
+  --surface-sunken: #edf2f9;
+  --border: #e3e9f2;
+  --border-strong: #dce5f1;
+
+  --text: #0f1b2e;
+  --text-2: #2a3a52;
+  --text-3: #4a5a72;
+  --muted: #5b6b82;
+  --placeholder: #8593a8;
+
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #edf3fe;
+  --accent-bubble: #e8f0fd;
+  --accent-line: #bfd3f8;
+
+  --success: #0b7a4b;
+  --success-soft: #e3f4ec;
+  --warning: #b4570a;
+  --warning-soft: #fdf1e4;
+  --danger: #c0262d;
+  --danger-soft: #fdecec;
+
+  --ink: #0f1b2e;
+  --ink-text: #e8eef8;
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  --shadow-composer: 0 10px 30px rgba(29, 78, 216, 0.07);
+  --shadow-page: 0 1px 2px rgba(15, 27, 46, 0.06), 0 10px 30px rgba(15, 27, 46, 0.06);
+  --shadow-pop: 0 10px 24px rgba(15, 27, 46, 0.14);
+
+  --sidebar-w: 248px;
+}

@@ -1,0 +1,54 @@
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+}
+
+.topbar {
+  display: none;
+}
+
+.side {
+  min-height: 0;
+}
+
+/* 页面自己负责内部滚动（对话页要固定输入框），所以 main 不滚 */
+.main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 52px;
+    padding: 0 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .side {
+    position: fixed;
+    inset: 52px 0 0 0;
+    z-index: 20;
+    width: min(300px, 86vw);
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    box-shadow: var(--shadow-pop);
+  }
+
+  .sideOpen {
+    transform: none;
+  }
+}

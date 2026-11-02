@@ -1,0 +1,18 @@
+.logo {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 1px;
+  color: var(--text);
+}
+
+.mark {
+  flex: none;
+  color: var(--accent);
+}
+
+.word {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  padding-top: 0.1em;
+}
