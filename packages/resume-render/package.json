@@ -1,0 +1,20 @@
+{
+  "name": "@talksume/resume-render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "sample": "node scripts/sample.ts"
+  },
+  "dependencies": {
+    "@talksume/core": "workspace:*",
+    "docx": "^9.15.1",
+    "playwright": "^1.64.1"
+  },
+  "devDependencies": {
+    "jszip": "^3.10.2"
+  }
+}
