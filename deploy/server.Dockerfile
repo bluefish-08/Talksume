@@ -12,7 +12,11 @@ COPY --from=manifests /app ./
 RUN pnpm install --frozen-lockfile --prod --filter "@talksume/cloud-server..."
 
 FROM node:24-slim
-ENV NODE_ENV=production
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends chromium fonts-noto-cjk \
+  && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production \
+  CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 WORKDIR /app
 COPY --from=deps /app ./
 COPY packages packages
