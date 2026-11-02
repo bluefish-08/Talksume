@@ -1,4 +1,4 @@
-import { ArrowRight, MessageSquare, PanelRightOpen } from "lucide-react";
+import { MessageSquare, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useProfile } from "../api/queries.ts";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
@@ -8,18 +8,25 @@ import { PolishButton } from "../features/resume/PolishButton.tsx";
 import { useFacts, useResume, useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
 import { factQuotes, placeholderTitles } from "../features/resume/resumeUtils.ts";
+import { SuggestionsMenu } from "../features/resume/SuggestionsMenu.tsx";
 import { TemplatePicker } from "../features/resume/TemplatePicker.tsx";
 import {
   missingPrompt,
+  paperScale,
   quickPrompts,
   readFlag,
+  readZoom,
   resumeSubtitle,
   resumeSuggestions,
   writeFlag,
+  writeZoom,
+  type ZoomMode,
 } from "../features/resume/workbench.ts";
+import { ZoomControl } from "../features/resume/ZoomControl.tsx";
 import styles from "./Resume.module.css";
 
 const CHAT_OPEN_KEY = "talksume.resume.chatOpen";
+const ZOOM_KEY = "talksume.resume.zoom";
 // 与 Resume.module.css 的抽屉断点一致；减去侧栏后低于约 950px 时两栏会把纸张压到看不清
 const NARROW = "(max-width: 1199px)";
 
@@ -35,6 +42,27 @@ function useNarrow() {
   );
 }
 
+/** 量出容器去掉内边距后的可用尺寸；容器还没挂载时为 0。 */
+function useViewport(node: HTMLElement | null) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (!node) return;
+    const measure = () => {
+      const css = getComputedStyle(node);
+      const x = Number.parseFloat(css.paddingLeft) + Number.parseFloat(css.paddingRight);
+      const y = Number.parseFloat(css.paddingTop) + Number.parseFloat(css.paddingBottom);
+      const width = Math.max(0, node.clientWidth - x);
+      const height = Math.max(0, node.clientHeight - y);
+      setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return size;
+}
+
 export function ResumePage() {
   const resume = useResume();
   const profile = useProfile();
@@ -45,6 +73,14 @@ export function ResumePage() {
   const [drawer, setDrawer] = useState(false);
   const [live, setLive] = useState<LiveResume | null>(null);
   const [request, setRequest] = useState<PanelRequest | null>(null);
+  const [zoom, setZoom] = useState<ZoomMode>(() => readZoom(ZOOM_KEY));
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
+  const viewport = useViewport(stage);
+  const scale = paperScale(zoom, viewport);
+  const chooseZoom = (mode: ZoomMode) => {
+    setZoom(mode);
+    writeZoom(ZOOM_KEY, mode);
+  };
 
   const open = narrow ? drawer : docked;
   const setOpen = useCallback(
@@ -85,17 +121,20 @@ export function ResumePage() {
           <div className={styles.heading}>
             <h1 className={styles.title}>我的简历</h1>
             {completeness && (
-              <p className={styles.sub}>
-                {resumeSubtitle(completeness.score, resume.data?.updatedAt)}
-                {missing && (
-                  <>
-                    <span aria-hidden="true"> · </span>
-                    <button type="button" className={styles.missing} onClick={() => ask(missing.prompt)}>
-                      {missing.text}，让助手来补
-                    </button>
-                  </>
-                )}
-              </p>
+              <div className={styles.subRow}>
+                <p className={styles.sub}>
+                  {resumeSubtitle(completeness.score, resume.data?.updatedAt)}
+                  {missing && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <button type="button" className={styles.missing} onClick={() => ask(missing.prompt)}>
+                        {missing.text}，让助手来补
+                      </button>
+                    </>
+                  )}
+                </p>
+                <SuggestionsMenu suggestions={suggestions} onPick={ask} />
+              </div>
             )}
           </div>
           <div className={styles.tools}>
@@ -125,36 +164,22 @@ export function ResumePage() {
         )}
         {content && (
           <>
-            <div className={styles.paper}>
-              <ResumePreview
-                resume={content}
-                resumeStyle={style}
-                highlightTexts={live?.highlights}
-                revealHighlight
-                facts={factQuotes(facts.data)}
-                placeholders={placeholderTitles(content, completeness)}
-              />
+            <div className={styles.zoombar}>
+              <ZoomControl mode={zoom} scale={scale} onChange={chooseZoom} />
             </div>
-            {suggestions.length > 0 && (
-              <section className={styles.more} aria-labelledby="resume-more">
-                <h2 id="resume-more" className={styles.moreTitle}>
-                  还可以补充
-                </h2>
-                <ul className={styles.cards}>
-                  {suggestions.map((s) => (
-                    <li key={s.key}>
-                      <button type="button" className={styles.card} onClick={() => ask(s.prompt)}>
-                        <span className={styles.cardTitle}>{s.title}</span>
-                        <span className={styles.cardAction}>
-                          让助手追问
-                          <ArrowRight size={13} strokeWidth={1.8} aria-hidden="true" />
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+            <div className={styles.stage} ref={setStage}>
+              <div className={styles.paper}>
+                <ResumePreview
+                  resume={content}
+                  resumeStyle={style}
+                  highlightTexts={live?.highlights}
+                  revealHighlight
+                  facts={factQuotes(facts.data)}
+                  placeholders={placeholderTitles(content, completeness)}
+                  scale={scale}
+                />
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -172,6 +197,7 @@ export function ResumePage() {
         <ChatPanel
           visible={open}
           prompts={prompts}
+          suggestions={suggestions}
           request={request}
           onLive={setLive}
           onClose={() => setOpen(false)}

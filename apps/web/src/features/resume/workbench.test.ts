@@ -2,11 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Completeness, MissingField, ResumeContent } from "../../api/types.ts";
 import {
   missingPrompt,
+  PAPER_HEIGHT_PX,
+  PAPER_WIDTH_PX,
+  paperScale,
+  parseZoom,
   quickPrompts,
   readFlag,
+  readZoom,
   resumeSubtitle,
   resumeSuggestions,
+  stepZoom,
   writeFlag,
+  writeZoom,
 } from "./workbench.ts";
 
 const bullet = (text: string) => ({ text, factIds: [] });
@@ -138,5 +145,70 @@ describe("readFlag / writeFlag", () => {
     });
     writeFlag("panel", false);
     expect(readFlag("panel", true)).toBe(false);
+  });
+});
+
+describe("paperScale", () => {
+  it("适合页面取宽高中较小的比例", () => {
+    const tall = { width: 1000, height: PAPER_HEIGHT_PX / 2 };
+    expect(paperScale("page", tall)).toBeCloseTo(0.5);
+    const narrow = { width: PAPER_WIDTH_PX / 4, height: 2000 };
+    expect(paperScale("page", narrow)).toBeCloseTo(0.25);
+  });
+
+  it("适合宽度不看高度，且不放大超过 100%", () => {
+    expect(paperScale("width", { width: PAPER_WIDTH_PX / 2, height: 100 })).toBeCloseTo(0.5);
+    expect(paperScale("width", { width: 5000, height: 100 })).toBe(1);
+    expect(paperScale("page", { width: 5000, height: 5000 })).toBe(1);
+  });
+
+  it("固定档位按百分比，视口未量出时按 100%", () => {
+    expect(paperScale(80, { width: 10, height: 10 })).toBe(0.8);
+    expect(paperScale("page", { width: 0, height: 0 })).toBe(1);
+  });
+});
+
+describe("stepZoom", () => {
+  it("落在整十百分比上", () => {
+    expect(stepZoom(0.63, 1)).toBe(70);
+    expect(stepZoom(0.63, -1)).toBe(60);
+    expect(stepZoom(0.8, 1)).toBe(90);
+    expect(stepZoom(0.8, -1)).toBe(70);
+  });
+
+  it("限制在 50%–150%", () => {
+    expect(stepZoom(1.5, 1)).toBe(150);
+    expect(stepZoom(0.5, -1)).toBe(50);
+    expect(stepZoom(0.38, 1)).toBe(50);
+  });
+});
+
+describe("parseZoom / readZoom / writeZoom", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("只接受合法档位，其余回落默认", () => {
+    expect(parseZoom("width")).toBe("width");
+    expect(parseZoom("90")).toBe(90);
+    expect(parseZoom(null)).toBe("page");
+    expect(parseZoom("40")).toBe("page");
+    expect(parseZoom("151", "width")).toBe("width");
+    expect(parseZoom("abc")).toBe("page");
+  });
+
+  it("没有 localStorage 时回落默认值且不抛错", () => {
+    expect(readZoom("z")).toBe("page");
+    expect(() => writeZoom("z", 80)).not.toThrow();
+  });
+
+  it("读写同一个档位", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v),
+    });
+    writeZoom("z", 120);
+    expect(readZoom("z")).toBe(120);
+    writeZoom("z", "width");
+    expect(readZoom("z")).toBe("width");
   });
 });

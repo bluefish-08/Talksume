@@ -8,6 +8,7 @@ import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
 import { Button, Chip, IconButton, Spinner } from "../../components/ui.tsx";
 import { usePolishedResume } from "../resume/polishQueries.ts";
+import type { ResumeSuggestion } from "../resume/workbench.ts";
 import styles from "./ChatPanel.module.css";
 import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
@@ -32,13 +33,15 @@ interface Props {
   visible: boolean;
   /** 会话还没有用户消息时展示的快捷提示，点了直接发送。 */
   prompts: readonly string[];
+  /** 「还可以补充」建议，会话还没有用户消息时和快捷提示一起展示。 */
+  suggestions: readonly ResumeSuggestion[];
   /** 页面要求发送的消息，id 变化才算一次新请求。 */
   request: PanelRequest | null;
   onLive: (live: LiveResume | null) => void;
   onClose: () => void;
 }
 
-export function ChatPanel({ visible, prompts, request, onLive, onClose }: Props) {
+export function ChatPanel({ visible, prompts, suggestions, request, onLive, onClose }: Props) {
   const client = useQueryClient();
   const toast = useToast();
   const conversations = useConversations();
@@ -120,12 +123,13 @@ export function ChatPanel({ visible, prompts, request, onLive, onClose }: Props)
           detail={detail.data}
           visible={visible}
           prompts={prompts}
+          suggestions={suggestions}
           queued={queued}
           onConsumed={() => setQueued(null)}
           onLive={onLive}
         />
       ) : noConversation ? (
-        <PanelStart prompts={prompts} pending={create.isPending} onSend={enqueue} />
+        <PanelStart prompts={prompts} suggestions={suggestions} pending={create.isPending} onSend={enqueue} />
       ) : detail.isError ? (
         <div className={styles.center}>
           <p className={styles.note}>对话加载失败</p>
@@ -142,25 +146,57 @@ export function ChatPanel({ visible, prompts, request, onLive, onClose }: Props)
   );
 }
 
-function Prompts({ prompts, onPick }: { prompts: readonly string[]; onPick: (text: string) => void }) {
+function Prompts({
+  label = "可以这样问",
+  items,
+  onPick,
+}: {
+  label?: string;
+  items: readonly { key: string; label: string; text: string }[];
+  onPick: (text: string) => void;
+}) {
+  if (items.length === 0) return null;
   return (
     <div className={styles.prompts}>
-      <span className={styles.promptsLabel}>可以这样问</span>
-      {prompts.map((p) => (
-        <Chip key={p} className={styles.prompt} onClick={() => onPick(p)}>
-          {p}
+      <span className={styles.promptsLabel}>{label}</span>
+      {items.map((p) => (
+        <Chip key={p.key} className={styles.prompt} onClick={() => onPick(p.text)}>
+          {p.label}
         </Chip>
       ))}
     </div>
   );
 }
 
+function StarterPrompts({
+  prompts,
+  suggestions,
+  onPick,
+}: {
+  prompts: readonly string[];
+  suggestions: readonly ResumeSuggestion[];
+  onPick: (text: string) => void;
+}) {
+  return (
+    <>
+      <Prompts
+        label="还可以补充"
+        items={suggestions.map((s) => ({ key: s.key, label: s.title, text: s.prompt }))}
+        onPick={onPick}
+      />
+      <Prompts items={prompts.map((p) => ({ key: p, label: p, text: p }))} onPick={onPick} />
+    </>
+  );
+}
+
 function PanelStart({
   prompts,
+  suggestions,
   pending,
   onSend,
 }: {
   prompts: readonly string[];
+  suggestions: readonly ResumeSuggestion[];
   pending: boolean;
   onSend: (text: string) => void;
 }) {
@@ -169,7 +205,7 @@ function PanelStart({
     <>
       <div className={styles.scroll}>
         <p className={styles.intro}>想怎么改简历？直接告诉我，改动会实时出现在左边。</p>
-        <Prompts prompts={prompts} onPick={onSend} />
+        <StarterPrompts prompts={prompts} suggestions={suggestions} onPick={onSend} />
       </div>
       <div className={styles.composer}>
         <Composer
@@ -194,6 +230,7 @@ function PanelSession({
   detail,
   visible,
   prompts,
+  suggestions,
   queued,
   onConsumed,
   onLive,
@@ -201,6 +238,7 @@ function PanelSession({
   detail: ConversationDetail;
   visible: boolean;
   prompts: readonly string[];
+  suggestions: readonly ResumeSuggestion[];
   queued: PanelRequest | null;
   onConsumed: () => void;
   onLive: (live: LiveResume | null) => void;
@@ -247,7 +285,9 @@ function PanelSession({
           onResolve={(c, choice) => void session.resolveConflict(c, choice)}
           onQuickReply={talk}
         />
-        {fresh && !session.streaming && <Prompts prompts={prompts} onPick={talk} />}
+        {fresh && !session.streaming && (
+          <StarterPrompts prompts={prompts} suggestions={suggestions} onPick={talk} />
+        )}
       </div>
       <div className={styles.composer}>
         <Composer

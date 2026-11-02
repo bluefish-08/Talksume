@@ -3,6 +3,7 @@ import { renderFragment } from "@talksume/resume-render/browser";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { ResumeContent } from "../../api/types.ts";
 import styles from "./ResumePreview.module.css";
+import { PAPER_WIDTH_PX } from "./workbench.ts";
 
 export interface FactQuote {
   quote: string;
@@ -27,11 +28,11 @@ interface Props {
   decorated?: boolean;
   label?: string;
   className?: string;
+  /** 指定缩放比例；不传则按容器宽度自适应（最大 100%）。 */
+  scale?: number;
   /** 放进按钮里当缩略图时用 span，保持合法的短语内容。 */
   as?: "article" | "span";
 }
-
-const A4_WIDTH_PX = (210 / 25.4) * 96;
 
 // 高亮、标记、溯源浮层只在网页预览里叠加；字号按缩放反算，保证缩小的纸面上仍可读
 const PREVIEW_CSS = `
@@ -169,6 +170,7 @@ export function ResumePreview({
   decorated = true,
   label = "简历预览",
   className,
+  scale,
   as: Tag = "article",
 }: Props) {
   const host = useRef<HTMLElement>(null);
@@ -196,12 +198,17 @@ export function ResumePreview({
   useLayoutEffect(() => {
     const node = host.current;
     if (!node) return;
-    const fit = () => node.style.setProperty("--zoom", String(Math.min(1, node.clientWidth / A4_WIDTH_PX)));
+    if (scale !== undefined) {
+      node.style.setProperty("--zoom", String(scale));
+      return;
+    }
+    const fit = () =>
+      node.style.setProperty("--zoom", String(Math.min(1, node.clientWidth / PAPER_WIDTH_PX)));
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [scale]);
 
   return (
     <Tag
@@ -209,6 +216,7 @@ export function ResumePreview({
       className={className ? `${styles.sheet} ${className}` : styles.sheet}
       aria-label={label}
       data-template={template}
+      style={scale === undefined ? undefined : { width: PAPER_WIDTH_PX * scale }}
     />
   );
 }

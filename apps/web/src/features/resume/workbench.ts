@@ -157,3 +157,50 @@ export function writeFlag(key: string, value: boolean): void {
     localStorage.setItem(key, value ? "1" : "0");
   } catch {}
 }
+
+export const PAPER_WIDTH_PX = (210 / 25.4) * 96;
+export const PAPER_HEIGHT_PX = (297 / 25.4) * 96;
+export const ZOOM_MIN = 50;
+export const ZOOM_MAX = 150;
+const ZOOM_STEP = 10;
+
+/** 适合页面 / 适合宽度，或固定百分比。 */
+export type ZoomMode = "page" | "width" | number;
+
+export function parseZoom(raw: string | null, fallback: ZoomMode = "page"): ZoomMode {
+  if (raw === "page" || raw === "width") return raw;
+  const n = Number(raw);
+  return raw !== null && Number.isInteger(n) && n >= ZOOM_MIN && n <= ZOOM_MAX ? n : fallback;
+}
+
+export function readZoom(key: string, fallback: ZoomMode = "page"): ZoomMode {
+  try {
+    return parseZoom(localStorage.getItem(key), fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeZoom(key: string, value: ZoomMode): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {}
+}
+
+/** 适配类档位不放大到超过 100%；视口还没量出来（0）时按 100% 渲染。 */
+export function paperScale(mode: ZoomMode, viewport: { width: number; height: number }): number {
+  if (typeof mode === "number") return mode / 100;
+  const byWidth = viewport.width > 0 ? viewport.width / PAPER_WIDTH_PX : 1;
+  const byHeight = viewport.height > 0 ? viewport.height / PAPER_HEIGHT_PX : 1;
+  return Math.min(1, mode === "page" ? Math.min(byWidth, byHeight) : byWidth);
+}
+
+/** 从当前实际缩放出发按 10% 一档增减，结果落在整十百分比上。 */
+export function stepZoom(scale: number, direction: 1 | -1): number {
+  const pct = Math.round(scale * 100);
+  const next =
+    direction > 0
+      ? Math.floor(pct / ZOOM_STEP) * ZOOM_STEP + ZOOM_STEP
+      : Math.ceil(pct / ZOOM_STEP) * ZOOM_STEP - ZOOM_STEP;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+}
