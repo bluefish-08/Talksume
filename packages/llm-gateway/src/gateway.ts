@@ -68,6 +68,8 @@ export interface CompleteRequest {
   temperature?: number;
   /** 本次调用每个模型在首次请求之外的重试次数，不传则用配置值。给有自己重试逻辑的调用方快速切到备用模型。 */
   maxRetries?: number;
+  /** 不传则按 config.disableThinking。 */
+  thinking?: boolean;
 }
 
 export interface StreamTuning {
@@ -460,7 +462,10 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
       ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     };
-    const tuning = request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {};
+    const tuning: StreamTuning = {
+      ...(request.maxRetries !== undefined && { maxRetries: request.maxRetries }),
+      ...(request.thinking !== undefined && { thinking: request.thinking }),
+    };
     const message = await streamFn(request.purpose, tuning)(primaryModel, context, options).result();
     if (message.stopReason === "error" || message.stopReason === "aborted") {
       throw toGatewayError(message.errorMessage ?? "unknown error", message.model);

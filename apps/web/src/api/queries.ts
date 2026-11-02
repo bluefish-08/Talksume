@@ -45,3 +45,16 @@ export function useStartConversation() {
     },
   });
 }
+
+export function useRenameConversation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      api.patch<ConversationSummary>(`/api/v1/conversations/${encodeURIComponent(id)}`, { title }),
+    onMutate: ({ id, title }) =>
+      client.setQueryData<ConversationSummary[]>(qk.conversations, (all) =>
+        all?.map((c) => (c.id === id ? { ...c, title } : c)),
+      ),
+    onSettled: () => client.invalidateQueries({ queryKey: qk.conversations }),
+  });
+}

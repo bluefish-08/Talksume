@@ -77,6 +77,65 @@
   font-weight: 500;
 }
 
+.item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.itemAction {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.itemAction:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.item:hover .itemAction,
+.itemAction:focus-visible {
+  opacity: 1;
+}
+
+.item:hover .link,
+.item:focus-within .link {
+  padding-right: 34px;
+}
+
+@media (hover: none) {
+  .item:has(.active) .itemAction {
+    opacity: 1;
+  }
+}
+
+.renameInput {
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 9px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .ellipsis {
   overflow: hidden;
   text-overflow: ellipsis;

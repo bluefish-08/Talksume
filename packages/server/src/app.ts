@@ -3,8 +3,10 @@ import type { Edition } from "@talksume/core";
 import type { Db } from "@talksume/db";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerDevAuth } from "./auth.ts";
+import type { ConversationTitler } from "./conversation-title.ts";
 import type { ConnectorRegistry } from "./flow/channels.ts";
 import type { NotificationBus } from "./notifications/bus.ts";
+import { conversationTitleRoutes } from "./routes/conversation-title.ts";
 import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
 import { matchingRoutes } from "./routes/matching.ts";
@@ -33,12 +35,20 @@ export interface AppDeps {
   logger?: boolean;
   db?: Db;
   llm?: LlmDeps;
+  /** 会话标题生成；不配时保留第一句话截断的标题。 */
+  titler?: ConversationTitler;
   flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
 }
 
 export type RouteModule = (app: FastifyInstance, deps: AppDeps & { db: Db }) => void;
 
-const routes: RouteModule[] = [conversationRoutes, flowRoutes, matchingRoutes, polishRoutes];
+const routes: RouteModule[] = [
+  conversationRoutes,
+  conversationTitleRoutes,
+  flowRoutes,
+  matchingRoutes,
+  polishRoutes,
+];
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: deps.logger ?? false });

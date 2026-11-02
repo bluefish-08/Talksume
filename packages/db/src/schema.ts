@@ -78,6 +78,7 @@ export const conversations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title"),
+    titleSource: text("title_source").$type<"auto" | "user">().notNull().default("auto"),
     intakeState: jsonb("intake_state").$type<ConversationIntakeState>().notNull().default({}),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

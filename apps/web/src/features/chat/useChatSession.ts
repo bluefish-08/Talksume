@@ -18,6 +18,9 @@ interface Frame {
 let seq = 0;
 const nextKey = () => `m${++seq}`;
 
+// 标题在回复结束后由服务端异步生成，没有推送，按几个时间点重拉列表
+const TITLE_REFETCH_MS = [1500, 4000, 9000];
+
 function seed(detail: ConversationDetail): ChatMessage[] {
   return detail.messages.map((m) => ({
     key: m.id,
@@ -128,6 +131,11 @@ export function useChatSession(detail: ConversationDetail) {
               break;
             case "done": {
               finished = true;
+              if (data.titlePending) {
+                for (const ms of TITLE_REFETCH_MS) {
+                  setTimeout(() => void client.invalidateQueries({ queryKey: qk.conversations }), ms);
+                }
+              }
               const messageId = data.messageId as string | null;
               if (messageId) {
                 const userId = messageId.replace(/:reply$/, "");
@@ -171,7 +179,7 @@ export function useChatSession(detail: ConversationDetail) {
       }
       refreshShared();
     },
-    [applyResume, patch, refreshShared, toast],
+    [applyResume, client, patch, refreshShared, toast],
   );
 
   const run = useCallback(

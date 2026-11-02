@@ -11,6 +11,7 @@ import {
 import { type Fact, Profile } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { fallbackTitle } from "./conversation-title.ts";
 
 const { conversations, messages, profileFacts, profiles } = schema;
 
@@ -27,6 +28,7 @@ export interface LoadedConversation {
   state: IntakeState;
   snapshot: Snapshot;
   title: string | null;
+  titleSource: "auto" | "user";
 }
 
 export interface StoredMessage {
@@ -112,6 +114,7 @@ export async function loadConversation(
   return {
     state,
     title: conv.title,
+    titleSource: conv.titleSource,
     snapshot: {
       profile: structuredClone(profile),
       facts: new Map(facts.map((f) => [f.id, { status: f.status, payload: f.payload }])),
@@ -211,7 +214,7 @@ export async function persistState(
       .set({
         intakeState: intakeOf(state),
         updatedAt: new Date(),
-        ...(firstUser && !loaded.title ? { title: firstUser.content.slice(0, 30) } : {}),
+        ...(firstUser && !loaded.title ? { title: fallbackTitle(firstUser.content) } : {}),
       })
       .where(eq(conversations.id, conversationId));
   });

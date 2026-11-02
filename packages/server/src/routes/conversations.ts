@@ -19,6 +19,7 @@ import {
   loadMessages,
   persistState,
 } from "../conversation-store.ts";
+import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
 import { resumeRoutes } from "./resume.ts";
 
@@ -47,6 +48,8 @@ const genId = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "").
 export const conversationRoutes: RouteModule = (app, deps) => {
   const { db } = deps;
   const busy = new Set<string>();
+  const titles = createTitleScheduler(db, deps.titler, app.log);
+  app.addHook("onClose", () => titles.drain());
 
   const snapshotOf = (state: ReturnType<typeof createIntakeState>) => ({
     profile: state.profile,
@@ -139,6 +142,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         const replied = persisted && loaded.state.history.length > loaded.snapshot.historyLength;
         sse.send("done", {
           messageId: replied ? replyId : null,
+          titlePending: persisted && titles.schedule(id, loaded),
           resume: profileToResume(loaded.state.profile),
           conflicts: loaded.state.conflicts,
         });

@@ -6,6 +6,7 @@ export {
   type LlmModelOption,
   type RouteModule,
 } from "./app.ts";
+export { type ConversationTitler, gatewayTitler } from "./conversation-title.ts";
 export { ConnectorRegistry } from "./flow/channels.ts";
 export { gatewayLlm } from "./llm.ts";
 export {

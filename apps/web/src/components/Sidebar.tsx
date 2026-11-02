@@ -1,9 +1,12 @@
-import { FileText, ListChecks, Plus, Search } from "lucide-react";
+import { FileText, ListChecks, Pencil, Plus, Search } from "lucide-react";
+import { type KeyboardEvent, useRef, useState } from "react";
 import { NavLink } from "react-router";
-import { useConversations, useProfile } from "../api/queries.ts";
+import { useConversations, useProfile, useRenameConversation } from "../api/queries.ts";
+import type { ConversationSummary } from "../api/types.ts";
 import { NotificationsBell } from "../features/notifications/NotificationsBell.tsx";
 import { Logo } from "./Logo.tsx";
 import styles from "./Sidebar.module.css";
+import { useToast } from "./Toast.tsx";
 
 const NAV = [
   { to: "/resume", label: "我的简历", icon: FileText },
@@ -46,15 +49,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <span className={styles.groupLabel}>最近对话</span>
         {conversations.data?.length === 0 && <span className={styles.hint}>还没有对话</span>}
         {conversations.data?.map((c) => (
-          <NavLink
-            key={c.id}
-            to={`/c/${c.id}`}
-            className={linkClass}
-            onClick={onNavigate}
-            title={c.title ?? "新对话"}
-          >
-            <span className={styles.ellipsis}>{c.title ?? "新对话"}</span>
-          </NavLink>
+          <ConversationItem key={c.id} conversation={c} onNavigate={onNavigate} />
         ))}
       </div>
 
@@ -66,5 +61,93 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <NotificationsBell />
       </div>
     </nav>
+  );
+}
+
+function ConversationItem({
+  conversation: c,
+  onNavigate,
+}: {
+  conversation: ConversationSummary;
+  onNavigate?: (() => void) | undefined;
+}) {
+  const [editing, setEditing] = useState(false);
+  const rename = useRenameConversation();
+  const toast = useToast();
+  const label = c.title ?? "新对话";
+
+  const commit = (value: string) => {
+    setEditing(false);
+    const title = value.replace(/\s+/g, " ").trim();
+    if (!title || title === c.title) return;
+    rename.mutate({ id: c.id, title }, { onError: (error) => toast(error.message, { tone: "error" }) });
+  };
+
+  if (editing)
+    return <RenameInput initial={c.title ?? ""} onCommit={commit} onCancel={() => setEditing(false)} />;
+
+  return (
+    <div className={styles.item}>
+      <NavLink
+        to={`/c/${c.id}`}
+        className={linkClass}
+        onClick={onNavigate}
+        title={label}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setEditing(true);
+        }}
+      >
+        <span className={styles.ellipsis}>{label}</span>
+      </NavLink>
+      <button
+        type="button"
+        className={styles.itemAction}
+        aria-label={`重命名「${label}」`}
+        title="重命名"
+        onClick={() => setEditing(true)}
+      >
+        <Pencil size={14} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function RenameInput({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const settled = useRef(false);
+  const finish = (fn: () => void) => {
+    if (settled.current) return;
+    settled.current = true;
+    fn();
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === "Enter") finish(() => onCommit(e.currentTarget.value));
+    if (e.key === "Escape") finish(onCancel);
+  };
+
+  return (
+    <input
+      className={styles.renameInput}
+      aria-label="会话标题"
+      defaultValue={initial}
+      maxLength={40}
+      // biome-ignore lint/a11y/noAutofocus: 用户刚点了重命名，焦点就该落在输入框
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onKeyDown={onKeyDown}
+      onBlur={(e) => {
+        const value = e.currentTarget.value;
+        finish(() => onCommit(value));
+      }}
+    />
   );
 }

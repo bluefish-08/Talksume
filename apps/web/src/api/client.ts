@@ -49,6 +49,8 @@ function client(headers: Record<string, string> = {}) {
     get: <T>(path: string, signal?: AbortSignal) => request<T>("GET", path, undefined, signal, headers),
     post: <T>(path: string, body: unknown = {}, signal?: AbortSignal) =>
       request<T>("POST", path, body, signal, headers),
+    patch: <T>(path: string, body: unknown, signal?: AbortSignal) =>
+      request<T>("PATCH", path, body, signal, headers),
   };
 }
 

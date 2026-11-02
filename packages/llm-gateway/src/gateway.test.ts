@@ -60,7 +60,7 @@ describe("loadGatewayConfig", () => {
 });
 
 describe("disableThinking", () => {
-  async function payloadSeenBy(env: Record<string, string>) {
+  async function payloadSeenBy(env: Record<string, string>, thinking?: boolean) {
     const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }] });
     core.setResponses([fauxAssistantMessage("ok")]);
     let hook: ((payload: unknown, model: never) => unknown) | undefined;
@@ -70,7 +70,7 @@ describe("disableThinking", () => {
         return core.streamSimple(m, c, o);
       },
     });
-    await gateway.complete({ purpose: "p", prompt: "hi" });
+    await gateway.complete({ purpose: "p", prompt: "hi", ...(thinking !== undefined && { thinking }) });
     return hook?.({ model: "x", chat_template_kwargs: { a: 1 } }, undefined as never);
   }
 
@@ -85,6 +85,12 @@ describe("disableThinking", () => {
 
   it("LLM_DISABLE_THINKING=0 时不改请求体", async () => {
     expect(await payloadSeenBy({ LLM_DISABLE_THINKING: "0" })).toBeUndefined();
+  });
+
+  it("complete 的 thinking 覆盖全局配置", async () => {
+    expect(await payloadSeenBy({ LLM_DISABLE_THINKING: "0" }, false)).toMatchObject({
+      enable_thinking: false,
+    });
   });
 
   async function hookFor(env: Record<string, string>, thinking: boolean) {
