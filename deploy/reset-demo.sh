@@ -12,4 +12,6 @@ delete from users;
 delete from jobs where source in ('hr_workspace', 'user_import');
 commit;
 SQL
+# server 进程缓存了演示用户 id，删用户后必须重启
+$compose restart server >/dev/null
 echo "已重置，备份在 deploy/$backup"
