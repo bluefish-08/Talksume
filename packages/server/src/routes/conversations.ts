@@ -25,6 +25,8 @@ import {
 } from "../conversation-store.ts";
 import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
+import { matchingJobTools } from "../job-tools.ts";
+import { matchingServiceFor } from "./matching.ts";
 import { resumeRoutes } from "./resume.ts";
 
 const KEEPALIVE_MS = 15_000;
@@ -53,6 +55,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   const busy = new Set<string>();
   const titles = createTitleScheduler(db, deps.titler, app.log);
   app.addHook("onClose", () => titles.drain());
+  const jobService = matchingServiceFor(db, deps.matching ?? {}, app.log);
 
   const snapshotOf = (state: ReturnType<typeof createIntakeState>) => ({
     profile: state.profile,
@@ -108,6 +111,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         content: m.content,
         changes: m.meta.changes ?? [],
         quickReplies: m.meta.quickReplies ?? [],
+        jobs: m.meta.jobs ?? [],
         createdAt: m.createdAt.toISOString(),
       })),
       ...snapshotOf(loaded.state),
@@ -180,7 +184,11 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     if (!loaded) return sendError(reply, 404, "conversation_not_found", "会话不存在");
     if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
 
-    const controller = createIntakeController({ ...llm.resolve({ model, thinking }), genId });
+    const controller = createIntakeController({
+      ...llm.resolve({ model, thinking }),
+      genId,
+      jobs: matchingJobTools(jobService, req.userId),
+    });
     const messageId = randomUUID();
     await streamTurn(req, reply, id, loaded, `${messageId}:reply`, (signal) =>
       controller.handleUserMessage(loaded.state, { id: messageId, text: body.data.content }, { signal }),
@@ -198,7 +206,10 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     }
     if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
 
-    const controller = createIntakeController(resolveDefault());
+    const controller = createIntakeController({
+      ...resolveDefault(),
+      jobs: matchingJobTools(jobService, req.userId),
+    });
     await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>
       controller.resolveConflict(loaded.state, conflictId, body.data.choice === "proposed", {
         signal,

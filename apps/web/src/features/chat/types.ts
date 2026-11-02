@@ -20,6 +20,17 @@ export interface Conflict {
   quote: string;
 }
 
+/** 与 packages/agent 的 JobCard 保持一致：助手在对话里展示的岗位。 */
+export interface JobCard {
+  id: string;
+  title: string;
+  company: string;
+  cities: string[];
+  jobType?: "internship" | "campus" | "experienced";
+  score?: number;
+  reason?: string;
+}
+
 export interface ConversationDetail {
   id: string;
   title: string | null;
@@ -30,6 +41,7 @@ export interface ConversationDetail {
     /** 该条助手消息写入简历的变更，刷新后据此重建「已写入」行。 */
     changes: ProfileChange[];
     quickReplies: string[];
+    jobs?: JobCard[];
     createdAt: string;
   }[];
   profile: Profile;
@@ -48,6 +60,7 @@ export interface ChatMessage {
   changes: ProfileChange[];
   /** 助手追问附带的快捷回复，只在最后一条消息上展示。 */
   quickReplies: string[];
+  jobs: JobCard[];
   /** 已落库的消息 ID；用户消息用它换算“第几轮”。 */
   serverId?: string;
   state: "done" | "streaming" | "failed";

@@ -8,7 +8,7 @@ import { useToast } from "../../components/Toast.tsx";
 import { factsKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
 import { useModelChoice } from "./modelChoice.ts";
-import type { ChatMessage, Conflict, ConversationDetail, ProfileChange } from "./types.ts";
+import type { ChatMessage, Conflict, ConversationDetail, JobCard, ProfileChange } from "./types.ts";
 
 interface Frame {
   event: string;
@@ -30,6 +30,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     asks: [],
     changes: m.changes ?? [],
     quickReplies: m.quickReplies ?? [],
+    jobs: m.jobs ?? [],
     state: "done",
   }));
 }
@@ -85,6 +86,7 @@ export function useChatSession(detail: ConversationDetail) {
           asks: [],
           changes: [],
           quickReplies: [],
+          jobs: [],
           state: "streaming",
         },
       ]);
@@ -106,6 +108,17 @@ export function useChatSession(detail: ConversationDetail) {
                 changes: [...m.changes, ...(data.changes as ProfileChange[])],
               }));
               break;
+            case "jobs": {
+              const incoming = (data.jobs as JobCard[] | undefined) ?? [];
+              patch(replyKey, (m) => ({
+                ...m,
+                jobs: [
+                  ...m.jobs.map((j) => incoming.find((n) => n.id === j.id) ?? j),
+                  ...incoming.filter((n) => !m.jobs.some((j) => j.id === n.id)),
+                ],
+              }));
+              break;
+            }
             case "ask": {
               const question = String(data.question ?? "");
               const quickReplies = Array.isArray(data.quickReplies) ? (data.quickReplies as string[]) : [];
@@ -196,7 +209,16 @@ export function useChatSession(detail: ConversationDetail) {
       setHighlights(new Set());
       setMessages((all) => [
         ...all.filter((m) => m.state !== "failed"),
-        { key, role: "user", text: content, asks: [], changes: [], quickReplies: [], state: "done" },
+        {
+          key,
+          role: "user",
+          text: content,
+          asks: [],
+          changes: [],
+          quickReplies: [],
+          jobs: [],
+          state: "done",
+        },
       ]);
       void run(key, content);
       return true;

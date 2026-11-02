@@ -1,6 +1,7 @@
 import type { IntakeDeps } from "@talksume/agent";
 import type { Edition } from "@talksume/core";
 import type { Db } from "@talksume/db";
+import type { MatchingServiceOptions } from "@talksume/matching";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerDevAuth } from "./auth.ts";
 import type { ConversationSummarizer } from "./conversation-memory.ts";
@@ -43,6 +44,8 @@ export interface AppDeps {
   templateAdvisor?: TemplateAdvisor;
   /** 开新会话时给上一个会话补摘要；不传则不生成。 */
   summarizer?: ConversationSummarizer;
+  /** 对话里岗位工具用的匹配服务参数；不传按环境变量。 */
+  matching?: MatchingServiceOptions;
   flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
 }
 

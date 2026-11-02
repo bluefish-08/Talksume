@@ -1,3 +1,4 @@
+import type { Db } from "@talksume/db";
 import { createGateway, GatewayConfigError, loadGatewayConfig } from "@talksume/llm-gateway";
 import {
   createEmbedderFromEnv,
@@ -5,7 +6,7 @@ import {
   MatchingError,
   type MatchingServiceOptions,
 } from "@talksume/matching";
-import type { FastifyReply } from "fastify";
+import type { FastifyBaseLogger, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { RouteModule } from "../app.ts";
 
@@ -45,16 +46,20 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 }
 
 /** 传 llm / embedder 为 null 可显式关闭；不传则按环境变量决定。 */
+export function matchingServiceFor(db: Db, options: MatchingServiceOptions, log: FastifyBaseLogger) {
+  return createMatchingService(db, {
+    llm: options.llm === undefined ? llmFromEnv() : options.llm,
+    embedder: options.embedder === undefined ? (createEmbedderFromEnv() ?? null) : options.embedder,
+    onError: (message, error) => log.warn({ err: error }, message),
+    ...options,
+  });
+}
+
 export function createMatchingRoutes(options: MatchingServiceOptions = {}): RouteModule {
   return (root, deps) => {
     // 错误处理器只作用于本模块，不影响其他路由模块
     root.register(async (app) => {
-      const service = createMatchingService(deps.db, {
-        llm: options.llm === undefined ? llmFromEnv() : options.llm,
-        embedder: options.embedder === undefined ? (createEmbedderFromEnv() ?? null) : options.embedder,
-        onError: (message, error) => app.log.warn({ err: error }, message),
-        ...options,
-      });
+      const service = matchingServiceFor(deps.db, options, app.log);
 
       app.setErrorHandler((error, req, reply) => {
         if (error instanceof MatchingError) return fail(reply, error.status, error.code, error.message);

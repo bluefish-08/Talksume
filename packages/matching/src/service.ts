@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { type Job, Profile } from "@talksume/core";
 import { type Db, JobRepo, schema } from "@talksume/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -34,6 +35,7 @@ import {
   type RerankOptions,
   type StructuredLlm,
 } from "./rerank.ts";
+import { classifyRole } from "./role.ts";
 import {
   DIMENSIONS,
   type FeedbackEntry,
@@ -98,6 +100,27 @@ export interface RefreshResult {
   done: Promise<void>;
 }
 
+export interface AssistantFilter {
+  city?: string | undefined;
+  jobType?: Job["jobType"] | undefined;
+  keyword?: string | undefined;
+  limit: number;
+}
+
+export type MatchDims = MatchItem["dims"];
+
+export interface ScoredSummary {
+  job: JobSummary;
+  score: number;
+  dims: MatchDims;
+}
+
+export interface JobInsightData extends ScoredSummary {
+  report?: MatchItem["report"];
+  /** 没通过硬性筛选的原因。 */
+  blocked?: string;
+}
+
 export interface MatchItem {
   jobId: string;
   score: number;
@@ -138,8 +161,14 @@ function toDims(scored: ScoredJob): Record<string, { score: number; weight: numb
 export function createMatchingService(db: Db, options: MatchingServiceOptions = {}) {
   const log = options.onError ?? (() => {});
 
-  async function loadProfile(userId: string): Promise<{ profile: Profile; weights: Partial<Weights> }> {
+  /** 传 override 时用调用方手里的画像（对话中可能还没落库），只从库里取权重。 */
+  async function loadProfile(
+    userId: string,
+    override?: Profile,
+  ): Promise<{ profile: Profile; weights: Partial<Weights> }> {
     const [row] = await db.select().from(schema.profiles).where(eq(schema.profiles.userId, userId));
+    if (override)
+      return { profile: override, weights: { ...options.weights, ...(row?.weights as Partial<Weights>) } };
     if (!row) throw new MatchingError("profile_not_found", 409, "还没有简历画像，先和助手聊一聊再来看推荐");
     const parsed = Profile.safeParse(row.data);
     if (!parsed.success) throw new MatchingError("profile_invalid", 422, "简历画像格式不正确");
@@ -237,8 +266,8 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     }
   }
 
-  async function refresh(userId: string): Promise<RefreshResult> {
-    const { profile, weights } = await loadProfile(userId);
+  async function refresh(userId: string, override?: Profile): Promise<RefreshResult> {
+    const { profile, weights } = await loadProfile(userId, override);
     const [jobs, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
 
     let vectors: Map<string, number> | undefined;
@@ -433,9 +462,136 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     return { reportStatus: "pending", done };
   }
 
+  const plainJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as unknown;
+
+  /** 没有推荐、画像在推荐之后更新过，或传入的画像与库里不同（对话中尚未落库）时，已存推荐视为过期。 */
+  async function matchesStale(userId: string, profile: Profile): Promise<boolean> {
+    const m = schema.matchResults;
+    const [[row], [latest]] = await Promise.all([
+      db
+        .select({ data: schema.profiles.data, updatedAt: schema.profiles.updatedAt })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.userId, userId)),
+      db
+        .select({ at: sql`max(${m.createdAt})`.mapWith(m.createdAt) })
+        .from(m)
+        .where(and(eq(m.userId, userId), sql`${m.resumeVersionId} is null`)),
+    ]);
+    if (!row || !latest?.at) return true;
+    if (row.updatedAt > latest.at) return true;
+    return !isDeepStrictEqual(plainJson(row.data), plainJson(profile));
+  }
+
+  async function scoreFor(userId: string, profile: Profile, ids: readonly string[]) {
+    const { weights } = await loadProfile(userId, profile);
+    const [all, feedback] = await Promise.all([loadVisibleJobs(db, userId), loadFeedback(userId)]);
+    const ctx = buildScoreContext(all.map((a) => a.job));
+    const wanted = new Set(ids);
+    return new Map(
+      all
+        .filter((a) => wanted.has(a.job.id))
+        .map((a) => [
+          a.job.id,
+          { scored: scoreJob(profile, a.job, ctx, { weights, feedback }), status: a.status },
+        ]),
+    );
+  }
+
+  /** 对话里的推荐：已存推荐过期时先按传入的画像重新匹配，再按条件收窄。 */
+  async function recommendFor(userId: string, profile: Profile, filter: AssistantFilter) {
+    let hint: string | undefined;
+    if (await matchesStale(userId, profile)) {
+      const result = await refresh(userId, profile);
+      hint = result.hint;
+    }
+    const { items } = await listMatches(userId, options.storeLimit ?? 100);
+    const pool = items.filter((m) => m.feedback !== "dislike" && m.feedback !== "irrelevant");
+    const city = filter.city?.trim();
+    const keyword = filter.keyword?.trim().toLowerCase();
+    // 「后端」也要命中「后台」「服务端」：能归到岗位大类的关键词按大类比，否则按字面
+    const family = keyword ? classifyRole(keyword) : undefined;
+    const byFamily = family && family !== "other" && family !== "tech_other";
+    const narrowed = pool.filter(
+      ({ job }) =>
+        (!city || job.cities.some((c) => c.includes(city) || city.includes(c))) &&
+        (!filter.jobType || !job.jobType || job.jobType === filter.jobType) &&
+        (!keyword ||
+          (byFamily
+            ? classifyRole(job.title) === family
+            : `${job.title} ${job.tags.join(" ")}`.toLowerCase().includes(keyword))),
+    );
+    if (!hint && narrowed.length === 0 && pool.length > 0) {
+      hint = `推荐列表里有 ${pool.length} 个岗位，但没有符合这些条件的`;
+    }
+    return { items: narrowed.slice(0, filter.limit), total: narrowed.length, ...(hint && { hint }) };
+  }
+
+  /** 在全部在招岗位里搜索，匹配度按传入的画像现算，不写入推荐。 */
+  async function searchFor(
+    userId: string,
+    profile: Profile,
+    search: Omit<JobSearch, "page" | "pageSize"> & { limit: number },
+  ): Promise<{ items: ScoredSummary[]; total: number }> {
+    const { limit, ...query } = search;
+    const found = await searchJobs(db, userId, { ...query, page: 1, pageSize: limit });
+    if (found.items.length === 0) return { items: [], total: found.total };
+    const scores = await scoreFor(
+      userId,
+      profile,
+      found.items.map((j) => j.id),
+    );
+    return {
+      total: found.total,
+      items: found.items.flatMap((job) => {
+        const hit = scores.get(job.id);
+        return hit ? [{ job, score: hit.scored.score, dims: toDims(hit.scored) }] : [];
+      }),
+    };
+  }
+
+  /** 单个岗位的匹配解读：优先复用已生成的报告，没有就现场生成，模型不可用时只给规则打分。 */
+  async function explainFor(userId: string, profile: Profile, jobId: string): Promise<JobInsightData | null> {
+    const hit = (await scoreFor(userId, profile, [jobId])).get(jobId);
+    if (!hit) return null;
+    const { scored, status } = hit;
+    const filter = applyHardFilters(profile, scored.job, { status });
+    const fresh = !(await matchesStale(userId, profile));
+    let report: MatchItem["report"] | undefined;
+    if (fresh) {
+      const [row] = await db
+        .select({ report: schema.matchResults.report })
+        .from(schema.matchResults)
+        .where(reportWhere(userId, jobId));
+      if (row && reportStatusOf(row.report) === "ready") report = publicReport(row.report);
+    }
+    if (!report && options.llm) {
+      try {
+        const generated = await generateReport(options.llm, profile, scored, {
+          ...options.rerank,
+          attempts: 1,
+        });
+        report = generated.report;
+        if (fresh) await storeReport(userId, jobId, generated.report, generated.model);
+      } catch (error) {
+        log(`对话中的匹配解读生成失败 ${jobId}`, error);
+      }
+    }
+    return {
+      job: summarize(scored.job),
+      score: scored.score,
+      dims: toDims(scored),
+      ...(report && { report }),
+      ...(!filter.pass &&
+        filter.reason && { blocked: `${REASON_LABEL[filter.reason]}不符：${filter.detail ?? ""}` }),
+    };
+  }
+
   return {
     refresh,
     listMatches,
+    recommendFor,
+    searchFor,
+    explainFor,
     retryReport,
     recordFeedback,
     importJob,

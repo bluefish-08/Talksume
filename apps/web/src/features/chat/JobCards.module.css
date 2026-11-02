@@ -1,0 +1,108 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.meta {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.score {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.scoreNum {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreLabel {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.reason {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.btn:hover {
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+}
+
+.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+  color: #fff;
+}

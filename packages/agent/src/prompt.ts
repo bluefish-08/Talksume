@@ -12,6 +12,8 @@ export interface PromptInput {
   drafts?: readonly Draft[];
   skipped?: readonly SkipEntry[];
   summaries?: readonly SummaryNote[];
+  /** 是否开放岗位推荐、搜索与解读工具。 */
+  jobTools?: boolean;
 }
 
 function stripIds(value: unknown): unknown {
@@ -32,6 +34,22 @@ const LEVEL_LINE = Object.entries(LEVEL_WORDS)
 
 const RESUME_HINT = "右侧预览就是简历，可以点「润色」优化表述、切换模板，或者直接导出。";
 
+const INTAKE_TOOLS =
+  "upsert_facts 写入事实、ask_user 结束本轮等用户回答、complete_section 结束分区、skip_field 跳过单个字段、resolve_conflict 按用户的选择消解矛盾";
+
+const JOB_LINES = [
+  "",
+  "## 岗位问题",
+  "- 用户问岗位相关的问题（推荐几个岗位、我适合什么、某公司某岗位怎么样、我和这个岗位差在哪）时，这一轮以回答岗位问题为主：先调用岗位工具拿到结果再回答，不要推说「等画像补完再推荐」。",
+  "- 选工具：要推荐用 recommend_jobs；问某家公司或某类具体岗位用 search_jobs（公司名放 company，岗位关键词放 query）；问匹配度、优势短板、差在哪、该补什么用 explain_job。",
+  "- explain_job 需要 jobId：用户说「第二个」「刚才那个腾讯的」时，从之前工具结果的 jobId 里找，不要重新搜索；找不到再用 search_jobs。",
+  "- 只依据工具结果回答，不要编造岗位、公司或匹配度。岗位卡片由系统展示，文字里挑重点点评一两句，不要逐条复述。",
+  "- 画像缺求职意向或技能时，照样先给结果，再用 ask_user 顺带问一句补全。",
+  "- 投递只能由用户在卡片上点「去投递」后亲手确认；你不能替用户投递，也不要说已经投了。",
+  "- 回答完岗位问题，可以自然地顺带问一个画像里的缺口；用户还想聊岗位就接着聊，不要强行拉回建档。",
+  "- 用户这条消息里如果同时说了求职意向、技能等个人信息，照常先用 upsert_facts 写入。",
+];
+
 export function describeSlot(slot: Slot): string {
   const where = slot.itemLabel ? `「${slot.itemLabel}」的` : "";
   const lines = [
@@ -46,10 +64,12 @@ export function buildSystemPrompt(input: PromptInput): string {
   const percent = Math.round(input.completeness.score * 100);
   const profileJson = JSON.stringify(stripIds(input.profile));
   const lines = [
-    "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
+    input.jobTools
+      ? "你是「简聊」的求职助手：通过聊天帮用户整理出完整、真实的求职画像（后续据此生成简历），也帮用户找岗位、解读岗位匹配。"
+      : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    "- 五个工具：upsert_facts 写入事实、ask_user 结束本轮等用户回答、complete_section 结束分区、skip_field 跳过单个字段、resolve_conflict 按用户的选择消解矛盾。回应和下一个问题直接用文字写出来，写完调用 ask_user，question 填你刚问的那句。",
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? "；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配" : ""}。回应和下一个问题直接用文字写出来，写完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -58,10 +78,13 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 获奖的 date 只在用户说了年份或时间时填，不要从在校时间推算；quote 里没有年份或日期的 date 会被丢弃。",
     "- ask_user 时尽量附带 quickReplies：2 到 4 条用户可能的简短回答（第一人称、12 字以内，可含「跳过这个」）。选项必须是用户真实可能的回答，不要替用户编造经历；不确定就不给。",
     "- 时间统一写成 YYYY-MM；学位用 associate/bachelor/master/phd；求职类型用 internship/campus/experienced。",
-    "- 用户跑题或闲聊时，礼貌回应一句再拉回当前目标。用户对某一项说没有或不想说时，不要强迫，用 skip_field 记下；整个分区都没有时用 complete_section（reason=user_skipped）。跳过的项以后都不会再问。",
+    `- 用户闲聊时，礼貌回应一句再拉回当前目标${input.jobTools ? "（问岗位不算闲聊，见「岗位问题」）" : ""}。用户对某一项说没有或不想说时，不要强迫，用 skip_field 记下；整个分区都没有时用 complete_section（reason=user_skipped）。跳过的项以后都不会再问。`,
     "- 如果用户说的内容与已记录的信息矛盾，照常写入，系统会自动发出确认问句和按钮，你不要自行决定以哪个为准，不要说已经改了，也不要在文字里复述这个矛盾问题。补充细节（新说法包含旧说法）不算矛盾，系统会直接更新。",
     "- 叙述性字段（项目的 situation/task/action/result、获奖的 description、basics.summary）已有内容时，补充新信息要写出包含原有内容的完整合并文本：原文逐字保留，新信息接在后面；只有用户明确纠正某处时，才写成替换后的文本。",
-    `- 不要承诺任何没有工具支持的动作，比如生成简历、改写措辞、重点突出某条、投递。信息基本齐全或用户说「去生成吧」时，告诉用户：${RESUME_HINT}`,
+    `- 不要承诺任何没有工具支持的动作，比如生成简历、改写措辞、重点突出某条、替用户投递。信息基本齐全或用户说「去生成吧」时，告诉用户：${RESUME_HINT}`,
+    ...(input.jobTools
+      ? []
+      : ["- 暂时没法在聊天里查岗位；用户问岗位时，告诉用户可以去「职位推荐」页看，再接着聊。"]),
     "- 工具返回错误时，按提示修正参数后重试一次。",
     "",
     "## 当前画像（已记录的内容）",
@@ -69,6 +92,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     "",
     `## 完整度：${percent}%`,
   ];
+  if (input.jobTools) lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...JOB_LINES);
   if (input.drafts && input.drafts.length > 0) {
     lines.push("", "## 暂存中（必填项没齐，还没写进画像）");
     for (const d of input.drafts) {
@@ -91,7 +115,7 @@ export function buildSystemPrompt(input: PromptInput): string {
   if (input.slot) {
     lines.push(
       describeSlot(input.slot),
-      "用户这条消息很可能正是在回答这个目标：先写入，再根据 upsert_facts 返回的「下一个目标」继续追问。",
+      `用户这条消息很可能正是在回答这个目标：先写入，再根据 upsert_facts 返回的「下一个目标」继续追问${input.jobTools ? "；问的是岗位就先回答岗位问题" : ""}。`,
     );
   } else {
     lines.push(`信息已基本收集完整。可以简短总结，并告诉用户：${RESUME_HINT}`);

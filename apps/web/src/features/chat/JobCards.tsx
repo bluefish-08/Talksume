@@ -1,0 +1,43 @@
+import { Link } from "react-router";
+import { citiesText, jobTypeLabel } from "../jobs/format.ts";
+import styles from "./JobCards.module.css";
+import type { JobCard } from "./types.ts";
+
+/** 投递只跳到职位页，由用户在那里亲手确认。 */
+export function JobCards({ jobs }: { jobs: JobCard[] }) {
+  return (
+    <ul className={styles.list} aria-label="岗位">
+      {jobs.map((job) => {
+        const href = `/jobs?job=${encodeURIComponent(job.id)}`;
+        const meta = [job.company, citiesText(job.cities), jobTypeLabel(job.jobType)]
+          .filter(Boolean)
+          .join(" · ");
+        return (
+          <li key={job.id} className={styles.card}>
+            <div className={styles.head}>
+              <div className={styles.body}>
+                <span className={styles.title}>{job.title}</span>
+                <span className={styles.meta}>{meta}</span>
+              </div>
+              {job.score !== undefined && (
+                <span className={styles.score}>
+                  <span className={styles.scoreNum}>{Math.round(job.score)}</span>
+                  <span className={styles.scoreLabel}>匹配度</span>
+                </span>
+              )}
+            </div>
+            {job.reason && <p className={styles.reason}>{job.reason}</p>}
+            <div className={styles.actions}>
+              <Link className={styles.btn} to={href}>
+                看详情
+              </Link>
+              <Link className={`${styles.btn} ${styles.primary}`} to={href}>
+                去投递
+              </Link>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

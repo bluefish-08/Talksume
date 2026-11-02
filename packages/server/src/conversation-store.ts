@@ -111,7 +111,12 @@ export async function loadConversation(
     loadUserMemory(db, userId),
     loadMessages(db, conversationId),
   ]);
-  const history: ChatTurn[] = stored.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+  const history: ChatTurn[] = stored.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    ...(m.meta.tools ? { meta: { tools: m.meta.tools } } : {}),
+  }));
   const intake = conv.intakeState;
   const state = createIntakeState({
     profile,

@@ -1,8 +1,9 @@
 import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model, ToolResultMessage } from "@earendil-works/pi-ai";
 import { errorKindOf } from "@talksume/llm-gateway";
 import { computeCompleteness } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
+import { createJobTools } from "./job-tools.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import {
   buildUserCorpus,
@@ -13,7 +14,7 @@ import {
   type RunContext,
   settleConflict,
 } from "./tools.ts";
-import type { IntakeEvent, IntakeState, TurnMeta } from "./types.ts";
+import type { ChatTurn, IntakeEvent, IntakeState, JobCard, JobTools, ToolRecord, TurnMeta } from "./types.ts";
 
 export interface IntakeDeps {
   streamFn: StreamFn;
@@ -25,6 +26,8 @@ export interface IntakeDeps {
   maxModelTurns?: number;
   /** 注入模型的历史消息条数上限。 */
   historyLimit?: number;
+  /** 岗位推荐与解读；不传则助手只建档。 */
+  jobs?: JobTools;
 }
 
 export interface UserMessage {
@@ -73,22 +76,47 @@ class EventQueue {
 
 function historyToMessages(state: IntakeState, model: Model<Api>, limit: number): AgentMessage[] {
   const now = Date.now();
+  const assistant = (content: AssistantMessage["content"], toolUse = false): AssistantMessage => ({
+    role: "assistant",
+    content,
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: ZERO_USAGE,
+    stopReason: toolUse ? "toolUse" : "stop",
+    timestamp: now,
+  });
+  const replayTools = (turn: ChatTurn, index: number): AgentMessage[] => {
+    const records = turn.meta?.tools ?? [];
+    if (records.length === 0) return [];
+    const ids = records.map((_, i) => `hist_${index}_${i}`);
+    const calls = assistant(
+      records.map((r, i) => ({
+        type: "toolCall" as const,
+        id: ids[i] ?? "",
+        name: r.name,
+        arguments: r.args as never,
+      })),
+      true,
+    );
+    const results = records.map(
+      (r, i): ToolResultMessage => ({
+        role: "toolResult",
+        toolCallId: ids[i] ?? "",
+        toolName: r.name,
+        content: [{ type: "text", text: r.result }],
+        isError: false,
+        timestamp: now,
+      }),
+    );
+    return [calls, ...results];
+  };
   return state.history
     .slice(-limit)
     .filter((turn) => turn.content.trim())
-    .map((turn): AgentMessage => {
-      if (turn.role === "user") return { role: "user", content: turn.content, timestamp: now };
-      const message: AssistantMessage = {
-        role: "assistant",
-        content: [{ type: "text", text: turn.content }],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
-        usage: ZERO_USAGE,
-        stopReason: "stop",
-        timestamp: now,
-      };
-      return message;
+    .flatMap((turn, index): AgentMessage[] => {
+      if (turn.role === "user") return [{ role: "user", content: turn.content, timestamp: now }];
+      return [...replayTools(turn, index), assistant([{ type: "text", text: turn.content }])];
     });
 }
 
@@ -118,7 +146,7 @@ export interface IntakeController {
 export function createIntakeController(deps: IntakeDeps): IntakeController {
   const genId = deps.genId ?? createIdGenerator();
   const verifyQuote = deps.verifyQuote ?? true;
-  const maxModelTurns = deps.maxModelTurns ?? 4;
+  const maxModelTurns = deps.maxModelTurns ?? 5;
   const historyLimit = deps.historyLimit ?? 24;
 
   interface Turn {
@@ -140,7 +168,9 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const asks: string[] = [];
     const changes: ProfileChange[] = [...(turn.seedChanges ?? [])];
     let quickReplies: string[] = [];
-    const flags = { asked: false, changed: false };
+    const cards: JobCard[] = [];
+    const toolLog: ToolRecord[] = [];
+    const flags: RunContext["flags"] = { asked: false, changed: false };
     const userTexts = [
       ...state.history.filter((t) => t.role === "user").map((t) => t.content),
       ...(user ? [user.text] : []),
@@ -161,6 +191,13 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           }
           asks.push(event.question);
         } else if (event.type === "profile_patch") changes.push(...event.changes);
+        else if (event.type === "jobs") {
+          for (const job of event.jobs) {
+            const at = cards.findIndex((c) => c.id === job.id);
+            if (at >= 0) cards[at] = { ...cards[at], ...job };
+            else cards.push(job);
+          }
+        }
         queue.push(event);
       },
       flags,
@@ -176,6 +213,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       drafts: state.drafts,
       skipped: state.skipped,
       ...(state.summaries ? { summaries: state.summaries } : {}),
+      jobTools: Boolean(deps.jobs),
     });
 
     let assistantText = "";
@@ -190,7 +228,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         systemPrompt,
         model: deps.model,
         thinkingLevel: "off",
-        tools: createIntakeTools(ctx),
+        tools: [...createIntakeTools(ctx), ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog) : [])],
         messages: historyToMessages(state, deps.model, historyLimit),
       },
       streamFn: deps.streamFn,
@@ -259,7 +297,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       const question = clarifyQuestion(lastFailedQuote);
       asks.push(question);
       yield { type: "ask", kind: "clarify", question };
-    } else if (!flags.asked) {
+    } else if (!flags.asked && !flags.jobs) {
       const slot = nextSlotOf(state);
       if (slot && !/[?？]/.test(assistantText)) {
         noteAsked(state, slot);
@@ -282,8 +320,10 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const meta: TurnMeta = {
       ...(changes.length > 0 ? { changes } : {}),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
+      ...(cards.length > 0 ? { jobs: cards } : {}),
+      ...(toolLog.length > 0 ? { tools: toolLog } : {}),
     };
-    if (!llmError || flags.changed || changes.length > 0) {
+    if (!llmError || flags.changed || changes.length > 0 || cards.length > 0) {
       if (user) state.history.push({ id: user.id, role: "user", content: user.text });
       if (user || reply || changes.length > 0) {
         state.history.push({

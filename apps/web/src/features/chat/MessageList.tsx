@@ -3,6 +3,7 @@ import { Fragment, useState } from "react";
 import { SECTION_LABELS } from "../../api/types.ts";
 import { Button, Chip } from "../../components/ui.tsx";
 import { describeChange } from "./describe.ts";
+import { JobCards } from "./JobCards.tsx";
 import styles from "./MessageList.module.css";
 import { type ChatMessage, type Conflict, messageText, type ProfileChange } from "./types.ts";
 
@@ -81,7 +82,8 @@ export function MessageList({
 
 function Assistant({ message }: { message: ChatMessage }) {
   const text = messageText(message);
-  const waiting = message.state === "streaming" && !text && message.changes.length === 0;
+  const waiting =
+    message.state === "streaming" && !text && message.changes.length === 0 && message.jobs.length === 0;
   return (
     <div className={styles.assistant}>
       {message.changes.length > 0 && <Written changes={message.changes} />}
@@ -101,6 +103,7 @@ function Assistant({ message }: { message: ChatMessage }) {
           ))}
         </div>
       )}
+      {message.jobs.length > 0 && <JobCards jobs={message.jobs} />}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   ResolveConflictArgs,
   SkipFieldArgs,
   TOOL_SPECS,
+  type ToolName,
   toolJsonSchema,
   UpsertFactsArgs,
 } from "./schemas.ts";
@@ -35,7 +36,7 @@ export interface RunContext {
   verifyQuote: boolean;
   genId: (prefix: string) => string;
   emit(event: IntakeEvent): void;
-  flags: { asked: boolean; changed: boolean };
+  flags: { asked: boolean; changed: boolean; jobs?: boolean };
 }
 
 export function normalizeQuote(text: string): string {
@@ -60,7 +61,7 @@ export function quoteInCorpus(corpus: string, quote: string): boolean {
   return segments.every((seg) => corpus.includes(seg));
 }
 
-function text(value: string, isError = false): AgentToolResult<unknown> {
+export function text(value: string, isError = false): AgentToolResult<unknown> {
   return { content: [{ type: "text", text: value }], details: {}, ...(isError ? { isError: true } : {}) };
 }
 
@@ -172,11 +173,11 @@ function prepare<S extends z.ZodType>(schema: S) {
   };
 }
 
-function tool(
-  name: (typeof TOOL_SPECS)[number]["name"],
+export function tool(
+  name: ToolName,
   label: string,
   schema: z.ZodType,
-  execute: (params: never) => AgentToolResult<unknown>,
+  execute: (params: never) => AgentToolResult<unknown> | Promise<AgentToolResult<unknown>>,
 ): AgentTool<TSchema> {
   const spec = TOOL_SPECS.find((s) => s.name === name);
   if (!spec) throw new Error(`unknown tool ${name}`);
