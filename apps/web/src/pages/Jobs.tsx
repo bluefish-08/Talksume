@@ -322,7 +322,13 @@ function RecommendJobs() {
     <div ref={pageRef} className={styles.page} data-detail={showDetail ? "open" : "closed"}>
       <header className={styles.header}>
         <div className={styles.heading}>
-          <JobsTabs current="recommend" />
+          <JobsTabs
+            current="recommend"
+            counts={{
+              recommend: matchesQ.data ? matches.length : undefined,
+              all: refreshInfo ? totalOpenJobs(refreshInfo) : undefined,
+            }}
+          />
           <p className={styles.sub}>{subtitle}</p>
         </div>
         <div className={styles.tools}>

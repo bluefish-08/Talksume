@@ -1,24 +1,73 @@
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+}
+
 .tabs {
-  display: flex;
-  align-items: baseline;
-  gap: 20px;
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 2px;
+  margin: 8px 0 6px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  max-width: 100%;
 }
 
 .tab {
-  font-size: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 1.35;
-  color: var(--placeholder);
-  text-decoration: none;
-  transition: color 120ms ease;
+  white-space: nowrap;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .tab:hover {
-  color: var(--text-3);
+  color: var(--text);
+  background: rgba(15, 27, 46, 0.07);
 }
 
-.tab[aria-current="page"] {
-  color: var(--text);
+.tab[aria-selected="true"] {
+  color: var(--accent-strong);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 27, 46, 0.1);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.badge {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--border-strong);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab[aria-selected="true"] .badge {
+  background: var(--accent);
+  color: #fff;
 }
 
 .filters {
@@ -154,17 +203,43 @@
 }
 
 .sort {
+  position: relative;
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
 }
 
 .sort select {
+  appearance: none;
   height: 32px;
+  padding: 0 28px 0 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
-  padding: 0 10px;
   background: var(--surface);
   color: var(--text-2);
+  font: inherit;
   font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.sort select:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.sort select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sort svg {
+  position: absolute;
+  right: 10px;
+  color: var(--text-2);
+  pointer-events: none;
 }
 
 .loadMore {
@@ -204,8 +279,12 @@
 }
 
 @media (max-width: 600px) {
-  .tab {
+  .title {
     font-size: 20px;
+  }
+
+  .tab {
+    padding: 0 12px;
   }
 
   .facet {

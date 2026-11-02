@@ -1,5 +1,5 @@
-import { ArrowLeft, ChevronDown, ExternalLink } from "lucide-react";
-import type { ReactNode } from "react";
+import { ArrowLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { Button, IconButton, Spinner } from "../../components/ui.tsx";
 import {
@@ -23,6 +23,8 @@ export interface DetailProps {
   dimsTitle?: string | undefined;
   jdText: string | undefined;
   jdLoading: boolean;
+  /** 没有匹配报告时详情下半部分空着，原文默认展开。 */
+  jdDefaultOpen?: boolean;
   application: ApplicationRef | undefined;
   retryingReport: boolean;
   busy: { apply: boolean; optimize: boolean; dislike: boolean };
@@ -57,6 +59,8 @@ function applyButton({ application, busy, onApply }: DetailProps) {
 
 export function JobDetail(props: DetailProps) {
   const { job, match, excluded, jdText, jdLoading, application, retryingReport, busy } = props;
+  const [jdOpen, setJdOpen] = useState(props.jdDefaultOpen ?? false);
+  const jdId = useId();
   const report = match?.report;
   const strengths = report?.strengths?.length ? report.strengths : match ? evidenceLines(match) : [];
   const gaps = report?.gaps ?? [];
@@ -184,17 +188,23 @@ export function JobDetail(props: DetailProps) {
           ))
         )}
 
-        <details className={styles.jd}>
-          <summary>
-            <ChevronDown size={16} strokeWidth={1.6} aria-hidden="true" />
+        <div className={styles.jd}>
+          <button
+            type="button"
+            className={styles.jdToggle}
+            aria-expanded={jdOpen}
+            aria-controls={jdId}
+            onClick={() => setJdOpen((o) => !o)}
+          >
+            <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
             岗位描述原文
-          </summary>
-          {jdText ? (
-            <p className={styles.jdText}>{jdText}</p>
-          ) : (
-            <p className={styles.jdText}>{jdLoading ? "加载中…" : job.snippet}</p>
+          </button>
+          {jdOpen && (
+            <p id={jdId} className={styles.jdText}>
+              {jdText ?? (jdLoading ? "加载中…" : job.snippet)}
+            </p>
           )}
-        </details>
+        </div>
       </div>
 
       <div className={styles.foot}>

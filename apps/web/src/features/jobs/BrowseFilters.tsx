@@ -148,6 +148,7 @@ export function BrowseFilterBar({
           <option value="latest">最新发布</option>
           <option value="match">和我匹配度</option>
         </select>
+        <ChevronDown size={14} strokeWidth={1.6} aria-hidden="true" />
       </label>
     </div>
   );

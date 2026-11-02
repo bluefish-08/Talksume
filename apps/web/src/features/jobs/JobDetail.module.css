@@ -228,21 +228,40 @@
   font-size: 13px;
 }
 
-.jd summary {
+.jdToggle {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  padding: 6px 4px;
+  margin: -6px 0 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
   color: var(--text-2);
+  text-align: left;
   cursor: pointer;
-  list-style: none;
+  transition: background-color 120ms ease;
 }
 
-.jd summary::-webkit-details-marker {
-  display: none;
+.jdToggle:hover {
+  background: var(--surface-hover);
 }
 
-.jd[open] summary svg {
-  transform: rotate(180deg);
+.jdToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.jdToggle svg {
+  flex: none;
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+
+.jdToggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
 }
 
 .jdText {

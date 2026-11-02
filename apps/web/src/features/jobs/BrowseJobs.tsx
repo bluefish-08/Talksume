@@ -284,6 +284,7 @@ export function BrowseJobs() {
           dimsTitle={recommended || preview?.recommended ? undefined : "匹配维度"}
           jdText={detailQ.data?.jdText}
           jdLoading={detailQ.isPending}
+          jdDefaultOpen={!match}
           application={flow.application}
           retryingReport={false}
           busy={{ apply: flow.applying, optimize: optimize.isPending, dislike: feedback.isPending }}
@@ -328,7 +329,15 @@ export function BrowseJobs() {
     <div ref={pageRef} className={jobsStyles.page} data-detail={showDetail ? "open" : "closed"}>
       <header className={jobsStyles.header}>
         <div className={jobsStyles.heading}>
-          <JobsTabs current="all" />
+          <JobsTabs
+            current="all"
+            counts={{
+              recommend: matches
+                ? matches.items.filter((m) => m.feedback !== "dislike" && m.feedback !== "irrelevant").length
+                : undefined,
+              all: total,
+            }}
+          />
           <p className={jobsStyles.sub} aria-live="polite">
             {subtitle}
           </p>
