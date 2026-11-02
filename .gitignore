@@ -8,3 +8,4 @@ dist/
 .DS_Store
 docs/dist/
 docs/assets/mermaid.min.js
+.claude/worktrees/
