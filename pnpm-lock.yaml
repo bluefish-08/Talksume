@@ -206,6 +206,9 @@ importers:
       '@talksume/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@talksume/llm-gateway':
+        specifier: workspace:*
+        version: link:../../packages/llm-gateway
       '@talksume/server':
         specifier: workspace:*
         version: link:../../packages/server
@@ -292,18 +295,34 @@ importers:
 
   packages/server:
     dependencies:
+      '@talksume/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@talksume/core':
         specifier: workspace:*
         version: link:../core
       '@talksume/db':
         specifier: workspace:*
         version: link:../db
+      '@talksume/llm-gateway':
+        specifier: workspace:*
+        version: link:../llm-gateway
+      '@talksume/resume-render':
+        specifier: workspace:*
+        version: link:../resume-render
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@electric-sql/pglite@0.5.14)(@types/pg@8.23.1)(pg@8.23.1)
       fastify:
         specifier: ^5.12.7
         version: 5.12.7
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@earendil-works/pi-ai':
+        specifier: 1.4.0
+        version: 1.4.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(ws@8.22.1)(zod@4.6.7)
 
 packages:
 

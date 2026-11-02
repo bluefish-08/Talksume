@@ -59,6 +59,35 @@ describe("loadGatewayConfig", () => {
   });
 });
 
+describe("disableThinking", () => {
+  async function payloadSeenBy(env: Record<string, string>) {
+    const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }] });
+    core.setResponses([fauxAssistantMessage("ok")]);
+    let hook: ((payload: unknown, model: never) => unknown) | undefined;
+    const gateway = createGateway(loadGatewayConfig({ ...baseEnv, ...env }), {
+      baseStream: (m, c, o) => {
+        hook = o?.onPayload as typeof hook;
+        return core.streamSimple(m, c, o);
+      },
+    });
+    await gateway.complete({ purpose: "p", prompt: "hi" });
+    return hook?.({ model: "x", chat_template_kwargs: { a: 1 } }, undefined as never);
+  }
+
+  it("默认在请求体里关闭思考，并保留已有字段", async () => {
+    expect(await payloadSeenBy({})).toEqual({
+      model: "x",
+      enable_thinking: false,
+      thinking: { type: "disabled" },
+      chat_template_kwargs: { a: 1, enable_thinking: false },
+    });
+  });
+
+  it("LLM_DISABLE_THINKING=0 时不改请求体", async () => {
+    expect(await payloadSeenBy({ LLM_DISABLE_THINKING: "0" })).toBeUndefined();
+  });
+});
+
 describe("pii redactor", () => {
   it("replaces phones and emails consistently and restores them", () => {
     const r = createPiiRedactor();

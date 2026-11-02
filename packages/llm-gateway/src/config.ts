@@ -12,6 +12,8 @@ export interface GatewayConfig {
   maxRetries: number;
   retryBaseDelayMs: number;
   redactPii: boolean;
+  /** 请求里带上各家的「关闭思考」参数；推理模型不关会先想几十秒才出正文。 */
+  disableThinking: boolean;
 }
 
 export class GatewayConfigError extends Error {}
@@ -33,6 +35,7 @@ export function loadGatewayConfig(
     maxRetries: 3,
     retryBaseDelayMs: 500,
     redactPii: true,
+    disableThinking: !/^(0|false|off)$/i.test(env.LLM_DISABLE_THINKING ?? ""),
     ...overrides,
   };
 }

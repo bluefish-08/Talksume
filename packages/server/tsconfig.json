@@ -1,6 +1,24 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "types": ["node"] },
+  "compilerOptions": {
+    "types": ["node"]
+  },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../db" }]
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../llm-gateway"
+    },
+    {
+      "path": "../agent"
+    },
+    {
+      "path": "../resume-render"
+    }
+  ]
 }

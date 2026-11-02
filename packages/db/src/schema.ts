@@ -5,6 +5,7 @@ import {
   type Fact,
   PROFILE_SECTIONS,
   type Profile,
+  type ProfileSection,
   type ResumeContent,
   type StatusSource,
 } from "@talksume/core";
@@ -32,6 +33,13 @@ const textId = () => text("id").primaryKey().default(sql`gen_random_uuid()::text
 
 export type MatchDimension = { score: number; weight?: number; evidence?: string[] };
 export type MatchReport = { summary?: string; strengths?: string[]; gaps?: string[] };
+
+/** 采集对话的断点续聊状态；画像与事实在各自的表里。 */
+export type ConversationIntakeState = {
+  completedSections?: ProfileSection[];
+  askCounts?: Record<string, number>;
+  conflicts?: unknown[];
+};
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -61,6 +69,7 @@ export const conversations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title"),
+    intakeState: jsonb("intake_state").$type<ConversationIntakeState>().notNull().default({}),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

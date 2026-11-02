@@ -161,6 +161,21 @@ function emptyAssistantMessage(
   };
 }
 
+type Payload = Record<string, unknown>;
+
+/** 同时带上 DeepSeek / 智谱 / Qwen 系的开关，网关会忽略不认识的字段。 */
+function withThinkingOff(payload: unknown): unknown {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const body = payload as Payload;
+  const kwargs = typeof body.chat_template_kwargs === "object" ? body.chat_template_kwargs : {};
+  return {
+    ...body,
+    enable_thinking: false,
+    thinking: { type: "disabled" },
+    chat_template_kwargs: { ...kwargs, enable_thinking: false },
+  };
+}
+
 export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Gateway {
   const primaryModel = buildModel(config.model, config);
   const fallbackModel = buildModel(config.fallbackModel, config);
@@ -292,7 +307,15 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         let terminal: AssistantMessage | undefined;
         let terminalEvent: AssistantMessageEvent | undefined;
         try {
-          const upstream = baseStream(model, safeContext, { ...options, apiKey: config.apiKey, signal });
+          const upstream = baseStream(model, safeContext, {
+            ...options,
+            apiKey: config.apiKey,
+            signal,
+            ...(config.disableThinking && {
+              onPayload: async (payload, m) =>
+                withThinkingOff((await options?.onPayload?.(payload, m)) ?? payload),
+            }),
+          });
           for await (const event of upstream) {
             if (event.type === "done" || event.type === "error") {
               terminalEvent = event;
