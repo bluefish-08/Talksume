@@ -2,6 +2,7 @@ import { useProfile, useStartConversation } from "../api/queries.ts";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { CompletenessBar } from "../features/resume/CompletenessBar.tsx";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
+import { PolishButton } from "../features/resume/PolishButton.tsx";
 import { useFacts, useResume } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
 import { factQuotes, placeholderTitles } from "../features/resume/resumeUtils.ts";
@@ -26,6 +27,7 @@ export function ResumePage() {
         </div>
         <span className={styles.template}>校园模板</span>
         <ExportMenu />
+        <PolishButton />
       </header>
 
       <div className={styles.canvas}>

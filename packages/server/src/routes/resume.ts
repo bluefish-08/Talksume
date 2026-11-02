@@ -6,6 +6,7 @@ import { asc, eq } from "drizzle-orm";
 import type { RouteModule } from "../app.ts";
 import { latestCompletedSections, loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
+import { polishedResume } from "../polish-store.ts";
 
 const FORMATS = {
   pdf: { mime: "application/pdf", render: renderPdf },
@@ -32,7 +33,10 @@ export const resumeRoutes: RouteModule = (app, { db }) => {
 
   app.get("/api/v1/resume", async (req) => {
     const { profile, version } = await loadProfile(db, req.userId);
-    return { resume: profileToResume(profile), profileVersion: version };
+    return {
+      resume: await polishedResume(db, req.userId, profileToResume(profile)),
+      profileVersion: version,
+    };
   });
 
   app.get("/api/v1/facts", async (req) => {
@@ -60,7 +64,7 @@ export const resumeRoutes: RouteModule = (app, { db }) => {
       return sendError(reply, 400, "invalid_request", "format 必须是 pdf 或 docx");
     }
     const { profile } = await loadProfile(db, req.userId);
-    const resume = profileToResume(profile);
+    const resume = await polishedResume(db, req.userId, profileToResume(profile));
     if (!resume.basics.name && resume.sections.length === 0) {
       return sendError(reply, 409, "profile_empty", "还没有可导出的内容，先和助手聊几句吧");
     }

@@ -139,6 +139,32 @@ export const resumeVersions = pgTable(
   (t) => [index("resume_versions_user_idx").on(t.userId, t.createdAt)],
 );
 
+export const resumePolishes = pgTable(
+  "resume_polishes",
+  {
+    id: textId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    slot: integer("slot").notNull(),
+    sourceHash: text("source_hash").notNull(),
+    sourceText: text("source_text").notNull(),
+    factIds: jsonb("fact_ids").$type<string[]>().notNull().default([]),
+    suggestion: text("suggestion").notNull(),
+    violations: jsonb("violations").$type<string[]>().notNull().default([]),
+    accepted: text("accepted"),
+    status: text("status").$type<"pending" | "accepted" | "dismissed">().notNull().default("pending"),
+    model: text("model"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("resume_polishes_source_uq").on(t.userId, t.itemKey, t.sourceHash),
+    check("resume_polishes_status_check", sql`${t.status} in ('pending', 'accepted', 'dismissed')`),
+  ],
+);
+
 export const jobs = pgTable(
   "jobs",
   {

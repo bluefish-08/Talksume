@@ -8,6 +8,7 @@ import type { NotificationBus } from "./notifications/bus.ts";
 import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
 import { matchingRoutes } from "./routes/matching.ts";
+import { polishRoutes } from "./routes/polish.ts";
 
 export interface LlmModelOption {
   id: string;
@@ -37,7 +38,7 @@ export interface AppDeps {
 
 export type RouteModule = (app: FastifyInstance, deps: AppDeps & { db: Db }) => void;
 
-const routes: RouteModule[] = [conversationRoutes, flowRoutes, matchingRoutes];
+const routes: RouteModule[] = [conversationRoutes, flowRoutes, matchingRoutes, polishRoutes];
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: deps.logger ?? false });

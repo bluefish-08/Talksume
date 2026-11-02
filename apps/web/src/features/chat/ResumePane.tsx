@@ -2,6 +2,7 @@ import { useState } from "react";
 import { type Completeness, type ResumeContent, SECTION_LABELS } from "../../api/types.ts";
 import { CompletenessBar } from "../resume/CompletenessBar.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
+import { PolishButton } from "../resume/PolishButton.tsx";
 import type { FactItem } from "../resume/queries.ts";
 import { type FactQuote, ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
@@ -53,6 +54,7 @@ export function ResumePane({ resume, completeness, highlights, facts, quotes, ro
         <span className={styles.grow} />
         <span className={styles.template}>校园模板</span>
         <ExportMenu />
+        <PolishButton />
       </header>
 
       <div className={styles.progress}>

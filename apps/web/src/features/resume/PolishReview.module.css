@@ -1,0 +1,156 @@
+.intro {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.busy,
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  font-size: 13px;
+}
+
+.busy {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.notice {
+  justify-content: space-between;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.group + .group {
+  margin-top: 20px;
+}
+
+.heading {
+  margin: 0 0 8px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.card[data-tone="danger"] {
+  border-color: #f3c4c6;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.grow {
+  flex: 1;
+}
+
+.badge {
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  background: var(--surface-sunken);
+  color: var(--muted);
+}
+
+.badge[data-tone="accent"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.badge[data-tone="ok"] {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.badge[data-tone="warn"] {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.badge[data-tone="danger"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.source,
+.polished {
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.source {
+  color: var(--muted);
+}
+
+.polished {
+  margin-top: 6px;
+  color: var(--text);
+}
+
+.polished[data-bad] {
+  color: var(--text-2);
+}
+
+.tag {
+  flex: none;
+  font-size: 12px;
+  line-height: 20.8px;
+  color: var(--placeholder);
+}
+
+.bad {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.warn {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

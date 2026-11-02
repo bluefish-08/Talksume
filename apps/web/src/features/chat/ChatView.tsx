@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useConversations } from "../../api/queries.ts";
 import { SECTION_LABELS } from "../../api/types.ts";
+import { usePolishedResume } from "../resume/polishQueries.ts";
 import { useFacts } from "../resume/queries.ts";
 import { factQuotes } from "../resume/resumeUtils.ts";
 import styles from "./ChatView.module.css";
@@ -18,6 +19,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const navigate = useNavigate();
   const location = useLocation();
   const session = useChatSession(detail);
+  const polishedResume = usePolishedResume(session.resume);
   const { messages, send } = session;
   const facts = useFacts();
   const conversations = useConversations();
@@ -123,7 +125,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           返回对话
         </button>
         <ResumePane
-          resume={session.resume}
+          resume={polishedResume}
           completeness={session.completeness}
           highlights={session.highlights}
           facts={facts.data ?? []}
