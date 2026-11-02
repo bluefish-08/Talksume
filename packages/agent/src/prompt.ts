@@ -1,6 +1,6 @@
 import type { Profile, ProfileSection } from "@talksume/core";
 import { type Completeness, SECTION_BY_NAME, type Slot } from "./completeness.ts";
-import { type Conflict, type Draft, draftMissing } from "./facts.ts";
+import { type Conflict, type Draft, draftMissing, LEVEL_WORDS } from "./facts.ts";
 
 export interface PromptInput {
   profile: Profile;
@@ -23,6 +23,10 @@ function stripIds(value: unknown): unknown {
   return value;
 }
 
+const LEVEL_LINE = Object.entries(LEVEL_WORDS)
+  .map(([level, words]) => `${words.join("/")}→${level}`)
+  .join("，");
+
 export function describeSlot(slot: Slot): string {
   const where = slot.itemLabel ? `「${slot.itemLabel}」的` : "";
   const lines = [
@@ -42,10 +46,11 @@ export function buildSystemPrompt(input: PromptInput): string {
     "## 工作方式",
     "- 三个工具：upsert_facts 写入事实、ask_user 结束本轮等用户回答、complete_section 结束分区。回应和下一个问题直接用文字写出来，写完调用 ask_user，question 填你刚问的那句。",
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
-    "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。",
+    "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
     "- 每次只问一件事，口语化、简短，像朋友聊天。可以先用一句话回应或确认用户刚说的内容。",
-    "- 技能熟练度 level 按用户原话映射：了解/入门→beginner，熟悉→familiar，熟练/擅长→proficient，精通→expert；用户没说程度就省略 level，不要自行填写或降级。",
+    `- 技能熟练度 level 只按原话里的程度词映射：${LEVEL_LINE}。原话没有这些词（如「比较熟」「用过」「会」）就省略 level，不要从年限、项目经历推断，也不要降级；系统会丢弃 quote 里找不到程度词的 level。`,
+    "- 获奖的 date 只在用户说了年份或时间时填，不要从在校时间推算；quote 里没有年份或日期的 date 会被丢弃。",
     "- ask_user 时尽量附带 quickReplies：2 到 4 条用户可能的简短回答（第一人称、12 字以内，可含「跳过这个」）。选项必须是用户真实可能的回答，不要替用户编造经历；不确定就不给。",
     "- 时间统一写成 YYYY-MM；学位用 associate/bachelor/master/phd；求职类型用 internship/campus/experienced。",
     "- 用户跑题或闲聊时，礼貌回应一句再拉回当前目标。用户不想回答某项时，不要强迫，用 complete_section（reason=user_skipped）跳过。",

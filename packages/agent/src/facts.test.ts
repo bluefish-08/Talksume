@@ -185,3 +185,42 @@ describe("resolveConflict", () => {
     expect(out.facts.map((f) => f.status)).toEqual(["confirmed", "superseded"]);
   });
 });
+
+describe("applyFacts: ungrounded guesses", () => {
+  it("keeps a skill level only when the quote says the matching degree", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        fact("skills", { name: "Go", level: "expert" }, "Go 我是精通的"),
+        fact("skills", { name: "Rust", level: "familiar" }, "Rust 写过几个小工具"),
+        fact("skills", { name: "Java", level: "expert" }, "Java 比较熟悉"),
+      ],
+      ctx,
+    );
+    expect(result.profile.skills.map((s) => [s.name, s.level])).toEqual([
+      ["Go", "expert"],
+      ["Rust", undefined],
+      ["Java", undefined],
+    ]);
+    expect(result.dropped).toEqual([
+      expect.objectContaining({ index: 1, field: "level" }),
+      expect.objectContaining({ index: 2, field: "level" }),
+    ]);
+    expect(result.facts[1]?.payload).toEqual({ name: "Rust" });
+  });
+
+  it("keeps an award date only when the quote mentions a year or date", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        fact("awards", { name: "数学建模省一等奖", date: "2023-11" }, "2023年拿了数学建模省一等奖"),
+        fact("awards", { name: "优秀学生干部", date: "2024-06" }, "去年评上了优秀学生干部"),
+        fact("awards", { name: "国家奖学金", date: "2022-10" }, "大二拿过国家奖学金"),
+      ],
+      ctx,
+    );
+    expect(result.profile.awards.map((a) => a.date)).toEqual(["2023-11", "2024-06", undefined]);
+    expect(result.dropped).toEqual([expect.objectContaining({ index: 2, field: "date" })]);
+    expect(result.profile.awards[2]?.name).toBe("国家奖学金");
+  });
+});

@@ -40,6 +40,12 @@ export interface RejectedFact {
   reason: string;
 }
 
+export interface DroppedField {
+  index: number;
+  field: string;
+  reason: string;
+}
+
 export interface ApplyContext {
   messageId: string;
   genId?: (prefix: string) => string;
@@ -64,9 +70,37 @@ export interface ApplyResult {
   facts: Fact[];
   conflicts: Conflict[];
   rejected: RejectedFact[];
+  /** 原话里找不到依据、被丢掉的推测字段；事实本身照常写入。 */
+  dropped: DroppedField[];
   changes: ProfileChange[];
   drafts: Draft[];
   drafted: Drafted[];
+}
+
+export const LEVEL_WORDS = {
+  beginner: ["了解", "入门", "初学"],
+  familiar: ["熟悉"],
+  proficient: ["熟练", "擅长"],
+  expert: ["精通"],
+} as const satisfies Record<NonNullable<Skill["level"]>, readonly string[]>;
+
+const DATE_LIKE = /\d{2,4}\s*[年.\-/]|\d{4}|[〇零一二三四五六七八九]{2,4}年|[去今前]年|\d{1,2}\s*月/;
+
+/** 熟练度和获奖日期最常被推测，只在原话里有对应字样时保留。 */
+function dropUngrounded(section: ProfileSection, payload: Rec, quote: string): Omit<DroppedField, "index">[] {
+  const dropped: Omit<DroppedField, "index">[] = [];
+  if (section === "skills" && typeof payload.level === "string") {
+    const words: readonly string[] = LEVEL_WORDS[payload.level as keyof typeof LEVEL_WORDS] ?? [];
+    if (!words.some((w) => quote.includes(w))) {
+      dropped.push({ field: "level", reason: `原话里没有「${words.join("/")}」等程度词` });
+      delete payload.level;
+    }
+  }
+  if (section === "awards" && payload.date !== undefined && !DATE_LIKE.test(quote)) {
+    dropped.push({ field: "date", reason: "原话里没有年份或日期" });
+    delete payload.date;
+  }
+  return dropped;
 }
 
 const ITEM_SCHEMA: Record<ListSection, z.ZodType> = {
@@ -216,6 +250,7 @@ export function applyFacts(
     facts: [],
     conflicts: [],
     rejected: [],
+    dropped: [],
     changes: [],
     drafts,
     drafted: [],
@@ -233,7 +268,8 @@ export function applyFacts(
       reject("缺少用户原话 quote");
       continue;
     }
-    const payload = parsed.data;
+    const payload = { ...parsed.data };
+    for (const d of dropUngrounded(section, payload, input.quote)) result.dropped.push({ ...d, index });
     const factId = genId("fact");
 
     let outcome: MergeOutcome;

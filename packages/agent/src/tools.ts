@@ -36,6 +36,20 @@ export function buildUserCorpus(texts: readonly string[]): string {
   return texts.map(normalizeQuote).join("|");
 }
 
+export const MIN_QUOTE_SEGMENT = 2;
+
+/** quote 可用 … 或 ... 拼接不相邻的原话片段，每段都要命中语料。 */
+export function quoteInCorpus(corpus: string, quote: string): boolean {
+  const segments = quote
+    .split(/…+|\.{3,}/)
+    .map(normalizeQuote)
+    .filter(Boolean);
+  if (segments.length === 0) return false;
+  // 单段沿用原规则，允许「男」这类极短回答；分段时短段易在语料中偶然命中
+  if (segments.length > 1 && segments.some((seg) => seg.length < MIN_QUOTE_SEGMENT)) return false;
+  return segments.every((seg) => corpus.includes(seg));
+}
+
 function text(value: string, isError = false): AgentToolResult<unknown> {
   return { content: [{ type: "text", text: value }], details: {}, ...(isError ? { isError: true } : {}) };
 }
@@ -134,8 +148,10 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       const rejected: string[] = [];
       const accepted: { input: FactInput; index: number }[] = [];
       args.facts.forEach((input, index) => {
-        if (ctx.verifyQuote && !ctx.userCorpus.includes(normalizeQuote(input.quote))) {
-          rejected.push(`第 ${index + 1} 条：quote「${input.quote}」不是用户说过的原话，请逐字摘抄用户的话`);
+        if (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, input.quote)) {
+          rejected.push(
+            `第 ${index + 1} 条：quote「${input.quote}」不是用户说过的原话，请逐字摘抄；不相邻的片段用 … 分隔，每段至少 ${MIN_QUOTE_SEGMENT} 个字`,
+          );
         } else accepted.push({ input, index });
       });
 
@@ -176,6 +192,12 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
         );
       }
       if (result.drafted.length > 0) lines.push(result.drafted.map(describeDrafted).join("\n"));
+      if (result.dropped.length > 0) {
+        const dropped = result.dropped.map(
+          (d) => `第 ${(accepted[d.index]?.index ?? d.index) + 1} 条的 ${d.field}：${d.reason}`,
+        );
+        lines.push(`已忽略这些推测字段（事实其余部分照常写入），用户没说就留空：\n${dropped.join("\n")}`);
+      }
       if (rejected.length > 0) lines.push(`被拒绝：\n${rejected.join("\n")}`);
       const next = nextSlotOf(state);
       lines.push(next ? `下一个目标：\n${describeSlot(next)}` : "下一个目标：无，信息已基本完整。");
@@ -207,7 +229,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       const section: ProfileSection = args.section;
       const label = SECTION_BY_NAME[section].label;
       if (args.reason === "user_skipped") {
-        if (!args.quote || (ctx.verifyQuote && !ctx.userCorpus.includes(normalizeQuote(args.quote)))) {
+        if (!args.quote || (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, args.quote))) {
           return text("user_skipped 必须附带用户表示没有/不想提供的原话 quote。", true);
         }
       } else {

@@ -24,7 +24,11 @@ export const SectionPayload = {
   intention: Intention.partial(),
 } as const satisfies Record<ProfileSection, z.ZodType>;
 
-const Quote = z.string().trim().min(1).describe("用户原话片段，必须是用户说过的原文，不要改写");
+const Quote = z
+  .string()
+  .trim()
+  .min(1)
+  .describe("用户原话片段，逐字摘抄不要改写；依据分散在不相邻的几处时，各段用 … 连接，每段至少两个字");
 
 function factVariant<S extends ProfileSection>(section: S) {
   return z.object({
