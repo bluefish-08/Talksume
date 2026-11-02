@@ -35,6 +35,10 @@ services:
       APP_VERSION: ${APP_VERSION:-dev}
       DATABASE_URL: postgres://${POSTGRES_USER:-talksume}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-talksume}
       REDIS_URL: redis://redis:6379
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
