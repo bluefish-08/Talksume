@@ -125,7 +125,14 @@ export async function loadConversation(
     id: m.id,
     role: m.role,
     content: m.content,
-    ...(m.meta.tools ? { meta: { tools: m.meta.tools } } : {}),
+    ...(m.meta.tools || m.meta.slot
+      ? {
+          meta: {
+            ...(m.meta.tools ? { tools: m.meta.tools } : {}),
+            ...(m.meta.slot ? { slot: m.meta.slot } : {}),
+          },
+        }
+      : {}),
   }));
   const intake = conv.intakeState;
   const state = createIntakeState({

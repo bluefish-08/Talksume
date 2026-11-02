@@ -22,10 +22,17 @@ function oracleProfile(expected: ExpectedProfile): Profile {
     (items ?? []).map((item, i) => {
       const filled = fill(item);
       if (typeof filled.bullets === "string") filled.bullets = [filled.bullets];
+      if (Array.isArray(filled.highlights))
+        filled.highlights = filled.highlights.map((h) => ({ title: "要点", detail: String(text(h)) }));
       return { id: `x${i}`, sourceFactIds: [], ...extra, ...filled };
     });
   return Profile.parse({
-    basics: fill((expected.basics ?? {}) as Record<string, unknown>),
+    basics: {
+      ...fill((expected.basics ?? {}) as Record<string, unknown>),
+      ...(expected.basics?.links
+        ? { links: [expected.basics.links].flat().map((url) => ({ url: String(text(url)) })) }
+        : {}),
+    },
     education: list(expected.education as Record<string, unknown>[] | undefined),
     experiences: list(expected.experiences as Record<string, unknown>[] | undefined),
     projects: list(expected.projects as Record<string, unknown>[] | undefined),
@@ -36,8 +43,15 @@ function oracleProfile(expected: ExpectedProfile): Profile {
 }
 
 describe("eval dataset", () => {
-  it("ships three well-formed sample dialogues", () => {
-    expect(samples.map((s) => s.id)).toEqual(["campus-backend", "experienced-architect", "intern-analyst"]);
+  it("ships well-formed sample dialogues, including deep dives", () => {
+    expect(samples.map((s) => s.id)).toEqual([
+      "campus-backend",
+      "experienced-architect",
+      "intern-analyst",
+      "deep-backend-intern",
+      "deep-campus-project",
+      "deep-data-intern",
+    ]);
     for (const s of samples) expect(s.turns.length).toBeGreaterThanOrEqual(5);
   });
 
@@ -109,6 +123,51 @@ describe("field-level metrics", () => {
     });
     const skills = summarizeBySection(scoreProfile(predicted, { skills: [{ name: "Java" }] })).skills;
     expect(skills).toMatchObject({ tp: 0, fp: 1, fn: 1 });
+  });
+});
+
+describe("highlight metrics", () => {
+  const expected: ExpectedProfile = {
+    projects: [{ name: "排课助手", highlights: [{ $contains: ["剪枝"] }, { $contains: ["增量"] }] }],
+    skills: [{ name: "Python" }],
+    basics: { links: ["github.com/demo"] },
+  };
+  const turns = ["我把硬约束提前剪枝", "适应度计算改成了增量更新", "还写了单元测试"];
+
+  it("scores each keyword group against any highlight, STAR text or bullet", () => {
+    const predicted = Profile.parse({
+      basics: { links: [{ label: "GitHub", url: "github.com/demo" }] },
+      projects: [
+        {
+          id: "p",
+          name: "排课助手",
+          action: "把硬约束提前剪枝",
+          highlights: [{ title: "增量更新", detail: "适应度计算改成了增量更新" }],
+        },
+      ],
+      skills: [{ id: "s", name: "Python", category: "编程语言" }],
+    });
+    const units = scoreProfile(predicted, expected, turns);
+    expect(units.filter((u) => u.status !== "tp")).toEqual([]);
+    expect(units.filter((u) => u.key.includes(".highlights#"))).toHaveLength(2);
+  });
+
+  it("does not punish a faithful extra highlight but flags a fabricated number", () => {
+    const predicted = Profile.parse({
+      projects: [
+        {
+          id: "p",
+          name: "排课助手",
+          highlights: [
+            { title: "约束剪枝", detail: "我把硬约束提前剪枝" },
+            { title: "单测", detail: "还写了单元测试" },
+            { title: "排课提速", detail: "排课速度提升了 50%" },
+          ],
+        },
+      ],
+    });
+    const fp = scoreProfile(predicted, expected, turns).filter((u) => u.status === "fp");
+    expect(fp.map((u) => u.predicted)).toEqual(["排课提速：排课速度提升了 50%"]);
   });
 });
 

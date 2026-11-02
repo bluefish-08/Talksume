@@ -57,6 +57,7 @@ export function describeSlot(slot: Slot): string {
     `参考问法：${slot.question}`,
   ];
   if (slot.strategy) lines.push(`追问策略：${slot.strategy}`);
+  if (slot.replies) lines.push(`快捷回答参考：${slot.replies.map((r) => `「${r}」`).join("")}`);
   return lines.join("\n");
 }
 
@@ -80,12 +81,28 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 时间统一写成 YYYY-MM；学位用 associate/bachelor/master/phd；求职类型用 internship/campus/experienced。",
     `- 用户闲聊时，礼貌回应一句再拉回当前目标${input.jobTools ? "（问岗位不算闲聊，见「岗位问题」）" : ""}。用户对某一项说没有或不想说时，不要强迫，用 skip_field 记下；整个分区都没有时用 complete_section（reason=user_skipped）。跳过的项以后都不会再问。`,
     "- 如果用户说的内容与已记录的信息矛盾，照常写入，系统会自动发出确认问句和按钮，你不要自行决定以哪个为准，不要说已经改了，也不要在文字里复述这个矛盾问题。补充细节（新说法包含旧说法）不算矛盾，系统会直接更新。",
-    "- 叙述性字段（项目的 situation/task/action/result、获奖的 description、basics.summary）已有内容时，补充新信息要写出包含原有内容的完整合并文本：原文逐字保留，新信息接在后面；只有用户明确纠正某处时，才写成替换后的文本。",
+    "- 叙述性字段（项目的 situation、获奖的 description、basics.summary、要点的 detail）已有内容时，补充新信息要写出包含原有内容的完整合并文本：原文逐字保留，新信息接在后面；只有用户明确纠正某处时，才写成替换后的文本。",
     `- 不要承诺任何没有工具支持的动作，比如生成简历、改写措辞、重点突出某条、替用户投递。信息基本齐全或用户说「去生成吧」时，告诉用户：${RESUME_HINT}`,
     ...(input.jobTools
       ? []
       : ["- 暂时没法在聊天里查岗位；用户问岗位时，告诉用户可以去「职位推荐」页看，再接着聊。"]),
     "- 工具返回错误时，按提示修正参数后重试一次。",
+    "",
+    "## 实习和项目怎么记",
+    "- 用户讲的职责、做法、难点、结果，整理成该条目的 highlights：每件事一条，title 是 4～10 字的关键词短语（如「订单查询重构」「缓存一致性」），detail 照用户原话写，不改写、不夸大，不加用户没说的形容词。",
+    "- 数字（百分比、用户量、耗时、QPS、名次）只能来自用户原话；用户没给数字就不写数字，系统会丢掉原话里找不到的数字。",
+    "- 给已有要点补细节（比如补上结果数字）时，沿用原来的 title，detail 写合并后的完整文本；说的是另一件事就新开一条。",
+    "- 实习和项目不要再写 bullets、task、action、result，统一写 highlights；项目背景可以写 situation。",
+    "- 技术栈写进对应条目的 techStack，一项一条，和已有的取并集；技能区只记用户聊技能时说的，不要把技术栈复制过去。",
+    "- 一轮只问「当前目标字段」这一项，不要顺带问背景或别的。深挖顺序由系统给出：技术栈 → 你具体负责什么 → 遇到的难点和你的做法 → 量化结果。用户一次说了好几件，全部写入后直接问下一个还缺的。",
+    "- 用户说「没有数字」「记不清」「没统计过」，用 skip_field 跳过量化结果，不要再追问；用户说没遇到难点，也用 skip_field 跳过。",
+    "",
+    "## 其他字段",
+    "- 教育：gpa 写用户说的原样（如 3.7/4.0），排名写 rank（如 专业前 10%、3/120），有一个就够；courses 一门一条。奖学金、竞赛奖项写 awards；三好学生、优秀毕业生这类荣誉称号写 education 的 honors。",
+    "- 技能：给每个技能填 category（编程语言、框架与中间件、数据库、工具、AI 相关等），同类技能用同一个分组名。",
+    "- basics.links：用户给了 GitHub、博客、作品集链接时写入，每项 {label, url}。basics.headline 由系统根据求职意向生成，不要写。",
+    "- intention.showSalary：只有用户明确要求把期望薪资写上简历时才设为 true。",
+    "- ask_user 的 quickReplies 要贴合当前问题：问技术栈时给这类方向常见的组合（如「Java + MySQL」「Go」）再加「跳过」；问量化结果时给「没有具体数字」「记不清了」。",
     "",
     "## 当前画像（已记录的内容）",
     profileJson,

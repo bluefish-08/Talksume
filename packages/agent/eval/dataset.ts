@@ -9,6 +9,8 @@ import { z } from "zod";
  * - 字符串 / 数字：归一化后相等才算对（忽略大小写、空白和标点）；
  * - 字符串数组（techStack、roles、cities 等）：每个元素单独计一项；
  * - { "$contains": ["关键词", ...] }：自由文本字段，预测值包含全部关键词即算对。
+ * 实习和项目的 highlights（以及旧写法 bullets、situation/task/action/result）按「要点」计分：
+ * 每组关键词是一项，任一条要点包含全部关键词即算对；没对上任何一组、且数字或文字在用户原话里找不到的要点计为误报。
  * 列表分区里的条目靠 school / company / name 对齐（两边归一化后相等或互相包含）。
  * 样例中没有写出的字段表示用户没说过，模型若写入则计为误报。
  */
@@ -28,6 +30,7 @@ export const ExpectedProfile = z.object({
       email: Text.optional(),
       city: Text.optional(),
       summary: Text.optional(),
+      links: TextOrList.optional(),
     })
     .optional(),
   education: z
@@ -37,7 +40,9 @@ export const ExpectedProfile = z.object({
         degree: z.string().optional(),
         major: Text.optional(),
         gpa: Text.optional(),
+        rank: Text.optional(),
         courses: TextOrList.optional(),
+        honors: TextOrList.optional(),
         ...Period,
       }),
     )
@@ -48,7 +53,11 @@ export const ExpectedProfile = z.object({
         company: z.string(),
         title: Text.optional(),
         kind: z.string().optional(),
+        department: Text.optional(),
+        city: Text.optional(),
+        techStack: TextOrList.optional(),
         bullets: TextOrList.optional(),
+        highlights: z.array(Text).optional(),
         ...Period,
       }),
     )
@@ -63,11 +72,14 @@ export const ExpectedProfile = z.object({
         task: Text.optional(),
         action: Text.optional(),
         result: Text.optional(),
+        highlights: z.array(Text).optional(),
         ...Period,
       }),
     )
     .optional(),
-  skills: z.array(z.object({ name: z.string(), level: z.string().optional() })).optional(),
+  skills: z
+    .array(z.object({ name: z.string(), level: z.string().optional(), category: z.string().optional() }))
+    .optional(),
   awards: z
     .array(z.object({ name: z.string(), date: z.string().optional(), description: Text.optional() }))
     .optional(),

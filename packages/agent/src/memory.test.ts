@@ -24,6 +24,7 @@ function gpaNextState(): IntakeState {
         email: "liming@example.com",
         city: "江城",
         summary: "后端方向",
+        links: [{ label: "GitHub", url: "github.com/example" }],
       },
       education: [
         {
@@ -31,6 +32,7 @@ function gpaNextState(): IntakeState {
           school: "示例大学",
           degree: "bachelor",
           major: "计算机",
+          courses: ["数据结构"],
           start: "2021-09",
           end: "2025-06",
         },

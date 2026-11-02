@@ -64,7 +64,7 @@ export interface MissingField {
   label: string;
   weight: number;
   required: boolean;
-  kind?: "field" | "new_item" | "quantify";
+  kind?: "field" | "new_item" | "deepen" | "quantify";
 }
 
 export interface Completeness {

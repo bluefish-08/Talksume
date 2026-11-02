@@ -7,6 +7,10 @@ export interface FieldSpec {
   required: boolean;
   question: string;
   strategy: string;
+  /** 深挖步骤（1 起）：分区铺开后再按此顺序逐段追问。 */
+  depth?: number;
+  /** 模型没给快捷回答时兜底用。 */
+  replies?: string[];
 }
 
 export interface SectionSpec {
@@ -28,7 +32,51 @@ const f = (
   required: boolean,
   question: string,
   strategy = "",
-): FieldSpec => ({ field, label, weight, required, question, strategy });
+  extra: Pick<FieldSpec, "depth" | "replies"> = {},
+): FieldSpec => ({ field, label, weight, required, question, strategy, ...extra });
+
+const HIGHLIGHT_RULE =
+  "把用户的叙述整理成 highlights：title 是 4～10 字的关键词短语，detail 照用户原话写，不改写、不夸大，数字只用用户说过的。";
+
+/** 实习和项目共用的深挖四步：技术栈 → 负责什么 → 难点与做法 → 量化结果。 */
+const deepDive = (what: string): FieldSpec[] => [
+  f(
+    "techStack",
+    "技术栈/工具",
+    2,
+    true,
+    `这段${what}主要用了哪些技术栈或工具？`,
+    "techStack 一项一条，和已有的取并集。quickReplies 给 2～3 个贴合这段经历方向的组合（如「Java + MySQL」「Go」），再加一个「跳过」。",
+    { depth: 1 },
+  ),
+  f(
+    "duty",
+    "具体负责的内容",
+    3,
+    true,
+    `在这段${what}里，你具体负责哪一块？`,
+    `追问本人（不是团队）负责的模块和做了什么。${HIGHLIGHT_RULE}`,
+    { depth: 2 },
+  ),
+  f(
+    "challenge",
+    "难点与做法",
+    2,
+    true,
+    "做的过程中遇到过什么难点？你是怎么解决的？",
+    `问一个最有代表性的难点和本人的做法，单独整理成一条 highlight。${HIGHLIGHT_RULE}`,
+    { depth: 3, replies: ["没遇到什么难点", "跳过这个"] },
+  ),
+  f(
+    "impact",
+    "量化结果",
+    2,
+    true,
+    "最后效果怎么样？有没有数字，比如性能提升、用户量、效率或比例？",
+    "只问一次。用户给了数字就补进对应 highlight 的 detail（沿用原 title，写合并后的完整文本）；说没有数字、记不清，就用 skip_field 跳过，不要再追问。",
+    { depth: 4, replies: ["没有具体数字", "记不清了"] },
+  ),
+];
 
 /** 分区顺序即对话推进顺序。 */
 export const SECTION_SPECS: readonly SectionSpec[] = [
@@ -46,6 +94,15 @@ export const SECTION_SPECS: readonly SectionSpec[] = [
       f("email", "邮箱", 2, true, "常用邮箱是哪个？"),
       f("city", "所在城市", 1, false, "你现在在哪个城市？"),
       f("summary", "一句话自我介绍", 1, false, "用一句话介绍一下自己？比如你的专业方向和最擅长的事。"),
+      f(
+        "links",
+        "个人链接",
+        0.5,
+        false,
+        "有 GitHub、技术博客或作品集链接吗？没有就跳过。",
+        "links 每项 {label, url}，url 照用户给的写。",
+        { replies: ["没有", "跳过这个"] },
+      ),
     ],
   },
   {
@@ -69,7 +126,24 @@ export const SECTION_SPECS: readonly SectionSpec[] = [
       f("major", "专业", 2, true, "专业是什么？"),
       f("start", "入学时间", 1, false, "是哪一年入学的？", "时间写成 YYYY-MM，只知道年份时月份按 09 记。"),
       f("end", "毕业时间", 1, false, "预计或实际是哪一年毕业？", "时间写成 YYYY-MM；还在读用预计毕业时间。"),
-      f("gpa", "成绩/排名", 0.5, false, "成绩或排名方便说一下吗？不想说也可以跳过。"),
+      f(
+        "gpa",
+        "成绩/排名",
+        0.5,
+        false,
+        "GPA 或专业排名方便说一下吗？说一个就行，不想说也可以跳过。",
+        "GPA 写 gpa（如 3.7/4.0），排名写 rank（如 专业前 10%、3/120），有一个就够。",
+        { replies: ["不太想说", "跳过这个"] },
+      ),
+      f(
+        "courses",
+        "主修课程",
+        0.5,
+        false,
+        "挑几门和求职方向相关的主修课程？不需要可以跳过。",
+        "courses 一门一条。",
+        { replies: ["跳过这个"] },
+      ),
     ],
   },
   {
@@ -79,21 +153,14 @@ export const SECTION_SPECS: readonly SectionSpec[] = [
     minItems: 1,
     kind: "list",
     newItemQuestion: "有没有实习或工作经历？没有的话告诉我一声就行。",
-    newItemStrategy: "先问有没有；有就问公司、岗位、时间，再追问做了什么、结果如何。",
+    newItemStrategy: "先问有没有；有就问公司、岗位、时间，细节等各分区铺开后再逐段深挖。",
     fields: [
       f("company", "公司", 3, true, "是在哪家公司？"),
       f("title", "岗位", 3, true, "当时的岗位是什么？"),
       f("kind", "类型", 1, true, "这段是实习、全职还是兼职？"),
       f("start", "开始时间", 1, false, "是从什么时候开始的？"),
       f("end", "结束时间", 1, false, "是什么时候结束的？还在做的话告诉我。"),
-      f(
-        "bullets",
-        "工作内容与成果",
-        3,
-        true,
-        "在这段经历里你具体负责什么？有什么可以量化的成果吗？",
-        "追问具体做了什么（动词开头）和结果，尽量要数字：提升百分比、节省时间、处理量、用户数。",
-      ),
+      ...deepDive("实习"),
     ],
   },
   {
@@ -103,29 +170,12 @@ export const SECTION_SPECS: readonly SectionSpec[] = [
     minItems: 1,
     kind: "list",
     newItemQuestion: "挑一个你最拿得出手的项目聊聊吧，它叫什么、是做什么的？",
-    newItemStrategy: "让用户先讲最有代表性的一个项目：名称、一句话背景，再按 STAR 往下问。",
+    newItemStrategy: "让用户先讲最有代表性的一个项目：名称、一句话背景和角色，细节等各分区铺开后再逐段深挖。",
     fields: [
       f("name", "项目名称", 3, true, "这个项目叫什么？"),
-      f("role", "担任角色", 3, true, "你在项目里担任什么角色？"),
-      f("techStack", "技术栈/工具", 1, false, "用到了哪些技术或工具？"),
-      f("situation", "背景（S）", 1, false, "这个项目是为了解决什么问题、在什么背景下做的？"),
-      f("task", "任务（T）", 1, false, "你负责的目标或任务是什么？"),
-      f(
-        "action",
-        "行动（A）",
-        3,
-        true,
-        "你具体做了什么？挑最关键的一两件讲讲。",
-        "追问本人（而不是团队）做了什么：怎么做的、为什么这么做、遇到什么困难。",
-      ),
-      f(
-        "result",
-        "结果（R）",
-        3,
-        true,
-        "最后的结果怎么样？",
-        "追问到结果，并引导量化：性能/效率提升多少、用户数/调用量、获奖或上线情况。用户确实没有数字时，让他描述可观察的变化后接受。",
-      ),
+      f("role", "担任角色", 2, true, "你在项目里担任什么角色？"),
+      f("situation", "项目背景", 1, false, "这个项目是为了解决什么问题、在什么背景下做的？"),
+      ...deepDive("项目"),
     ],
   },
   {
@@ -185,7 +235,8 @@ export interface MissingField {
   label: string;
   weight: number;
   required: boolean;
-  kind: "field" | "new_item" | "quantify";
+  kind: "field" | "new_item" | "deepen" | "quantify";
+  depth?: number;
 }
 
 export interface SectionCompleteness {
@@ -220,6 +271,44 @@ function present(value: unknown): boolean {
   return true;
 }
 
+/** 只数带 title 的要点：旧 bullets / STAR 转来的无标题要点不算深挖过。 */
+export function titledHighlights(record: Record<string, unknown>): number {
+  const list = Array.isArray(record.highlights) ? record.highlights : [];
+  return list.filter((h) => typeof h?.title === "string" && h.title.trim() && h.detail?.trim()).length;
+}
+
+const CHALLENGE =
+  /难|挑战|瓶颈|问题|故障|排查|踩坑|解决|冲突|不一致|超卖|慢查询|卡顿|并发|抖动|泄漏|丢失|缺失/;
+
+/** 只按条数算会被「负责 A、负责 B」糊弄过去，难点那条要真的在讲难点或做法。 */
+function hasChallenge(record: Record<string, unknown>): boolean {
+  const list = Array.isArray(record.highlights) ? record.highlights : [];
+  return (
+    titledHighlights(record) >= 2 && list.some((h) => CHALLENGE.test(`${h?.title ?? ""}${h?.detail ?? ""}`))
+  );
+}
+
+function hasNumbers(record: Record<string, unknown>): boolean {
+  const texts = [
+    ...(Array.isArray(record.highlights)
+      ? record.highlights.map((h) => `${h?.title ?? ""} ${h?.detail ?? ""}`)
+      : []),
+    ...(Array.isArray(record.bullets) ? record.bullets.map(String) : []),
+    typeof record.result === "string" ? record.result : "",
+  ];
+  return texts.some((t) => isQuantified(t));
+}
+
+function fieldOk(section: ProfileSection, field: string, record: Record<string, unknown>): boolean {
+  if (section === "experiences" || section === "projects") {
+    if (field === "duty") return titledHighlights(record) >= 1;
+    if (field === "challenge") return hasChallenge(record);
+    if (field === "impact") return hasNumbers(record);
+  }
+  if (section === "education" && field === "gpa") return present(record.gpa) || present(record.rank);
+  return present(record[field]);
+}
+
 function itemLabelOf(section: ProfileSection, item: Record<string, unknown>): string | undefined {
   const key = section === "education" ? "school" : section === "experiences" ? "company" : "name";
   const value = item[key];
@@ -247,6 +336,7 @@ function scoreRecord(
     required: boolean,
     ok: boolean,
     kind: MissingField["kind"],
+    depth?: number,
   ) => {
     total += weight;
     if (ok) got += weight;
@@ -261,22 +351,19 @@ function scoreRecord(
         weight,
         required,
         kind,
+        ...(depth ? { depth } : {}),
       });
   };
   for (const field of spec.fields) {
-    add(field.field, field.label, field.weight, field.required, present(record[field.field]), "field");
-  }
-  if (spec.section === "projects" && present(record.result)) {
-    add("result_quantified", "结果的量化数据", 1, true, isQuantified(String(record.result)), "quantify");
-  }
-  if (spec.section === "experiences" && Array.isArray(record.bullets) && record.bullets.length > 0) {
+    const kind = field.field === "impact" ? "quantify" : field.depth && field.depth > 1 ? "deepen" : "field";
     add(
-      "bullets_quantified",
-      "成果的量化数据",
-      1,
-      true,
-      record.bullets.some((b) => isQuantified(String(b))),
-      "quantify",
+      field.field,
+      field.label,
+      field.weight,
+      field.required,
+      fieldOk(spec.section, field.field, record),
+      kind,
+      field.depth,
     );
   }
   return { score: total === 0 ? 1 : got / total, missing };
@@ -333,11 +420,6 @@ export function computeCompleteness(profile: Profile, options: CompletenessOptio
   return { score, sections, missing };
 }
 
-export interface Slot extends MissingField {
-  question: string;
-  strategy: string;
-}
-
 export interface PickOptions extends CompletenessOptions {
   /** 每个字段已经追问过的次数，用于避免死缠烂打。 */
   askCounts?: Readonly<Record<string, number>>;
@@ -346,41 +428,78 @@ export interface PickOptions extends CompletenessOptions {
   skipped?: ReadonlySet<string>;
 }
 
+export interface Slot extends MissingField {
+  question: string;
+  strategy: string;
+  replies?: string[];
+}
+
 export function toSlot(m: MissingField): Slot {
   const spec = SECTION_BY_NAME[m.section];
   if (m.kind === "new_item") return { ...m, question: spec.newItemQuestion, strategy: spec.newItemStrategy };
-  if (m.kind === "quantify") {
-    const target = m.field === "result_quantified" ? "项目结果" : "成果";
-    return {
-      ...m,
-      question: `${target}有没有可以量化的数据？比如提升了多少、节省了多少时间、涉及多少用户。`,
-      strategy: `${target}已经有了，但没有数字。追问一次具体数据；用户给不出就接受，不要反复追问。`,
-    };
-  }
   const field = spec.fields.find((x) => x.field === m.field);
-  return { ...m, question: field?.question ?? `请补充${m.label}`, strategy: field?.strategy ?? "" };
+  return {
+    ...m,
+    question: field?.question ?? `请补充${m.label}`,
+    strategy: field?.strategy ?? "",
+    ...(field?.replies ? { replies: field.replies } : {}),
+  };
+}
+
+/** 旧版本记下的「没有数字」跳过，对新的量化结果项同样有效。 */
+function legacySkipKeys(m: MissingField): string[] {
+  if (m.field !== "impact" || !m.itemId) return [];
+  const old = m.section === "projects" ? "result_quantified" : "bullets_quantified";
+  return [`${m.section}:${m.itemId}:${old}`];
+}
+
+export function isSkipped(m: MissingField, skipped: ReadonlySet<string> | undefined): boolean {
+  return !!skipped && (skipped.has(m.key) || legacySkipKeys(m).some((k) => skipped.has(k)));
+}
+
+/** 铺开阶段要问的项：各分区的必填基础字段，加上「有没有实习」。 */
+function isBreadth(m: MissingField): boolean {
+  if (m.depth) return false;
+  return m.required || (m.kind === "new_item" && m.section === "experiences");
 }
 
 /**
- * 先在流程顺序里找还缺必填项的第一个分区，再按权重取其中最重要的字段；
- * 必填项全部补完后才轮到选填项。
+ * 三个阶段：先按分区顺序把各分区铺开（每个分区取最重要的缺项），
+ * 再按条目顺序逐段深挖（技术栈 → 负责什么 → 难点 → 量化结果），最后才问选填项。
  */
 export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot | null {
   const { missing } = computeCompleteness(profile, options);
   const maxAsks = options.maxAsks ?? 2;
   const askable = missing.filter(
     (m) =>
-      !options.skipped?.has(m.key) &&
+      !isSkipped(m, options.skipped) &&
       (options.askCounts?.[m.key] ?? 0) < (m.kind === "quantify" ? 1 : maxAsks),
   );
   const order = new Map(SECTION_SPECS.map((s, i) => [s.section, i]));
-  for (const wantRequired of [true, false]) {
-    const pool = askable.filter((m) => m.required === wantRequired);
-    if (pool.length === 0) continue;
+  const firstOfSection = (pool: MissingField[]): MissingField | undefined => {
+    if (pool.length === 0) return undefined;
     const firstSection = Math.min(...pool.map((m) => order.get(m.section) ?? 0));
     const inSection = pool.filter((m) => order.get(m.section) === firstSection);
-    const best = inSection.reduce((a, b) => (b.weight > a.weight ? b : a));
-    return toSlot(best);
-  }
-  return null;
+    return inSection.reduce((a, b) => (b.weight > a.weight ? b : a));
+  };
+
+  const breadth = firstOfSection(askable.filter(isBreadth));
+  if (breadth) return toSlot(breadth);
+
+  const itemOrder = (m: MissingField) => {
+    const items = profile[m.section as "experiences" | "projects"] as { id: string }[];
+    return items.findIndex((item) => item.id === m.itemId);
+  };
+  const deep = askable
+    .filter((m) => m.depth && m.required)
+    .sort(
+      (a, b) =>
+        (order.get(a.section) ?? 0) - (order.get(b.section) ?? 0) ||
+        itemOrder(a) - itemOrder(b) ||
+        (a.depth ?? 0) - (b.depth ?? 0),
+    )[0];
+  if (deep) return toSlot(deep);
+
+  const rest = firstOfSection(askable.filter((m) => !m.required && !isBreadth(m)));
+  return rest ? toSlot(rest) : null;
 }

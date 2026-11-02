@@ -13,12 +13,32 @@ import { z } from "zod";
 
 const OMIT_IDS = { id: true, sourceFactIds: true } as const;
 
+export const HighlightInput = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("4～10 字的关键词短语，概括这条要点，如「订单查询重构」「缓存一致性」"),
+  detail: z.string().trim().min(1).describe("照用户原话写的细节，不改写、不夸大；数字只能用用户说过的"),
+});
+
+const TechStack = z.array(z.string()).describe("这段经历用到的技术、框架、工具，一项一条");
+const Highlights = z
+  .array(HighlightInput)
+  .describe("经历要点：用户讲的职责、难点与做法、结果，各整理成一条；补充已有要点时沿用原 title");
+
 /** 事实 payload 的校验 schema：条目分区只强制要求能定位条目的键，其余字段可分批补充。 */
 export const SectionPayload = {
-  basics: Basics,
+  basics: Basics.omit({ headline: true, photo: true }),
   education: Education.omit(OMIT_IDS).partial().required({ school: true }),
-  experiences: Experience.omit(OMIT_IDS).partial().required({ company: true }),
-  projects: Project.omit(OMIT_IDS).partial().required({ name: true }),
+  experiences: Experience.omit(OMIT_IDS)
+    .partial()
+    .required({ company: true })
+    .extend({ techStack: TechStack.optional(), highlights: Highlights.optional() }),
+  projects: Project.omit(OMIT_IDS)
+    .partial()
+    .required({ name: true })
+    .extend({ techStack: TechStack.optional(), highlights: Highlights.optional() }),
   skills: Skill.omit(OMIT_IDS),
   awards: Award.omit(OMIT_IDS),
   intention: Intention.partial(),

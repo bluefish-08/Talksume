@@ -331,3 +331,248 @@ describe("applyFacts: ungrounded guesses", () => {
     expect(result.profile.awards[2]?.name).toBe("国家奖学金");
   });
 });
+
+describe("applyFacts: new resume fields", () => {
+  const withProject = (extra: Record<string, unknown> = {}) =>
+    Profile.parse({ projects: [{ id: "prj_1", name: "二手平台", role: "后端", ...extra }] });
+  const project = (r: { profile: Profile }) => r.profile.projects[0];
+
+  it("unions tech stacks case- and space-insensitively", () => {
+    const r = applyFacts(
+      withProject({ techStack: ["Java", "Spring Boot"] }),
+      [fact("projects", { name: "二手平台", techStack: ["springboot", "MySQL", "java"] }, "Java、MySQL")],
+      ctx,
+    );
+    expect(project(r)?.techStack).toEqual(["Java", "Spring Boot", "MySQL"]);
+  });
+
+  it("dedupes highlights by title and merges a supplement into the same detail", () => {
+    const first = applyFacts(
+      withProject(),
+      [
+        fact(
+          "projects",
+          {
+            name: "二手平台",
+            highlights: [
+              { title: "订单模块设计", detail: "设计了订单模块" },
+              { title: "搜索优化", detail: "给商品搜索加了 Redis 缓存" },
+            ],
+          },
+          "设计了订单模块…给商品搜索加了 Redis 缓存",
+        ),
+      ],
+      ctx,
+    );
+    const second = applyFacts(
+      first.profile,
+      [
+        fact(
+          "projects",
+          {
+            name: "二手平台",
+            highlights: [{ title: "搜索优化", detail: "给商品搜索加了 Redis 缓存，响应从 800ms 降到 120ms" }],
+          },
+          "响应从 800ms 降到 120ms",
+        ),
+      ],
+      ctx,
+    );
+    expect(project(second)?.highlights).toEqual([
+      { title: "订单模块设计", detail: "设计了订单模块" },
+      { title: "搜索优化", detail: "给商品搜索加了 Redis 缓存，响应从 800ms 降到 120ms" },
+    ]);
+    expect(second.conflicts).toEqual([]);
+    expect(second.changes).toEqual([
+      expect.objectContaining({ field: "highlights", itemId: "prj_1", previous: project(first)?.highlights }),
+    ]);
+  });
+
+  it("appends a non-overlapping supplement to the same title instead of replacing it", () => {
+    const base = withProject({ highlights: [{ title: "搜索优化", detail: "加了缓存" }] });
+    const r = applyFacts(
+      base,
+      [fact("projects", { name: "二手平台", highlights: [{ title: "搜索优化", detail: "还做了分词" }] })],
+      ctx,
+    );
+    expect(project(r)?.highlights).toEqual([{ title: "搜索优化", detail: "加了缓存；还做了分词" }]);
+  });
+
+  it("raises a confirmation when the number in a highlight changes, and resolves it in place", () => {
+    const base = withProject({
+      highlights: [
+        { title: "接口提速", detail: "响应从 800ms 降到 120ms" },
+        { title: "订单模块", detail: "设计了订单模块" },
+      ],
+    });
+    const r = applyFacts(
+      base,
+      [
+        fact(
+          "projects",
+          { name: "二手平台", highlights: [{ title: "接口提速", detail: "响应从 800ms 降到 200ms" }] },
+          "响应从 800ms 降到 200ms",
+        ),
+      ],
+      ctx,
+    );
+    expect(project(r)?.highlights?.[0]?.detail).toBe("响应从 800ms 降到 120ms");
+    expect(r.conflicts).toEqual([
+      expect.objectContaining({
+        field: "highlights",
+        entry: "接口提速",
+        label: "要点「接口提速」",
+        previous: "响应从 800ms 降到 120ms",
+        proposed: "响应从 800ms 降到 200ms",
+      }),
+    ]);
+    const conflict = r.conflicts[0];
+    if (!conflict) throw new Error("no conflict");
+    const resolved = resolveConflict(r.profile, r.facts, conflict, true);
+    expect(resolved.profile.projects[0]?.highlights).toEqual([
+      { title: "接口提速", detail: "响应从 800ms 降到 200ms" },
+      { title: "订单模块", detail: "设计了订单模块" },
+    ]);
+    expect(resolved.facts.find((f) => f.id === conflict.factId)?.status).toBe("confirmed");
+  });
+
+  it("drops a highlight whose numbers are not in the quote and keeps the rest", () => {
+    const r = applyFacts(
+      withProject(),
+      [
+        fact(
+          "projects",
+          {
+            name: "二手平台",
+            highlights: [
+              { title: "订单模块", detail: "设计了订单模块" },
+              { title: "用户增长", detail: "注册用户超过 5000 人" },
+              { title: "三人协作", detail: "3 人小组分工开发" },
+            ],
+          },
+          "我们三个人，我设计了订单模块，用户挺多的",
+        ),
+      ],
+      ctx,
+    );
+    expect(project(r)?.highlights?.map((h) => h.title)).toEqual(["订单模块", "三人协作"]);
+    expect(r.dropped).toEqual([expect.objectContaining({ field: "highlights" })]);
+    expect(r.dropped[0]?.reason).toContain("5000");
+  });
+
+  it("accepts a number the user said elsewhere even if the quote cut it off", () => {
+    const r = applyFacts(
+      withProject(),
+      [
+        fact(
+          "projects",
+          { name: "二手平台", highlights: [{ title: "用户增长", detail: "上线后有 2000 多个注册用户" }] },
+          "上线后有",
+        ),
+      ],
+      { ...ctx, userText: "上线后有2000多个注册用户" },
+    );
+    expect(project(r)?.highlights).toHaveLength(1);
+    expect(r.dropped).toEqual([]);
+  });
+
+  it("keeps legacy bullets visible by folding them into untitled highlights", () => {
+    const base = Profile.parse({
+      experiences: [
+        {
+          id: "exp_1",
+          kind: "internship",
+          company: "示例科技",
+          title: "后端实习",
+          bullets: ["负责订单模块", "修复缺陷"],
+        },
+      ],
+    });
+    const r = applyFacts(
+      base,
+      [
+        fact("experiences", {
+          company: "示例科技",
+          highlights: [{ title: "订单模块重构", detail: "负责订单模块，把多表联查拆成了分片查询" }],
+        }),
+      ],
+      ctx,
+    );
+    expect(r.profile.experiences[0]?.highlights).toEqual([
+      { title: "订单模块重构", detail: "负责订单模块，把多表联查拆成了分片查询" },
+      { detail: "修复缺陷" },
+    ]);
+    const later = applyFacts(
+      r.profile,
+      [fact("experiences", { company: "示例科技", bullets: ["写了单测"] })],
+      ctx,
+    );
+    expect(later.profile.experiences[0]?.highlights?.at(-1)).toEqual({ detail: "写了单测" });
+    expect(later.profile.experiences[0]?.bullets).toEqual(["负责订单模块", "修复缺陷"]);
+  });
+
+  it("folds a project's old action and result but leaves the background alone", () => {
+    const base = withProject({ situation: "校园二手平台", action: "设计了订单模块" });
+    const r = applyFacts(
+      base,
+      [
+        fact("projects", {
+          name: "二手平台",
+          highlights: [{ title: "超卖问题", detail: "用分布式锁解决了超卖" }],
+        }),
+      ],
+      ctx,
+    );
+    expect(project(r)?.highlights).toEqual([
+      { detail: "设计了订单模块" },
+      { title: "超卖问题", detail: "用分布式锁解决了超卖" },
+    ]);
+    expect(project(r)?.situation).toBe("校园二手平台");
+  });
+
+  it("merges links by url and fills a missing label", () => {
+    const base = Profile.parse({ basics: { links: [{ url: "https://github.com/demo/" }] } });
+    const r = applyFacts(
+      base,
+      [
+        fact("basics", {
+          links: [
+            { label: "GitHub", url: "github.com/demo" },
+            { label: "博客", url: "demo.example.com" },
+          ],
+        }),
+      ],
+      ctx,
+    );
+    expect(r.profile.basics.links).toEqual([
+      { label: "GitHub", url: "https://github.com/demo/" },
+      { label: "博客", url: "demo.example.com" },
+    ]);
+  });
+
+  it("stores GPA, rank, courses and honors, and never re-asks about a skill category", () => {
+    const r = applyFacts(
+      Profile.parse({ skills: [{ id: "skl_1", name: "Java", category: "编程语言" }] }),
+      [
+        fact("education", {
+          school: "示例大学",
+          degree: "bachelor",
+          gpa: "3.7/4.0",
+          rank: "专业前 10%",
+          courses: ["数据结构", "操作系统"],
+          honors: ["三好学生"],
+        }),
+        fact("skills", { name: "java", category: "后端" }),
+      ],
+      ctx,
+    );
+    expect(r.profile.education[0]).toMatchObject({
+      gpa: "3.7/4.0",
+      rank: "专业前 10%",
+      courses: ["数据结构", "操作系统"],
+      honors: ["三好学生"],
+    });
+    expect(r.profile.skills[0]?.category).toBe("编程语言");
+    expect(r.conflicts).toEqual([]);
+  });
+});

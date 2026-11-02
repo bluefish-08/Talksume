@@ -3,6 +3,7 @@ import {
   Education,
   Experience,
   type Fact,
+  type Highlight,
   type Profile,
   type ProfileSection,
   Project,
@@ -29,6 +30,8 @@ export interface Conflict {
   section: ProfileSection;
   itemId?: string;
   field: string;
+  /** 列表字段里的哪一项，如 highlights 的 title；此时 previous/proposed 是该项的 detail。 */
+  entry?: string;
   label: string;
   previous: unknown;
   proposed: unknown;
@@ -48,6 +51,8 @@ export interface DroppedField {
 
 export interface ApplyContext {
   messageId: string;
+  /** 用户全部发言，核对要点里的数字时一并参考。 */
+  userText?: string;
   genId?: (prefix: string) => string;
   drafts?: readonly Draft[];
 }
@@ -87,7 +92,12 @@ export const LEVEL_WORDS = {
 const DATE_LIKE = /\d{2,4}\s*[年.\-/]|\d{4}|[〇零一二三四五六七八九]{2,4}年|[去今前]年|\d{1,2}\s*月/;
 
 /** 熟练度和获奖日期最常被推测，只在原话里有对应字样时保留。 */
-function dropUngrounded(section: ProfileSection, payload: Rec, quote: string): Omit<DroppedField, "index">[] {
+function dropUngrounded(
+  section: ProfileSection,
+  payload: Rec,
+  quote: string,
+  userText = "",
+): Omit<DroppedField, "index">[] {
   const dropped: Omit<DroppedField, "index">[] = [];
   if (section === "skills" && typeof payload.level === "string") {
     const words: readonly string[] = LEVEL_WORDS[payload.level as keyof typeof LEVEL_WORDS] ?? [];
@@ -100,7 +110,33 @@ function dropUngrounded(section: ProfileSection, payload: Rec, quote: string): O
     dropped.push({ field: "date", reason: "原话里没有年份或日期" });
     delete payload.date;
   }
+  if (Array.isArray(payload.highlights)) {
+    payload.highlights = (payload.highlights as Highlight[]).filter((h) => {
+      const missing = ungroundedNumbers(`${h.title ?? ""} ${h.detail}`, `${quote}|${userText}`);
+      if (missing.length === 0) return true;
+      dropped.push({
+        field: "highlights",
+        reason: `要点「${h.title ?? h.detail.slice(0, 10)}」里的 ${missing.join("、")} 在原话里找不到`,
+      });
+      return false;
+    });
+  }
   return dropped;
+}
+
+const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+/** 数字必须出自原话；个位数允许原话用汉字写。 */
+export function ungroundedNumbers(text: string, quote: string): string[] {
+  const plain = quote.replace(/[\s,，]/g, "");
+  return [...new Set(text.match(/\d+(?:\.\d+)?/g) ?? [])].filter((n) => {
+    if (plain.includes(n) || plain.includes(n.replace(".", ""))) return false;
+    const small = Number(n);
+    if (Number.isInteger(small) && small <= 10) {
+      return !(plain.includes(CN_DIGITS[small] as string) || (small === 2 && plain.includes("两")));
+    }
+    return true;
+  });
 }
 
 const ITEM_SCHEMA: Record<ListSection, z.ZodType> = {
@@ -226,13 +262,112 @@ function union(existing: unknown[], incoming: unknown[]): unknown[] {
   return out;
 }
 
+const EXTRA_LABELS: Record<string, string> = {
+  bullets: "工作内容",
+  task: "任务",
+  action: "具体做法",
+  result: "结果",
+  highlights: "经历要点",
+  category: "技能分组",
+  department: "部门",
+  courses: "主修课程",
+  honors: "在校荣誉",
+};
+
 function fieldLabel(section: ProfileSection, field: string): string {
-  return SECTION_BY_NAME[section].fields.find((f) => f.field === field)?.label ?? field;
+  return (
+    SECTION_BY_NAME[section].fields.find((f) => f.field === field)?.label ?? EXTRA_LABELS[field] ?? field
+  );
 }
+
+/** 模型自己归的类，不是用户的说法：已有就不改，也不弹确认。 */
+const SOFT_FIELDS: Partial<Record<ProfileSection, readonly string[]>> = { skills: ["category"] };
+
+interface EntryConflict {
+  entry: string;
+  previous: string;
+  proposed: string;
+}
+
+function linkKey(url: unknown): string {
+  return normKey(url)
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/+$/, "");
+}
+
+function mergeLinks(existing: Rec[], incoming: Rec[]): Rec[] {
+  const out = existing.map((l) => ({ ...l }));
+  for (const link of incoming) {
+    if (blank(link.url)) continue;
+    const hit = out.find((l) => linkKey(l.url) === linkKey(link.url));
+    if (!hit) out.push({ ...link, url: String(link.url).trim() });
+    else if (blank(hit.label) && !blank(link.label)) hit.label = link.label;
+  }
+  return out;
+}
+
+/** 同 title 的要点合并 detail（走叙述字段规则）；无 title 时按 detail 包含关系去重。 */
+function mergeHighlights(
+  existing: Highlight[],
+  incoming: Highlight[],
+): { merged: Highlight[]; conflicts: EntryConflict[] } {
+  const merged = existing.map((h) => ({ ...h }));
+  const conflicts: EntryConflict[] = [];
+  for (const raw of incoming) {
+    const title = raw.title?.trim() || undefined;
+    const detail = raw.detail.trim();
+    if (!detail) continue;
+    const byTitle = title ? merged.find((h) => h.title && normKey(h.title) === normKey(title)) : undefined;
+    if (byTitle) {
+      if (sameValue(byTitle.detail, detail) || refines(detail, byTitle.detail)) continue;
+      if (refines(byTitle.detail, detail)) {
+        byTitle.detail = detail;
+        continue;
+      }
+      const narrative = mergeNarrative(byTitle.detail, detail);
+      if (narrative.kind === "set") byTitle.detail = narrative.value;
+      else if (narrative.kind === "conflict")
+        conflicts.push({ entry: byTitle.title as string, previous: byTitle.detail, proposed: detail });
+      continue;
+    }
+    const byDetail = merged.find(
+      (h) =>
+        (!title || !h.title) &&
+        (sameValue(h.detail, detail) || refines(h.detail, detail) || refines(detail, h.detail)),
+    );
+    if (byDetail) {
+      if (refines(byDetail.detail, detail)) byDetail.detail = detail;
+      if (title && !byDetail.title) byDetail.title = title;
+      continue;
+    }
+    merged.push(title ? { title, detail } : { detail });
+  }
+  return { merged, conflicts };
+}
+
+function cleanText(text: unknown): string {
+  return (typeof text === "string" ? text : "").trim().replace(/[，。；;,.\s]+$/u, "");
+}
+
+/** 条目第一次有 highlights 时，旧 bullets 和项目的做法/结果转成无标题要点，免得简历上原有内容消失；背景不转，只是一句项目介绍。 */
+function legacyHighlights(section: ProfileSection, target: Rec): Highlight[] {
+  const texts =
+    section === "experiences"
+      ? ((target.bullets as unknown[]) ?? []).map(cleanText)
+      : [cleanText(target.action), cleanText(target.result)];
+  return texts.filter(Boolean).map((detail) => ({ detail }));
+}
+
+const CONVERTED_FIELDS: Partial<Record<ProfileSection, readonly string[]>> = {
+  experiences: ["bullets"],
+  projects: ["action", "result"],
+};
 
 interface MergeOutcome {
   applied: Rec;
   conflicted: Rec;
+  entryConflicts: EntryConflict[];
   changes: ProfileChange[];
 }
 
@@ -243,11 +378,58 @@ function mergeInto(
   section: ProfileSection,
   itemId: string | undefined,
 ): MergeOutcome {
-  const outcome: MergeOutcome = { applied: {}, conflicted: {}, changes: [] };
-  for (const [field, raw] of Object.entries(payload)) {
+  const outcome: MergeOutcome = { applied: {}, conflicted: {}, entryConflicts: [], changes: [] };
+  const change = (field: string, value: unknown, previous?: unknown) =>
+    outcome.changes.push({
+      section,
+      ...(itemId ? { itemId } : {}),
+      field,
+      value,
+      ...(previous !== undefined ? { previous } : {}),
+    });
+  const rest = { ...payload };
+  const converted = CONVERTED_FIELDS[section];
+  if (converted) {
+    const incoming = Array.isArray(rest.highlights) ? (rest.highlights as Highlight[]) : [];
+    delete rest.highlights;
+    const before = Array.isArray(target.highlights) ? (target.highlights as Highlight[]) : [];
+    if (before.length > 0 || incoming.length > 0) {
+      for (const field of converted) {
+        const value = rest[field];
+        if (blank(value)) continue;
+        for (const text of Array.isArray(value) ? value : [value]) {
+          if (cleanText(text)) incoming.push({ detail: String(text).trim() });
+        }
+        outcome.applied[field] = value;
+        delete rest[field];
+      }
+    }
+    if (incoming.length > 0) {
+      const base = before.length > 0 ? before : legacyHighlights(section, target);
+      const { merged, conflicts } = mergeHighlights(base, incoming);
+      outcome.entryConflicts.push(...conflicts);
+      if (JSON.stringify(merged) !== JSON.stringify(before)) {
+        target.highlights = merged;
+        outcome.applied.highlights = incoming;
+        change("highlights", merged, before.length > 0 ? before : undefined);
+      } else if (conflicts.length === 0) outcome.applied.highlights = incoming;
+    }
+  }
+  if (section === "basics" && Array.isArray(rest.links)) {
+    const before = Array.isArray(target.links) ? (target.links as Rec[]) : [];
+    const merged = mergeLinks(before, rest.links as Rec[]);
+    delete rest.links;
+    if (JSON.stringify(merged) !== JSON.stringify(before)) {
+      target.links = merged;
+      outcome.applied.links = merged;
+      change("links", merged, before.length > 0 ? before : undefined);
+    }
+  }
+  for (const [field, raw] of Object.entries(rest)) {
     if (blank(raw)) continue;
     const incoming = cleanValue(raw);
     const existing = target[field];
+    if (SOFT_FIELDS[section]?.includes(field) && !blank(existing)) continue;
     if (Array.isArray(incoming)) {
       const merged = union(Array.isArray(existing) ? existing : [], incoming.map(cleanValue));
       if (!Array.isArray(existing) || merged.length !== existing.length) {
@@ -354,7 +536,8 @@ export function applyFacts(
       continue;
     }
     const payload = { ...parsed.data };
-    for (const d of dropUngrounded(section, payload, input.quote)) result.dropped.push({ ...d, index });
+    for (const d of dropUngrounded(section, payload, input.quote, context.userText))
+      result.dropped.push({ ...d, index });
     const factId = genId("fact");
 
     let outcome: MergeOutcome;
@@ -390,6 +573,11 @@ export function applyFacts(
           outcome.applied[field] = value;
         }
         outcome.conflicted = {};
+        for (const c of outcome.entryConflicts) {
+          const hit = (candidate.highlights as Highlight[]).find((h) => h.title === c.entry);
+          if (hit) hit.detail = c.proposed;
+        }
+        outcome.entryConflicts = [];
         const checked = ITEM_SCHEMA[section].safeParse(candidate);
         if (checked.success) {
           if (draft) drafts.splice(drafts.indexOf(draft), 1);
@@ -410,7 +598,8 @@ export function applyFacts(
     result.changes.push(...outcome.changes);
     const base = { section, quote: input.quote.trim(), sourceMessageId: context.messageId };
     const keyPayload = isList(section) ? { [ITEM_KEY[section]]: payload[ITEM_KEY[section]] } : {};
-    if (Object.keys(outcome.applied).length > 0 || Object.keys(outcome.conflicted).length === 0) {
+    const pendingCount = Object.keys(outcome.conflicted).length + outcome.entryConflicts.length;
+    if (Object.keys(outcome.applied).length > 0 || pendingCount === 0) {
       result.facts.push({
         id: factId,
         ...base,
@@ -437,6 +626,26 @@ export function applyFacts(
         label: fieldLabel(section, field),
         previous: container[field],
         proposed,
+        quote: base.quote,
+      });
+    }
+    for (const c of outcome.entryConflicts) {
+      const pendingId = genId("fact");
+      result.facts.push({
+        id: pendingId,
+        ...base,
+        payload: { ...keyPayload, highlights: [{ title: c.entry, detail: c.proposed }] },
+        status: "pending",
+      });
+      result.conflicts.push({
+        factId: pendingId,
+        section,
+        ...(itemId ? { itemId } : {}),
+        field: "highlights",
+        entry: c.entry,
+        label: `要点「${c.entry}」`,
+        previous: c.previous,
+        proposed: c.proposed,
         quote: base.quote,
       });
     }
@@ -467,7 +676,26 @@ export function resolveConflict(
     const container = isList(conflict.section)
       ? (next[conflict.section] as unknown as Rec[]).find((item) => item.id === conflict.itemId)
       : (next[conflict.section as ObjectSection] as Rec);
-    if (container) {
+    const entry = conflict.entry
+      ? ((container?.highlights as Highlight[] | undefined) ?? []).find(
+          (h) => h.title && normKey(h.title) === normKey(conflict.entry),
+        )
+      : undefined;
+    if (container && conflict.entry) {
+      if (entry) {
+        const previous = structuredClone(container.highlights);
+        entry.detail = String(conflict.proposed);
+        container.sourceFactIds = union((container.sourceFactIds as unknown[]) ?? [], [conflict.factId]);
+        changes.push({
+          section: conflict.section,
+          ...(conflict.itemId ? { itemId: conflict.itemId } : {}),
+          field: "highlights",
+          value: container.highlights,
+          previous,
+        });
+      }
+      if (pending) pending.status = entry ? "confirmed" : "superseded";
+    } else if (container) {
       for (const fact of updated) {
         if (
           fact.status === "confirmed" &&

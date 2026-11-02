@@ -2,7 +2,15 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@earendil-works/pi-ai";
 import type { ProfileSection } from "@talksume/core";
 import type { z } from "zod";
-import { computeCompleteness, pickNextSlot, SECTION_BY_NAME, type Slot, toSlot } from "./completeness.ts";
+import {
+  computeCompleteness,
+  isQuantified,
+  isSkipped,
+  pickNextSlot,
+  SECTION_BY_NAME,
+  type Slot,
+  toSlot,
+} from "./completeness.ts";
 import {
   applyFacts,
   type Conflict,
@@ -11,7 +19,7 @@ import {
   draftMissing,
   resolveConflict,
 } from "./facts.ts";
-import { liftSkips, sectionSkipEntry, skipEntryOf, skippedKeys } from "./memory.ts";
+import { liftSkips, type SkipEntry, sectionSkipEntry, skipEntryOf, skippedKeys } from "./memory.ts";
 import { describeSlot } from "./prompt.ts";
 import {
   AskUserArgs,
@@ -110,6 +118,23 @@ export function nextSlotOf(state: IntakeState): Slot | null {
     askCounts: state.askCounts,
     skipped,
   });
+}
+
+const NO_NUMBERS =
+  /没(?:有)?(?:什么|啥)?(?:具体|准确|明确)?的?(?:数字|数据|量化|统计)|没(?:有)?(?:统计|量化)过?|记不(?:清|得|太清)|不记得|忘了|说不上来/;
+
+/** 上一轮问的是量化结果、用户答没有数字或记不清时直接记为跳过，不指望模型记得调用 skip_field。 */
+export function skipUnquantified(state: IntakeState, text: string): SkipEntry | null {
+  const key = state.history.findLast((t) => t.role === "assistant")?.meta?.slot;
+  if (!key || isQuantified(text)) return null;
+  const hit = text.match(NO_NUMBERS);
+  if (!hit) return null;
+  const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
+  const slot = missing.find((m) => m.key === key && m.kind === "quantify");
+  if (!slot) return null;
+  const entry = skipEntryOf(toSlot(slot), hit[0]);
+  state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
+  return entry;
 }
 
 /** 可被 skip_field 跳过的字段：暂存条目的缺项和画像里仍缺的项。 */
@@ -213,7 +238,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       const result = applyFacts(
         state.profile,
         accepted.map((a) => a.input),
-        { messageId: ctx.messageId, genId: ctx.genId, drafts: state.drafts },
+        { messageId: ctx.messageId, genId: ctx.genId, drafts: state.drafts, userText: ctx.userCorpus },
       );
       for (const r of result.rejected) {
         rejected.push(`第 ${(accepted[r.index]?.index ?? r.index) + 1} 条：${r.reason}`);
@@ -266,7 +291,8 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     const slot = nextSlotOf(state);
     ctx.flags.asked = true;
     noteAsked(state, slot);
-    const quickReplies = cleanQuickReplies(args.quickReplies);
+    const given = cleanQuickReplies(args.quickReplies);
+    const quickReplies = given.length > 0 ? given : cleanQuickReplies(slot?.replies);
     ctx.emit({
       type: "ask",
       kind: "followup",
@@ -289,12 +315,20 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
           return text("user_skipped 必须附带用户表示没有/不想提供的原话 quote。", true);
         }
       } else {
-        const missing = computeCompleteness(state.profile)
-          .missing.filter((m) => m.section === section && m.required && m.kind === "field")
-          .map((m) => m.label);
-        const empty = computeCompleteness(state.profile).missing.some(
-          (m) => m.section === section && m.kind === "new_item" && m.required,
-        );
+        const skipped = skippedKeys(state);
+        const { missing: all } = computeCompleteness(state.profile);
+        // 深挖项问过两次或用户跳过的不再拦着，免得卡死在这个分区
+        const missing = all
+          .filter(
+            (m) =>
+              m.section === section &&
+              m.required &&
+              (m.kind === "field" || m.kind === "deepen") &&
+              !isSkipped(m, skipped) &&
+              (!m.depth || (state.askCounts[m.key] ?? 0) < 2),
+          )
+          .map((m) => (m.itemLabel ? `「${m.itemLabel}」的${m.label}` : m.label));
+        const empty = all.some((m) => m.section === section && m.kind === "new_item" && m.required);
         if (missing.length > 0 || empty) {
           return text(
             `「${label}」还缺必填信息：${missing.join("、") || "至少一条记录"}。请先追问，或在用户明确不想提供时用 user_skipped。`,

@@ -13,6 +13,7 @@ import {
   noteAsked,
   type RunContext,
   settleConflict,
+  skipUnquantified,
 } from "./tools.ts";
 import type { ChatTurn, IntakeEvent, IntakeState, JobCard, JobTools, ToolRecord, TurnMeta } from "./types.ts";
 
@@ -120,6 +121,10 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
     });
 }
 
+const CLAIMS_RECORDED = /记(?:下|好|上|到|一下)|写(?:进|入|上)|补(?:到|上|进)|已记录/;
+const NUDGE =
+  "[系统提示，不是用户发言] 你在回复里说已经记下，但这一轮没有调用 upsert_facts，画像里还没有这些信息。请现在用 upsert_facts 写入用户上一条消息里的信息（quote 逐字摘抄原话），然后用 ask_user 问下一个问题，不要重复前面的文字。";
+
 function clarifyQuestion(quote: string | undefined): string {
   return quote
     ? `我没能准确记下你说的「${quote.slice(0, 40)}」，可以再具体说一下吗？`
@@ -168,6 +173,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const asks: string[] = [];
     const changes: ProfileChange[] = [...(turn.seedChanges ?? [])];
     let quickReplies: string[] = [];
+    let askedSlot: string | undefined;
     const cards: JobCard[] = [];
     const toolLog: ToolRecord[] = [];
     const flags: RunContext["flags"] = { asked: false, changed: false };
@@ -184,6 +190,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       emit: (event) => {
         if (event.type === "ask") {
           if (event.quickReplies) quickReplies = event.quickReplies;
+          if (event.slot) askedSlot = event.slot.key;
           // 每条回复恰好带一个问题：正文已经问了就以正文为准，没问才用 ask_user 的 question
           if (event.kind === "followup" && /[?？]/.test(assistantText)) {
             queue.push({ ...event, inText: true });
@@ -203,6 +210,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       flags,
     };
 
+    if (user) skipUnquantified(state, user.text);
     const completeness = computeCompleteness(state.profile, { completedSections: state.completedSections });
     const systemPrompt = buildSystemPrompt({
       profile: state.profile,
@@ -221,6 +229,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let failures = 0;
     let lastFailedQuote: string | undefined;
     let modelTurns = 0;
+    let wrote = false;
+    let nudged = false;
     const toolArgs = new Map<string, unknown>();
 
     const agent = new Agent({
@@ -237,6 +247,14 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         if (turn.message.role === "assistant" && turn.message.stopReason === "error") return;
         modelTurns++;
         if (flags.asked || failures >= 2 || modelTurns >= maxModelTurns) return { action: "end" };
+        // 关思考时模型偶尔只回一句「记下了」却没调工具，提醒一次
+        const calledTool =
+          turn.message.role === "assistant" && turn.message.content.some((c) => c.type === "toolCall");
+        if (user && !wrote && !nudged && !calledTool && CLAIMS_RECORDED.test(assistantText)) {
+          nudged = true;
+          agent.followUp({ role: "user", content: NUDGE, timestamp: Date.now() });
+          return { action: "continue" };
+        }
       },
     });
 
@@ -255,6 +273,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           break;
         case "tool_execution_start":
           toolArgs.set(event.toolCallId, event.args);
+          if (event.toolName === "upsert_facts") wrote = true;
           break;
         case "tool_execution_end":
           if (event.isError) {
@@ -302,6 +321,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       if (slot && !/[?？]/.test(assistantText)) {
         noteAsked(state, slot);
         asks.push(slot.question);
+        askedSlot = slot.key;
         yield {
           type: "ask",
           kind: "followup",
@@ -320,6 +340,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const meta: TurnMeta = {
       ...(changes.length > 0 ? { changes } : {}),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
+      ...(askedSlot ? { slot: askedSlot } : {}),
       ...(cards.length > 0 ? { jobs: cards } : {}),
       ...(toolLog.length > 0 ? { tools: toolLog } : {}),
     };

@@ -552,6 +552,7 @@ describe("跨会话记忆", () => {
         email: "liming@example.com",
         city: "江城",
         summary: "后端",
+        links: [{ label: "GitHub", url: "github.com/example" }],
       },
       education: [
         {
@@ -559,6 +560,7 @@ describe("跨会话记忆", () => {
           school: "示例大学",
           degree: "bachelor",
           major: "计算机",
+          courses: ["数据结构"],
           start: "2021-09",
           end: "2025-06",
         },
@@ -569,7 +571,7 @@ describe("跨会话记忆", () => {
       .set({ completedSections: ["experiences", "projects", "skills", "awards", "intention"] });
 
     const a = await createConversation();
-    expect(a.res.json().greeting).toContain("成绩或排名");
+    expect(a.res.json().greeting).toContain("GPA 或专业排名");
     const { events } = await send(a.id, "成绩就不说了");
     expect(events.at(-1)?.event).toBe("done");
 
@@ -579,7 +581,7 @@ describe("跨会话记忆", () => {
     ]);
 
     const b = await createConversation();
-    expect(b.res.json().greeting).not.toContain("成绩");
+    expect(b.res.json().greeting).not.toContain("GPA");
     const detail = await app.inject({ method: "GET", url: `/api/v1/conversations/${b.id}` });
     expect(detail.statusCode).toBe(200);
   });

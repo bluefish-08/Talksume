@@ -6,6 +6,7 @@ import {
   fauxToolCall,
   type JsonObject,
 } from "@earendil-works/pi-ai";
+import { Profile } from "@talksume/core";
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
 import { createIntakeController } from "./controller.ts";
@@ -677,7 +678,7 @@ describe("intake controller: quick replies", () => {
     const state = createIntakeState();
     const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "你好" }));
     expect(asks(events)[0]).not.toHaveProperty("quickReplies");
-    expect(state.history.at(-1)?.meta).toBeUndefined();
+    expect(state.history.at(-1)?.meta).toEqual({ slot: "basics:_:name" });
   });
 
   it("cleans dirty lists: dedupes, drops blanks and overlong items, caps at 4, needs at least 2", () => {
@@ -721,5 +722,113 @@ describe("intake controller: skill levels", () => {
     expect(prompts[0]).toContain("熟悉→familiar");
     const schema = JSON.stringify(toolJsonSchema(UpsertFactsArgs));
     expect(schema).toContain('"beginner","familiar","proficient","expert"');
+  });
+});
+
+describe("intake controller: digging into one experience", () => {
+  const seeded = () =>
+    createIntakeState({
+      profile: Profile.parse({
+        basics: { name: "李明", phone: "13800001111", email: "liming@example.com" },
+        education: [{ id: "edu_1", school: "示例大学", degree: "bachelor", major: "软件工程" }],
+        projects: [{ id: "prj_1", name: "校园二手平台", role: "后端" }],
+        skills: ["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, name })),
+        intention: { roles: ["后端开发"], cities: ["杭州"], jobType: "campus" },
+      }),
+      completedSections: ["experiences", "awards"],
+    });
+  const target = (prompt: string | undefined) => prompt?.match(/key=([\w:]+)/)?.[1];
+
+  it("asks tech stack, duty, challenge, then numbers, and records 没有数字 as skipped", async () => {
+    const prompts: string[] = [];
+    const prj = (payload: JsonObject, quote: string) => ({
+      section: "projects",
+      payload: { name: "校园二手平台", ...payload },
+      quote,
+    });
+    const { controller } = fake(
+      [
+        toolTurn(
+          upsert([prj({ techStack: ["Java", "Spring Boot", "MySQL"] }, "Java、Spring Boot 和 MySQL")]),
+        ),
+        toolTurn(ask("你具体负责哪一块？")),
+        toolTurn(
+          upsert([
+            prj(
+              { highlights: [{ title: "订单模块设计", detail: "负责订单和支付回调模块" }] },
+              "负责订单和支付回调模块",
+            ),
+          ]),
+        ),
+        toolTurn(ask("遇到过什么难点？")),
+        toolTurn(
+          upsert([
+            prj(
+              {
+                techStack: ["Redis", "java"],
+                highlights: [{ title: "超卖问题", detail: "用 Redis 分布式锁解决了超卖" }],
+              },
+              "用 Redis 分布式锁解决了超卖",
+            ),
+          ]),
+        ),
+        toolTurn(ask("最后效果怎么样？有数字吗？")),
+        toolTurn(ask("那这个项目大概做了多久？")),
+      ],
+      prompts,
+    );
+    const state = seeded();
+    const turn = (id: string, text: string) => collect(controller.handleUserMessage(state, { id, text }));
+
+    await turn("m1", "Java、Spring Boot 和 MySQL");
+    expect(target(prompts[0])).toBe("projects:prj_1:techStack");
+    await turn("m2", "负责订单和支付回调模块");
+    expect(target(prompts[2])).toBe("projects:prj_1:duty");
+    const e3 = await turn("m3", "用 Redis 分布式锁解决了超卖");
+    expect(target(prompts[4])).toBe("projects:prj_1:challenge");
+    expect(asks(e3)[0]).toMatchObject({
+      slot: expect.objectContaining({ field: "impact" }),
+      quickReplies: ["没有具体数字", "记不清了"],
+    });
+    expect(state.profile.projects[0]?.techStack).toEqual(["Java", "Spring Boot", "MySQL", "Redis"]);
+    expect(state.profile.projects[0]?.highlights?.map((h) => h.title)).toEqual(["订单模块设计", "超卖问题"]);
+
+    await turn("m4", "没有具体数字，记不清了");
+    expect(state.skipped).toEqual([
+      expect.objectContaining({ key: "projects:prj_1:impact", quote: "没有具体数字" }),
+    ]);
+    expect(target(prompts[6])).not.toBe("projects:prj_1:impact");
+    expect(prompts[6]).toContain("项目经历-校园二手平台-量化结果");
+  });
+
+  it("does not treat 记不清 as a skip when a different question is pending", async () => {
+    const { controller } = fake([toolTurn(ask("你具体负责哪一块？"))]);
+    const state = seeded();
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "记不清用了啥了" }));
+    expect(state.skipped).toEqual([]);
+  });
+});
+
+describe("intake controller: claimed but not written", () => {
+  it("nudges the model once when it says 记下了 without calling upsert_facts", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage([fauxText("好的，技能记下了。")]),
+      toolTurn(
+        upsert([{ section: "skills", payload: { name: "Python" }, quote: "我会 Python" }]),
+        ask("还会别的吗？"),
+      ),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "我会 Python" }));
+    expect(state.profile.skills.map((s) => s.name)).toEqual(["Python"]);
+    expect(asks(events).map((a) => a.question)).toEqual(["还会别的吗？"]);
+    expect(state.history.filter((t) => t.role === "user").map((t) => t.content)).toEqual(["我会 Python"]);
+  });
+
+  it("does not nudge a plain answer that claims nothing", async () => {
+    const { core, controller } = fake([fauxAssistantMessage([fauxText("一般一页就够。")])]);
+    const state = createIntakeState();
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "简历写几页好？" }));
+    expect(core.state.callCount).toBe(1);
   });
 });

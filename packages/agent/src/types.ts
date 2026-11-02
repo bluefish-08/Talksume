@@ -60,6 +60,8 @@ export interface ToolRecord {
 /** 随助手消息落库的附加信息：本轮写入的变更、快捷回复、岗位卡片与岗位工具调用。 */
 export type TurnMeta = {
   changes?: ProfileChange[];
+  /** 这条回复追问的目标字段 key。 */
+  slot?: string;
   quickReplies?: string[];
   jobs?: JobCard[];
   tools?: ToolRecord[];

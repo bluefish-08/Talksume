@@ -66,7 +66,7 @@ export async function runSample(sample: Sample, controller: IntakeController): P
     }
   }
 
-  const units = scoreProfile(state.profile, sample.expected);
+  const units = scoreProfile(state.profile, sample.expected, sample.turns);
   return {
     sample,
     profile: state.profile,

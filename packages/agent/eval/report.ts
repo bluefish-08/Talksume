@@ -1,4 +1,4 @@
-import { type Metrics, summarize, summarizeBySection, type UnitResult } from "./metrics.ts";
+import { type Metrics, NEW_FIELDS, summarize, summarizeBySection, type UnitResult } from "./metrics.ts";
 import type { SampleRun } from "./runner.ts";
 
 export interface ReportMeta {
@@ -25,6 +25,35 @@ const SECTION_LABELS: Record<string, string> = {
   awards: "获奖",
   intention: "求职意向",
 };
+
+const fieldOf = (key: string) => key.match(/\.(\w+)(?:#|$)/)?.[1] ?? "";
+
+function newFieldLines(runs: readonly SampleRun[]): string[] {
+  const all = runs.flatMap((r) => r.units);
+  const rows = NEW_FIELDS.flatMap((field) => {
+    const units = all.filter((u) => fieldOf(u.key) === field);
+    return units.length > 0 ? [row(field, summarize(units))] : [];
+  });
+  const stats = runs.map((r) => {
+    const items = [...r.profile.experiences, ...r.profile.projects];
+    const highlights = items.flatMap((i) => i.highlights ?? []);
+    const titled = highlights.filter((h) => h.title?.trim()).length;
+    const stacked = items.filter((i) => (i.techStack ?? []).length > 0).length;
+    const edu = r.profile.education.filter((e) => e.gpa || e.rank).length;
+    return `| ${r.sample.id} | ${items.length} | ${stacked} | ${highlights.length} | ${titled} | ${edu} |`;
+  });
+  return [
+    "",
+    "## 新字段",
+    "",
+    HEADER,
+    ...rows,
+    "",
+    "| 样例 | 实习+项目条数 | 带技术栈 | 要点数 | 带关键词标题 | 有 GPA/排名的教育 |",
+    "|---|---|---|---|---|---|",
+    ...stats,
+  ];
+}
 
 function errorLines(units: readonly UnitResult[]): string[] {
   return units
@@ -70,6 +99,7 @@ export function renderReport(runs: readonly SampleRun[], meta: ReportMeta): stri
       (r) =>
         `| ${r.sample.id} | ${pct(r.completeness)} | ${r.asks} | ${r.autoConfirmed} | ${r.errors.length} | ${(r.durationMs / 1000).toFixed(1)}s |`,
     ),
+    ...newFieldLines(runs),
     "",
     "## 错误明细",
   ];
@@ -77,10 +107,9 @@ export function renderReport(runs: readonly SampleRun[], meta: ReportMeta): stri
     const details = errorLines(r.units);
     lines.push("", `### ${r.sample.id}`, "", ...(details.length > 0 ? details : ["全部命中。"]));
   }
-  lines.push("", "## 对话样例（第一段）");
-  const first = runs[0];
-  if (first) {
-    for (const t of first.transcript)
+  for (const r of runs.filter((r, i) => i === 0 || r.sample.id.startsWith("deep-"))) {
+    lines.push("", `## 对话（${r.sample.id}）`);
+    for (const t of r.transcript)
       lines.push("", `**用户**：${t.user}`, "", `**助手**：${t.assistant || "（无回复）"}`);
   }
   return `${lines.join("\n")}\n`;
