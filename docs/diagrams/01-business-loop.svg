@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="140 20 480 500" role="img">
+<title>求职业务闭环：五个环节与三条回流</title>
+<desc>对话收集、信息抽取、简历生成、职位匹配、投递反馈自上而下串联；职位匹配按 JD 反向优化简历，投递结果回流调整匹配权重，面试复盘把新经历补充回对话</desc>
+<style>
+svg{color:#2c2c2a}
+.t,.th,.ts{font-family:system-ui,-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;fill:currentColor}
+.t,.th{font-size:14px}.th{font-weight:500}.ts{font-size:12px}
+.arr{stroke:currentColor;stroke-width:1.5;fill:none}
+.c-teal>rect{fill:#E1F5EE;stroke:#0F6E56}.c-teal .th{fill:#085041}.c-teal .ts{fill:#0F6E56}
+.c-coral>rect{fill:#FAECE7;stroke:#993C1D}.c-coral .th{fill:#712B13}.c-coral .ts{fill:#993C1D}
+@media (prefers-color-scheme:dark){svg{color:#c2c0b6}
+.c-teal>rect{fill:#085041;stroke:#5DCAA5}.c-teal .th{fill:#9FE1CB}.c-teal .ts{fill:#5DCAA5}
+.c-coral>rect{fill:#712B13;stroke:#F0997B}.c-coral .th{fill:#F5C4B3}.c-coral .ts{fill:#F0997B}
+}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="c-teal"><rect x="160" y="40" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="240" y="58" text-anchor="middle" dominant-baseline="central">对话收集</text>
+<text class="ts" x="240" y="78" text-anchor="middle" dominant-baseline="central">多轮引导</text></g>
+<g class="c-teal"><rect x="160" y="140" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="240" y="158" text-anchor="middle" dominant-baseline="central">信息抽取</text>
+<text class="ts" x="240" y="178" text-anchor="middle" dominant-baseline="central">LLM 结构化</text></g>
+<g class="c-teal"><rect x="160" y="240" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="240" y="258" text-anchor="middle" dominant-baseline="central">简历生成</text>
+<text class="ts" x="240" y="278" text-anchor="middle" dominant-baseline="central">PDF · Word</text></g>
+<g class="c-teal"><rect x="160" y="340" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="240" y="358" text-anchor="middle" dominant-baseline="central">职位匹配</text>
+<text class="ts" x="240" y="378" text-anchor="middle" dominant-baseline="central">召回 + 精排</text></g>
+<g class="c-coral"><rect x="160" y="440" width="160" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="240" y="458" text-anchor="middle" dominant-baseline="central">投递反馈</text>
+<text class="ts" x="240" y="478" text-anchor="middle" dominant-baseline="central">状态 + 提醒</text></g>
+
+<line class="arr" x1="240" y1="98" x2="240" y2="138" marker-end="url(#arrow)"/>
+<text class="ts" x="250" y="118" dominant-baseline="central">每轮增量</text>
+<line class="arr" x1="240" y1="198" x2="240" y2="238" marker-end="url(#arrow)"/>
+<text class="ts" x="250" y="218" dominant-baseline="central">画像 JSON</text>
+<line class="arr" x1="240" y1="298" x2="240" y2="338" marker-end="url(#arrow)"/>
+<text class="ts" x="250" y="318" dominant-baseline="central">简历版本</text>
+<line class="arr" x1="240" y1="398" x2="240" y2="438" marker-end="url(#arrow)"/>
+<text class="ts" x="250" y="418" dominant-baseline="central">报告 + 话术</text>
+
+<path class="arr" d="M320 356 L360 356 L360 268 L322 268" marker-end="url(#arrow)"/>
+<text class="ts" x="370" y="312" dominant-baseline="central">按 JD 反向优化</text>
+<path class="arr" d="M320 468 L480 468 L480 380 L322 380" marker-end="url(#arrow)"/>
+<text class="ts" x="490" y="424" dominant-baseline="central">结果回流调权</text>
+<path class="arr" d="M320 484 L600 484 L600 68 L322 68" marker-end="url(#arrow)"/>
+<text class="ts" x="592" y="260" text-anchor="end" dominant-baseline="central">复盘补充经历</text>
+</svg>
