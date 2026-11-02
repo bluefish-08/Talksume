@@ -102,6 +102,10 @@
   cursor: pointer;
 }
 
+.itemRename {
+  right: 32px;
+}
+
 .itemAction:hover {
   background: var(--border);
   color: var(--text);
@@ -114,7 +118,7 @@
 
 .item:hover .link,
 .item:focus-within .link {
-  padding-right: 34px;
+  padding-right: 62px;
 }
 
 @media (hover: none) {
@@ -172,4 +176,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.confirmText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2, var(--text));
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirmDanger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }

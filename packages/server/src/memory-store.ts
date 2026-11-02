@@ -7,7 +7,7 @@ import {
   type SummaryNote,
 } from "@talksume/agent";
 import { type Db, schema } from "@talksume/db";
-import { and, asc, desc, eq, exists, ne, notExists } from "drizzle-orm";
+import { and, asc, desc, eq, exists, isNull, ne, notExists } from "drizzle-orm";
 
 const { conversations, conversationSummaries, intakeLedgers, messages } = schema;
 
@@ -69,7 +69,8 @@ export async function recentSummaries(db: Executor, userId: string, limit = 3): 
       createdAt: conversationSummaries.createdAt,
     })
     .from(conversationSummaries)
-    .where(eq(conversationSummaries.userId, userId))
+    .innerJoin(conversations, eq(conversations.id, conversationSummaries.conversationId))
+    .where(and(eq(conversationSummaries.userId, userId), isNull(conversations.deletedAt)))
     .orderBy(desc(conversationSummaries.createdAt))
     .limit(limit);
   return rows.map((r) => ({
@@ -87,6 +88,7 @@ export async function unsummarizedConversation(db: Db, userId: string, exceptId:
     .where(
       and(
         eq(conversations.userId, userId),
+        isNull(conversations.deletedAt),
         ne(conversations.id, exceptId),
         notExists(
           db

@@ -51,6 +51,7 @@ function client(headers: Record<string, string> = {}) {
       request<T>("POST", path, body, signal, headers),
     patch: <T>(path: string, body: unknown, signal?: AbortSignal) =>
       request<T>("PATCH", path, body, signal, headers),
+    delete: <T>(path: string, signal?: AbortSignal) => request<T>("DELETE", path, undefined, signal, headers),
   };
 }
 

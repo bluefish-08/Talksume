@@ -71,6 +71,13 @@
       "when": 1793639150679,
       "tag": "0009_jobs_duplicate_of",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793641927463,
+      "tag": "0010_conversation_soft_delete",
+      "breakpoints": true
     }
   ]
 }

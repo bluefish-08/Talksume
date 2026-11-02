@@ -1,6 +1,6 @@
 import { type Db, schema } from "@talksume/db";
 import type { Gateway } from "@talksume/llm-gateway";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import type { LoadedConversation } from "./conversation-store.ts";
 
@@ -102,7 +102,13 @@ export async function renameConversation(db: Db, userId: string, conversationId:
   const [row] = await db
     .update(conversations)
     .set({ title, titleSource: "user" })
-    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.userId, userId),
+        isNull(conversations.deletedAt),
+      ),
+    )
     .returning({ id: conversations.id, title: conversations.title, titleSource: conversations.titleSource });
   return row;
 }

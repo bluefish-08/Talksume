@@ -58,3 +58,22 @@ export function useRenameConversation() {
     onSettled: () => client.invalidateQueries({ queryKey: qk.conversations }),
   });
 }
+
+export function useDeleteConversation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/v1/conversations/${encodeURIComponent(id)}`),
+    onSuccess: (_, id) =>
+      client.setQueryData<ConversationSummary[]>(qk.conversations, (all) => all?.filter((c) => c.id !== id)),
+    onSettled: () => client.invalidateQueries({ queryKey: qk.conversations }),
+  });
+}
+
+export function useRestoreConversation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<ConversationSummary>(`/api/v1/conversations/${encodeURIComponent(id)}/restore`),
+    onSettled: () => client.invalidateQueries({ queryKey: qk.conversations }),
+  });
+}

@@ -16,12 +16,14 @@ import type { LlmDeps, RouteModule } from "../app.ts";
 import { summarizePrevious } from "../conversation-memory.ts";
 import {
   createConversation,
+  deleteConversation,
   type LoadedConversation,
   listConversations,
   loadConversation,
   loadMessages,
   loadUserMemory,
   persistState,
+  restoreConversation,
 } from "../conversation-store.ts";
 import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
@@ -116,6 +118,21 @@ export const conversationRoutes: RouteModule = (app, deps) => {
       })),
       ...snapshotOf(loaded.state),
     };
+  });
+
+  app.delete("/api/v1/conversations/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await deleteConversation(db, req.userId, id))) {
+      return sendError(reply, 404, "conversation_not_found", "会话不存在");
+    }
+    return reply.code(204).send();
+  });
+
+  app.post("/api/v1/conversations/:id/restore", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const row = await restoreConversation(db, req.userId, id);
+    if (!row) return sendError(reply, 404, "conversation_not_found", "会话不存在");
+    return { ...row, updatedAt: row.updatedAt.toISOString() };
   });
 
   /** 接管响应，把一轮对话的事件流式推出，结束后落库并发 done。 */

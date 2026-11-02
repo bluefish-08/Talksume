@@ -2,9 +2,9 @@ import { computeCompleteness } from "@talksume/agent";
 import { profileToResume, ResumeStyle, resolveResumeStyle } from "@talksume/core";
 import { schema } from "@talksume/db";
 import { renderDocx, renderPdf } from "@talksume/resume-render";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { RouteModule } from "../app.ts";
-import { latestCompletedSections, loadProfile } from "../conversation-store.ts";
+import { latestCompletedSections, listFacts, loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
 import { polishedResume } from "../polish-store.ts";
 import { loadResumeStyle } from "../resume-style.ts";
@@ -73,12 +73,7 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
   });
 
   app.get("/api/v1/facts", async (req) => {
-    const { profileFacts } = schema;
-    const rows = await db
-      .select()
-      .from(profileFacts)
-      .where(eq(profileFacts.userId, req.userId))
-      .orderBy(asc(profileFacts.createdAt));
+    const rows = await listFacts(db, req.userId);
     return {
       items: rows.map((r) => ({
         id: r.id,

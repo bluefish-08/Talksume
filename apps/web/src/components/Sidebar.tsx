@@ -1,12 +1,20 @@
-import { FileText, ListChecks, Pencil, Plus, Search } from "lucide-react";
+import { FileText, ListChecks, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
-import { NavLink } from "react-router";
-import { useConversations, useProfile, useRenameConversation } from "../api/queries.ts";
+import { NavLink, useMatch, useNavigate } from "react-router";
+import {
+  useConversations,
+  useDeleteConversation,
+  useProfile,
+  useRenameConversation,
+  useRestoreConversation,
+} from "../api/queries.ts";
 import type { ConversationSummary } from "../api/types.ts";
+import { Modal } from "../features/jobs/Modal.tsx";
 import { NotificationsBell } from "../features/notifications/NotificationsBell.tsx";
 import { Logo } from "./Logo.tsx";
 import styles from "./Sidebar.module.css";
 import { useToast } from "./Toast.tsx";
+import { Button } from "./ui.tsx";
 
 const NAV = [
   { to: "/resume", label: "我的简历", icon: FileText },
@@ -72,9 +80,25 @@ function ConversationItem({
   onNavigate?: (() => void) | undefined;
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const rename = useRenameConversation();
+  const remove = useDeleteConversation();
+  const restore = useRestoreConversation();
   const toast = useToast();
+  const navigate = useNavigate();
+  const isCurrent = useMatch(`/c/${c.id}`) !== null;
   const label = c.title ?? "新对话";
+
+  const fail = (error: Error) => toast(error.message, { tone: "error" });
+  const undo = () => restore.mutateAsync(c.id).catch(fail);
+  // 成功后列表项会卸载，mutate 的回调不再触发，所以用 promise 接后续
+  const confirmDelete = () => {
+    setConfirming(false);
+    remove.mutateAsync(c.id).then(() => {
+      if (isCurrent) navigate("/", { replace: true });
+      toast("已删除", { action: { label: "撤销", onClick: undo }, ms: 10_000 });
+    }, fail);
+  };
 
   const commit = (value: string) => {
     setEditing(false);
@@ -102,13 +126,37 @@ function ConversationItem({
       </NavLink>
       <button
         type="button"
-        className={styles.itemAction}
+        className={`${styles.itemAction} ${styles.itemRename}`}
         aria-label={`重命名「${label}」`}
         title="重命名"
         onClick={() => setEditing(true)}
       >
         <Pencil size={14} strokeWidth={1.8} aria-hidden="true" />
       </button>
+      <button
+        type="button"
+        className={styles.itemAction}
+        aria-label={`删除「${label}」`}
+        title="删除"
+        onClick={() => setConfirming(true)}
+      >
+        <Trash2 size={14} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+      {confirming && (
+        <Modal title="删除这段对话？" onClose={() => setConfirming(false)}>
+          <p className={styles.confirmText}>
+            删除这段对话的聊天记录。已经写进简历的内容会保留，可以在『我的简历』里修改。
+          </p>
+          <div className={styles.confirmActions}>
+            <Button variant="ghost" onClick={() => setConfirming(false)}>
+              取消
+            </Button>
+            <Button variant="dark" className={styles.confirmDanger} onClick={confirmDelete}>
+              删除
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

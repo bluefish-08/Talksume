@@ -12,7 +12,7 @@ import {
 } from "@talksume/agent";
 import { type Fact, Profile } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { fallbackTitle } from "./conversation-title.ts";
 import { loadLedger, recentSummaries, saveLedger } from "./memory-store.ts";
 
@@ -94,7 +94,7 @@ export async function loadUserMemory(db: Db, userId: string) {
   return { profile, facts: factRows.map(toFact), ledger, summaries };
 }
 
-/** 会话不属于该用户时返回 undefined，调用方一律按 404 处理。 */
+/** 会话不属于该用户或已删除时返回 undefined，调用方一律按 404 处理。 */
 export async function loadConversation(
   db: Db,
   userId: string,
@@ -104,7 +104,13 @@ export async function loadConversation(
   const [conv] = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.userId, userId),
+        isNull(conversations.deletedAt),
+      ),
+    );
   if (!conv) return undefined;
 
   const [{ profile, facts, ledger, summaries }, stored] = await Promise.all([
@@ -244,9 +250,57 @@ export async function listConversations(db: Db, userId: string, limit = 30) {
   return db
     .select({ id: conversations.id, title: conversations.title, updatedAt: conversations.updatedAt })
     .from(conversations)
-    .where(eq(conversations.userId, userId))
+    .where(and(eq(conversations.userId, userId), isNull(conversations.deletedAt)))
     .orderBy(desc(conversations.updatedAt))
     .limit(limit);
+}
+
+/** 软删除：只打标记，消息、事实、画像都不动；返回 false 表示不存在、越权或已删除。 */
+export async function deleteConversation(db: Db, userId: string, conversationId: string) {
+  if (!isUuid(conversationId)) return false;
+  const rows = await db
+    .update(conversations)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.userId, userId),
+        isNull(conversations.deletedAt),
+      ),
+    )
+    .returning({ id: conversations.id });
+  return rows.length > 0;
+}
+
+export async function restoreConversation(db: Db, userId: string, conversationId: string) {
+  if (!isUuid(conversationId)) return undefined;
+  const [row] = await db
+    .update(conversations)
+    .set({ deletedAt: null })
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.userId, userId),
+        isNotNull(conversations.deletedAt),
+      ),
+    )
+    .returning({ id: conversations.id, title: conversations.title, updatedAt: conversations.updatedAt });
+  return row;
+}
+
+/** 事实本身一直保留；来源消息所在会话被删后，来源置空，前端就不会去找不存在的会话。 */
+export async function listFacts(db: Db, userId: string) {
+  const rows = await db
+    .select({
+      fact: profileFacts,
+      sourceAlive: sql<boolean>`(${conversations.id} is null or ${conversations.deletedAt} is null)`,
+    })
+    .from(profileFacts)
+    .leftJoin(messages, eq(messages.id, profileFacts.sourceMessageId))
+    .leftJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(eq(profileFacts.userId, userId))
+    .orderBy(asc(profileFacts.createdAt));
+  return rows.map((r) => ({ ...r.fact, sourceMessageId: r.sourceAlive ? r.fact.sourceMessageId : null }));
 }
 
 export async function latestCompletedSections(db: Db, userId: string) {

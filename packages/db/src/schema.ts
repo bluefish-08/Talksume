@@ -83,6 +83,7 @@ export const conversations = pgTable(
     title: text("title"),
     titleSource: text("title_source").$type<"auto" | "user">().notNull().default("auto"),
     intakeState: jsonb("intake_state").$type<ConversationIntakeState>().notNull().default({}),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
