@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { AppShell } from "./components/AppShell.tsx";
+import { ToastProvider } from "./components/Toast.tsx";
 import { ApplicationsPage } from "./pages/Applications.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { HomePage } from "./pages/Home.tsx";
@@ -29,7 +30,9 @@ const router = createBrowserRouter([
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

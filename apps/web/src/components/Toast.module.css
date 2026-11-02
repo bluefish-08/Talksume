@@ -1,0 +1,51 @@
+.stack {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 50;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: var(--r);
+  background: var(--ink);
+  color: var(--ink-text);
+  box-shadow: var(--shadow-pop);
+  font-size: 13px;
+  animation: rise 160ms ease;
+}
+
+.success {
+  background: #0b4f35;
+}
+
+.error {
+  background: #7a1d22;
+}
+
+.action {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  color: #9fc0ff;
+  font-weight: 500;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

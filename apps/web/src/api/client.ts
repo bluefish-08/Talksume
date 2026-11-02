@@ -29,8 +29,9 @@ export async function request<T>(
   path: string,
   body?: unknown,
   signal?: AbortSignal,
+  headers: Record<string, string> = {},
 ): Promise<T> {
-  const init: RequestInit = { method, headers: { Accept: "application/json" } };
+  const init: RequestInit = { method, headers: { Accept: "application/json", ...headers } };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
     init.headers = { ...init.headers, "Content-Type": "application/json" };
@@ -43,7 +44,15 @@ export async function request<T>(
   return data as T;
 }
 
-export const api = {
-  get: <T>(path: string, signal?: AbortSignal) => request<T>("GET", path, undefined, signal),
-  post: <T>(path: string, body: unknown = {}, signal?: AbortSignal) => request<T>("POST", path, body, signal),
-};
+function client(headers: Record<string, string> = {}) {
+  return {
+    get: <T>(path: string, signal?: AbortSignal) => request<T>("GET", path, undefined, signal, headers),
+    post: <T>(path: string, body: unknown = {}, signal?: AbortSignal) =>
+      request<T>("POST", path, body, signal, headers),
+  };
+}
+
+export const api = client();
+
+/** 开发期身份：HR 工作台用另一个用户身份请求（服务端 dev auth 读 x-talksume-user）。 */
+export const apiAs = (userId: string) => client({ "x-talksume-user": userId });
