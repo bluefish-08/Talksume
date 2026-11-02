@@ -1,0 +1,63 @@
+.page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bar {
+  flex: none;
+  min-height: 60px;
+  padding: 8px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.progress {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.template {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-sunken);
+  padding: 32px 24px 48px;
+}
+
+.sheet {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.hint {
+  margin: 0 0 16px;
+}
+
+@media (max-width: 560px) {
+  .canvas {
+    padding: 16px 12px 32px;
+  }
+}

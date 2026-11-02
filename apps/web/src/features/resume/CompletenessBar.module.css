@@ -1,0 +1,30 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.label {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.track {
+  flex: 1;
+  min-width: 40px;
+}
+
+.pct {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-strong);
+}
+
+.missing {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}

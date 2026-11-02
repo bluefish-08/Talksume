@@ -1,0 +1,175 @@
+.thread {
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.userWrap {
+  align-self: flex-end;
+  max-width: 82%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.user {
+  background: var(--accent-bubble);
+  border-radius: 18px 18px 6px 18px;
+  padding: 12px 16px;
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.failed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.retry {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.retry:hover {
+  background: var(--danger-soft);
+}
+
+.assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.text p {
+  margin: 0;
+}
+
+.text strong {
+  font-weight: 600;
+}
+
+.typing {
+  display: inline-flex;
+  gap: 5px;
+  padding: 10px 0;
+}
+
+.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--placeholder);
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+.typing i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.written {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.writtenBtn {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.writtenBtn:hover {
+  color: var(--text);
+}
+
+.tick {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.up {
+  transform: rotate(180deg);
+}
+
+.changes {
+  margin: 0 0 0 8px;
+  padding: 2px 0 2px 18px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 1.5px solid var(--border-strong);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.changeSection {
+  margin-right: 1em;
+  color: var(--muted);
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confirmLabel {
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.confirmBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -1,6 +1,8 @@
 import { computeCompleteness } from "@talksume/agent";
 import { profileToResume } from "@talksume/core";
+import { schema } from "@talksume/db";
 import { renderDocx, renderPdf } from "@talksume/resume-render";
+import { asc, eq } from "drizzle-orm";
 import type { RouteModule } from "../app.ts";
 import { latestCompletedSections, loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
@@ -31,6 +33,25 @@ export const resumeRoutes: RouteModule = (app, { db }) => {
   app.get("/api/v1/resume", async (req) => {
     const { profile, version } = await loadProfile(db, req.userId);
     return { resume: profileToResume(profile), profileVersion: version };
+  });
+
+  app.get("/api/v1/facts", async (req) => {
+    const { profileFacts } = schema;
+    const rows = await db
+      .select()
+      .from(profileFacts)
+      .where(eq(profileFacts.userId, req.userId))
+      .orderBy(asc(profileFacts.createdAt));
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        section: r.section,
+        quote: r.quote,
+        sourceMessageId: r.sourceMessageId,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    };
   });
 
   app.get("/api/v1/resume/export", async (req, reply) => {

@@ -60,6 +60,32 @@ describe("画像与简历预览", () => {
   });
 });
 
+describe("事实原话", () => {
+  it("只返回当前用户的事实，按创建时间排序", async () => {
+    await seedProfile();
+    const [other] = await handle.db
+      .insert(schema.users)
+      .values({ email: "other@example.com" })
+      .returning({ id: schema.users.id });
+    const mine = headers["x-talksume-user"] ?? "";
+    await handle.db.insert(schema.profileFacts).values([
+      { userId: mine, section: "skills", payload: { name: "Go" }, quote: "我会 Go", status: "confirmed" },
+      { userId: other?.id ?? "", section: "basics", payload: {}, quote: "别人的话", status: "confirmed" },
+    ]);
+    const res = await app.inject({ method: "GET", url: "/api/v1/facts", headers });
+    expect(res.statusCode).toBe(200);
+    const { items } = res.json();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ section: "skills", quote: "我会 Go", status: "confirmed" });
+    expect(items[0]).not.toHaveProperty("payload");
+  });
+
+  it("没有事实时返回空列表", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/v1/facts" });
+    expect(res.json()).toEqual({ items: [] });
+  });
+});
+
 describe("简历导出", () => {
   it("没有内容时返回 409", async () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/resume/export?format=docx" });
