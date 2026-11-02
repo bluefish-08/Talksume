@@ -144,6 +144,113 @@ describe("applyFacts", () => {
     expect(result.profile.intention.roles).toEqual(["后端", "数据"]);
   });
 
+  describe("text that adds to what was said", () => {
+    const project = () =>
+      applyFacts(
+        Profile.parse({}),
+        [fact("projects", { name: "江城闲置", situation: "校园二手交易平台" })],
+        ctx,
+      ).profile;
+
+    it("treats a longer value containing the old one as a refinement and overwrites it", () => {
+      const base = project();
+      const result = applyFacts(
+        base,
+        [fact("projects", { name: "江城闲置", situation: "校园二手交易平台，与几个同学组队做的" })],
+        ctx,
+      );
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.profile.projects[0]?.situation).toBe("校园二手交易平台，与几个同学组队做的");
+      expect(result.changes).toMatchObject([
+        { section: "projects", field: "situation", previous: "校园二手交易平台" },
+      ]);
+      expect(result.facts.map((f) => f.status)).toEqual(["confirmed"]);
+    });
+
+    it("ignores a shorter value the old one already contains", () => {
+      const base = applyFacts(project(), [fact("basics", { city: "武汉市洪山区" })], ctx).profile;
+      const result = applyFacts(
+        base,
+        [fact("projects", { name: "江城闲置", situation: "二手交易平台" }), fact("basics", { city: "武汉" })],
+        ctx,
+      );
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.changes).toHaveLength(0);
+      expect(result.profile.projects[0]?.situation).toBe("校园二手交易平台");
+      expect(result.profile.basics.city).toBe("武汉市洪山区");
+    });
+
+    it("still flags values that really differ", () => {
+      const base = applyFacts(
+        project(),
+        [fact("education", { school: "江城大学", degree: "bachelor", major: "软件工程", start: "2022-09" })],
+        ctx,
+      ).profile;
+      const result = applyFacts(
+        base,
+        [fact("education", { school: "江城大学", major: "计算机科学", start: "2021-09" })],
+        ctx,
+      );
+      expect(result.conflicts.map((c) => [c.field, c.previous, c.proposed])).toEqual([
+        ["major", "软件工程", "计算机科学"],
+        ["start", "2022-09", "2021-09"],
+      ]);
+    });
+  });
+
+  describe("narrative fields", () => {
+    const ACTION = "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品";
+    const withProject = (fields: Record<string, string>) =>
+      applyFacts(Profile.parse({}), [fact("projects", { name: "江城闲置", ...fields })], ctx).profile;
+    const update = (fields: Record<string, string>, base = withProject({ action: ACTION })) =>
+      applyFacts(base, [fact("projects", { name: "江城闲置", ...fields })], ctx);
+
+    it("appends a parallel addition instead of raising a conflict", () => {
+      const result = update({ action: "通过加索引、SQL 优化和 Redis 缓存优化接口性能" });
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.profile.projects[0]?.action).toBe(
+        `${ACTION}；通过加索引、SQL 优化和 Redis 缓存优化接口性能`,
+      );
+      expect(result.changes).toMatchObject([{ field: "action", previous: ACTION }]);
+    });
+
+    it("does not raise a conflict again when the model restates the merged text differently", () => {
+      const merged = update({ action: "通过加索引、SQL 优化和 Redis 缓存优化接口性能" }).profile;
+      const before = merged.projects[0]?.action;
+      const again = update(
+        { action: "负责后端商品发布、搜索和订单模块，加索引、SQL 优化，Redis 缓存" },
+        merged,
+      );
+      expect(again.conflicts).toHaveLength(0);
+      expect(again.profile.projects[0]?.action).toBe(before);
+    });
+
+    it("takes a full rewrite that keeps every number and name of the old text", () => {
+      const rewrite = "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品，并加索引做 SQL 优化";
+      const result = update({ action: `${rewrite.slice(0, 6)}。${rewrite.slice(6)}` });
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.profile.projects[0]?.action).toBe(`${rewrite.slice(0, 6)}。${rewrite.slice(6)}`);
+    });
+
+    it("still asks when a number or a named tool was replaced", () => {
+      const base = withProject({
+        result: "接口响应从 800ms 降到 120ms，大概 3000 个同学在用",
+        action: "用 MySQL 存订单数据",
+      });
+      const result = update(
+        { result: "接口响应从 800ms 降到 100ms，大概 3000 个同学在用", action: "用 PostgreSQL 存订单数据" },
+        base,
+      );
+      expect(result.conflicts.map((c) => c.field).sort()).toEqual(["action", "result"]);
+      expect(result.profile.projects[0]?.result).toBe("接口响应从 800ms 降到 120ms，大概 3000 个同学在用");
+    });
+
+    it("leaves non-narrative text fields to the usual conflict check", () => {
+      const base = withProject({ role: "后端负责人" });
+      expect(update({ role: "前端开发" }, base).conflicts.map((c) => c.field)).toEqual(["role"]);
+    });
+  });
+
   it("flags a conflict inside a list item", () => {
     const base = applyFacts(
       Profile.parse({}),

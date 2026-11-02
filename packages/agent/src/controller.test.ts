@@ -505,6 +505,157 @@ describe("intake controller: resolving a conflict continues the conversation", (
   });
 });
 
+describe("intake controller: answering a conflict in words", () => {
+  const SECTION = "待用户确认的矛盾";
+
+  async function conflicted(steps: FauxResponseStep[], prompts: string[]) {
+    const state = createIntakeState();
+    const { controller, core } = fake(
+      [
+        toolTurn(upsert([{ section: "basics", payload: { city: "武汉" }, quote: "我在武汉" }])),
+        toolTurn(ask("你叫什么？")),
+        toolTurn(upsert([{ section: "basics", payload: { city: "杭州" }, quote: "我在杭州" }])),
+        ...steps,
+      ],
+      prompts,
+    );
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "我在武汉" }));
+    await collect(controller.handleUserMessage(state, { id: "m2", text: "我在杭州" }));
+    return { state, controller, core };
+  }
+
+  it("resolves the conflict when the user types 用原来的, and drops it from the next prompt", async () => {
+    const prompts: string[] = [];
+    const { state, controller } = await conflicted(
+      [
+        toolTurn(
+          fauxToolCall("resolve_conflict", { field: "city", choice: "previous", quote: "可以用原来的" }),
+        ),
+        toolTurn(ask("你叫什么？")),
+        toolTurn(upsert([{ section: "basics", payload: { name: "李明" }, quote: "我叫李明" }])),
+        toolTurn(ask("手机号是多少？")),
+      ],
+      prompts,
+    );
+    expect(state.conflicts).toHaveLength(1);
+    const factId = state.conflicts[0]?.factId ?? "";
+
+    const events = await collect(controller.handleUserMessage(state, { id: "m3", text: "可以用原来的" }));
+    expect(prompts.at(-1)).toContain(SECTION);
+    expect(prompts.at(-1)).toContain(`factId=${factId}`);
+    expect(state.conflicts).toHaveLength(0);
+    expect(state.profile.basics.city).toBe("武汉");
+    expect(state.facts.find((f) => f.id === factId)?.status).toBe("superseded");
+    expect(asks(events)).toMatchObject([{ kind: "followup", question: "你叫什么？" }]);
+    expect(events.filter((e) => e.type === "completeness").length).toBeGreaterThan(0);
+
+    await collect(controller.handleUserMessage(state, { id: "m4", text: "我叫李明" }));
+    expect(prompts.at(-1)).not.toContain(SECTION);
+    expect(state.profile.basics).toMatchObject({ name: "李明", city: "武汉" });
+  });
+
+  it("adopts the new value by factId and patches the profile", async () => {
+    const { state } = await conflicted([], []);
+    const factId = state.conflicts[0]?.factId ?? "";
+    const { controller: next } = fake([
+      toolTurn(fauxToolCall("resolve_conflict", { factId, choice: "proposed", quote: "新的对" })),
+      toolTurn(ask("你叫什么？")),
+    ]);
+    const events = await collect(next.handleUserMessage(state, { id: "m3", text: "新的对" }));
+    expect(state.conflicts).toHaveLength(0);
+    expect(state.profile.basics.city).toBe("杭州");
+    expect(events.find((e) => e.type === "profile_patch")).toMatchObject({
+      changes: [{ field: "city", value: "杭州", previous: "武汉" }],
+    });
+    expect(state.history.at(-1)?.meta?.changes).toHaveLength(1);
+  });
+
+  it("rejects a quote the user never said and keeps the conflict", async () => {
+    const { state, controller } = await conflicted(
+      [
+        toolTurn(fauxToolCall("resolve_conflict", { field: "city", choice: "previous", quote: "保留武汉" })),
+        toolTurn(ask("你叫什么？")),
+      ],
+      [],
+    );
+    await collect(controller.handleUserMessage(state, { id: "m3", text: "用之前那个吧" }));
+    expect(state.conflicts).toHaveLength(1);
+    expect(state.profile.basics.city).toBe("武汉");
+  });
+
+  it("lets an unrelated answer through and leaves the conflict pending", async () => {
+    const { state, controller } = await conflicted(
+      [
+        toolTurn(upsert([{ section: "basics", payload: { name: "李明" }, quote: "我叫李明" }])),
+        toolTurn(ask("手机号是多少？")),
+      ],
+      [],
+    );
+    const events = await collect(controller.handleUserMessage(state, { id: "m3", text: "我叫李明" }));
+    expect(state.profile.basics.name).toBe("李明");
+    expect(state.conflicts).toHaveLength(1);
+    expect(asks(events)).toMatchObject([{ kind: "followup", question: "手机号是多少？" }]);
+  });
+});
+
+describe("intake controller: adding to a narrative field", () => {
+  it("appends a project action supplement and does not re-raise a conflict on a restatement", async () => {
+    const action = "负责后端，做了商品发布、搜索和订单模块，用 Redis 缓存热门商品";
+    const supplement = "通过加索引、SQL 优化和 Redis 缓存优化接口性能";
+    const { controller } = fake([
+      toolTurn(upsert([{ section: "projects", payload: { name: "江城闲置", action }, quote: action }])),
+      toolTurn(ask("项目最后效果怎么样？")),
+      toolTurn(
+        upsert([
+          {
+            section: "projects",
+            payload: { name: "江城闲置", action: supplement },
+            quote: "加了索引 sql 优化和 redis",
+          },
+        ]),
+      ),
+      toolTurn(ask("项目最后效果怎么样？")),
+      toolTurn(
+        upsert([
+          {
+            section: "projects",
+            payload: {
+              name: "江城闲置",
+              action: "负责后端的商品发布、搜索和订单模块，加索引、SQL 优化，Redis 缓存",
+            },
+            quote: "加了索引 sql 优化和 redis",
+          },
+        ]),
+      ),
+      toolTurn(ask("项目最后效果怎么样？")),
+    ]);
+    const state = createIntakeState();
+    await collect(controller.handleUserMessage(state, { id: "m1", text: action }));
+
+    const added = await collect(
+      controller.handleUserMessage(state, { id: "m2", text: "加了索引 sql 优化和 redis" }),
+    );
+    expect(asks(added).map((a) => a.kind)).toEqual(["followup"]);
+    expect(state.conflicts).toHaveLength(0);
+    expect(state.profile.projects[0]?.action).toBe(`${action}；${supplement}`);
+
+    const asked = await collect(controller.handleUserMessage(state, { id: "m3", text: "冲突吗？" }));
+    expect(asks(asked).map((a) => a.kind)).toEqual(["followup"]);
+    expect(state.conflicts).toHaveLength(0);
+    expect(state.profile.projects[0]?.action).toBe(`${action}；${supplement}`);
+  });
+
+  it("asks for full merged narrative text and forbids promising actions without tools", async () => {
+    const prompts: string[] = [];
+    const { controller } = fake([toolTurn(ask("你叫什么？"))], prompts);
+    await collect(controller.handleUserMessage(createIntakeState(), { id: "m1", text: "你好" }));
+    expect(prompts[0]).toContain("完整合并文本");
+    expect(prompts[0]).toContain("不要承诺任何没有工具支持的动作");
+    expect(prompts[0]).toContain("右侧预览就是简历，可以点「润色」优化表述、切换模板，或者直接导出");
+    expect(prompts[0]).not.toContain("可以去生成简历");
+  });
+});
+
 describe("intake controller: quick replies", () => {
   it("passes quickReplies of ask_user through and stores them on the assistant turn", async () => {
     const { controller } = fake([

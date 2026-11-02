@@ -3,7 +3,14 @@ import type { TSchema } from "@earendil-works/pi-ai";
 import type { ProfileSection } from "@talksume/core";
 import type { z } from "zod";
 import { computeCompleteness, pickNextSlot, SECTION_BY_NAME, type Slot } from "./completeness.ts";
-import { applyFacts, type Conflict, describeDrafted, draftLabel, draftMissing } from "./facts.ts";
+import {
+  applyFacts,
+  type Conflict,
+  describeDrafted,
+  draftLabel,
+  draftMissing,
+  resolveConflict,
+} from "./facts.ts";
 import { describeSlot } from "./prompt.ts";
 import {
   AskUserArgs,
@@ -11,6 +18,7 @@ import {
   cleanQuickReplies,
   type FactInput,
   formatZodIssues,
+  ResolveConflictArgs,
   TOOL_SPECS,
   toolJsonSchema,
   UpsertFactsArgs,
@@ -108,6 +116,39 @@ export function confirmQuestion(conflict: Conflict): string {
   return `你之前说${label}是「${String(conflict.previous)}」，刚才说的是「${String(conflict.proposed)}」，以哪个为准？`;
 }
 
+export function completenessEvent(state: IntakeState): IntakeEvent {
+  return {
+    type: "completeness",
+    completeness: computeCompleteness(state.profile, { completedSections: state.completedSections }),
+    nextSlot: nextSlotOf(state),
+  };
+}
+
+/** 按用户的选择消解一处矛盾；还有剩余矛盾时接着发起下一条确认，事件以 completeness 收尾。 */
+export function settleConflict(state: IntakeState, factId: string, accept: boolean): IntakeEvent[] {
+  const conflict = state.conflicts.find((c) => c.factId === factId);
+  if (!conflict) return [];
+  const resolved = resolveConflict(state.profile, state.facts, conflict, accept);
+  state.profile = resolved.profile;
+  state.facts = resolved.facts;
+  state.conflicts = state.conflicts.filter((c) => c.factId !== factId);
+  const events: IntakeEvent[] = [];
+  if (resolved.changes.length > 0) {
+    events.push({
+      type: "profile_patch",
+      changes: resolved.changes,
+      facts: state.facts.filter((f) => f.id === factId),
+      profile: state.profile,
+    });
+  }
+  const remaining = state.conflicts[0];
+  if (remaining) {
+    events.push({ type: "ask", kind: "confirm", question: confirmQuestion(remaining), conflict: remaining });
+  }
+  events.push(completenessEvent(state));
+  return events;
+}
+
 function prepare<S extends z.ZodType>(schema: S) {
   return (args: unknown) => {
     const parsed = schema.safeParse(args);
@@ -188,7 +229,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       lines.push(`已写入 ${confirmed} 条事实。`);
       if (result.conflicts.length > 0) {
         lines.push(
-          `有 ${result.conflicts.length} 处与已记录内容矛盾，已自动向用户发起确认，本轮请不要再追问其他内容，也不要调用 ask_user。`,
+          `有 ${result.conflicts.length} 处与已记录内容矛盾，已自动向用户发起确认，本轮请不要再追问其他内容，不要在文字里复述矛盾，也不要调用 ask_user。`,
         );
       }
       if (result.drafted.length > 0) lines.push(result.drafted.map(describeDrafted).join("\n"));
@@ -254,5 +295,40 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     },
   );
 
-  return [upsertFacts, askUser, completeSection];
+  const resolveConflictTool = tool(
+    "resolve_conflict",
+    "确认矛盾",
+    ResolveConflictArgs,
+    (args: z.infer<typeof ResolveConflictArgs>) => {
+      if (state.conflicts.length === 0)
+        return text("当前没有待确认的矛盾，不需要调用 resolve_conflict。", true);
+      const conflict = args.factId
+        ? state.conflicts.find((c) => c.factId === args.factId)
+        : state.conflicts.find((c) => c.field === args.field);
+      if (!conflict) {
+        const known = state.conflicts.map((c) => `factId=${c.factId}（${c.field}）`).join("、");
+        return text(`找不到对应的矛盾，请用这些之一：${known}`, true);
+      }
+      if (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, args.quote)) {
+        return text(`quote「${args.quote}」不是用户说过的原话，请逐字摘抄用户表示选哪个的那句话。`, true);
+      }
+      const accept = args.choice === "proposed";
+      const chosen = String(accept ? conflict.proposed : conflict.previous);
+      for (const event of settleConflict(state, conflict.factId, accept)) {
+        if (event.type === "ask") ctx.flags.asked = true;
+        ctx.emit(event);
+      }
+      ctx.flags.changed = true;
+      const lines = [`已按用户选择，${conflict.label}以「${chosen}」为准。`];
+      if (state.conflicts.length > 0) {
+        lines.push("还有矛盾待确认，已自动向用户发起确认，本轮请不要再追问其他内容，也不要调用 ask_user。");
+      } else {
+        const next = nextSlotOf(state);
+        lines.push(next ? `下一个目标：\n${describeSlot(next)}` : "下一个目标：无，信息已基本完整。");
+      }
+      return text(lines.join("\n"));
+    },
+  );
+
+  return [upsertFacts, askUser, completeSection, resolveConflictTool];
 }

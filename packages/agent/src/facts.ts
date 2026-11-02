@@ -163,6 +163,63 @@ function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** 新说法完整包含旧说法，视为补充或细化而不是矛盾。 */
+function refines(existing: unknown, incoming: unknown): boolean {
+  if (typeof existing !== "string" || typeof incoming !== "string") return false;
+  const before = normKey(existing);
+  const after = normKey(incoming);
+  return after.length > before.length && after.includes(before);
+}
+
+const NARRATIVE_FIELDS: Partial<Record<ProfileSection, readonly string[]>> = {
+  basics: ["summary"],
+  projects: ["situation", "task", "action", "result"],
+  awards: ["description"],
+};
+
+type NarrativeMerge = { kind: "conflict" } | { kind: "keep" } | { kind: "set"; value: string };
+
+const ANCHOR = /\d+(?:\.\d+)?|[a-z][a-z0-9+#]*/g;
+
+function anchorsOf(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(ANCHOR) ?? []);
+}
+
+function bigrams(text: string): Set<string> {
+  const plain = text.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
+  const out = new Set<string>();
+  for (let i = 0; i < plain.length - 1; i++) out.add(plain.slice(i, i + 2));
+  return out;
+}
+
+function coverage(of: Set<string>, within: Set<string>): number {
+  if (of.size === 0) return 1;
+  let hit = 0;
+  for (const g of of) if (within.has(g)) hit++;
+  return hit / of.size;
+}
+
+const minus = (a: Set<string>, b: Set<string>) => [...a].filter((x) => !b.has(x));
+
+/** 叙述字段的兜底：数字或专名被换掉才算矛盾；拿不准时宁可拼接，不弹确认。 */
+function mergeNarrative(existing: string, incoming: string): NarrativeMerge {
+  const before = anchorsOf(existing);
+  const after = anchorsOf(incoming);
+  const lost = minus(before, after);
+  const added = minus(after, before);
+  const isNum = (x: string) => /^\d/.test(x);
+  if (lost.some(isNum) && added.some(isNum)) return { kind: "conflict" };
+  if (lost.length > 0 && added.length > 0) {
+    const strip = (t: string) => t.toLowerCase().replace(ANCHOR, "");
+    if (coverage(bigrams(strip(existing)), bigrams(strip(incoming))) >= 0.6) return { kind: "conflict" };
+  }
+  const oldGrams = bigrams(existing);
+  const newGrams = bigrams(incoming);
+  if (added.length === 0 && coverage(newGrams, oldGrams) >= 0.8) return { kind: "keep" };
+  if (lost.length === 0 && coverage(oldGrams, newGrams) >= 0.8) return { kind: "set", value: incoming };
+  return { kind: "set", value: `${existing.replace(/[\s。；;，,]+$/u, "")}；${incoming}` };
+}
+
 function union(existing: unknown[], incoming: unknown[]): unknown[] {
   const out = [...existing];
   for (const v of incoming) if (!out.some((x) => sameValue(x, v))) out.push(v);
@@ -179,7 +236,7 @@ interface MergeOutcome {
   changes: ProfileChange[];
 }
 
-/** 把 payload 合并进 target（原地修改）：数组取并集，标量与旧值不同则记为冲突而不覆盖。 */
+/** 把 payload 合并进 target（原地修改）：数组取并集，文字补充直接更新，其余标量与旧值不同则记为冲突而不覆盖。 */
 function mergeInto(
   target: Rec,
   payload: Rec,
@@ -210,8 +267,36 @@ function mergeInto(
       target[field] = incoming;
       outcome.applied[field] = incoming;
       outcome.changes.push({ section, ...(itemId ? { itemId } : {}), field, value: incoming });
-    } else if (!sameValue(existing, incoming)) {
-      outcome.conflicted[field] = incoming;
+    } else if (refines(existing, incoming)) {
+      target[field] = incoming;
+      outcome.applied[field] = incoming;
+      outcome.changes.push({
+        section,
+        ...(itemId ? { itemId } : {}),
+        field,
+        value: incoming,
+        previous: existing,
+      });
+    } else if (!sameValue(existing, incoming) && !refines(incoming, existing)) {
+      const narrative =
+        typeof existing === "string" &&
+        typeof incoming === "string" &&
+        NARRATIVE_FIELDS[section]?.includes(field)
+          ? mergeNarrative(existing, incoming)
+          : ({ kind: "conflict" } as const);
+      if (narrative.kind === "set") {
+        target[field] = narrative.value;
+        outcome.applied[field] = incoming;
+        outcome.changes.push({
+          section,
+          ...(itemId ? { itemId } : {}),
+          field,
+          value: narrative.value,
+          previous: existing,
+        });
+      } else if (narrative.kind === "conflict") {
+        outcome.conflicted[field] = incoming;
+      }
     }
   }
   return outcome;

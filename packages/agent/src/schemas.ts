@@ -89,8 +89,16 @@ export const CompleteSectionArgs = z.object({
 });
 export type CompleteSectionArgs = z.infer<typeof CompleteSectionArgs>;
 
+export const ResolveConflictArgs = z.object({
+  factId: z.string().optional().describe("待确认矛盾的 factId，见系统提示里的矛盾列表"),
+  field: z.string().optional().describe("没有 factId 时用矛盾所在字段名定位，如 situation"),
+  choice: z.enum(["proposed", "previous"]).describe("proposed=采用新说法；previous=保留原来的"),
+  quote: Quote.describe("用户表示选哪个的原话，如「用原来的」「新的对」"),
+});
+export type ResolveConflictArgs = z.infer<typeof ResolveConflictArgs>;
+
 export interface ToolSpec {
-  name: "upsert_facts" | "ask_user" | "complete_section";
+  name: "upsert_facts" | "ask_user" | "complete_section" | "resolve_conflict";
   description: string;
   schema: z.ZodType;
 }
@@ -112,6 +120,12 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     name: "complete_section",
     description: "标记某个分区已收集完成，或用户明确表示该分区没有内容。",
     schema: CompleteSectionArgs,
+  },
+  {
+    name: "resolve_conflict",
+    description:
+      "用户用文字回答了待确认的矛盾（如「用原来的」「新的对」）时调用，按用户的选择消解矛盾。用户没明确选哪个时不要调用。",
+    schema: ResolveConflictArgs,
   },
 ];
 

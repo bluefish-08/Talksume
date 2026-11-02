@@ -2,15 +2,16 @@ import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agen
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { errorKindOf } from "@talksume/llm-gateway";
 import { computeCompleteness } from "./completeness.ts";
-import { createIdGenerator, type ProfileChange, resolveConflict } from "./facts.ts";
+import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import {
   buildUserCorpus,
-  confirmQuestion,
+  completenessEvent,
   createIntakeTools,
   nextSlotOf,
   noteAsked,
   type RunContext,
+  settleConflict,
 } from "./tools.ts";
 import type { IntakeEvent, IntakeState, TurnMeta } from "./types.ts";
 
@@ -119,14 +120,6 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
   const verifyQuote = deps.verifyQuote ?? true;
   const maxModelTurns = deps.maxModelTurns ?? 4;
   const historyLimit = deps.historyLimit ?? 24;
-
-  function completenessEvent(state: IntakeState): IntakeEvent {
-    return {
-      type: "completeness",
-      completeness: computeCompleteness(state.profile, { completedSections: state.completedSections }),
-      nextSlot: nextSlotOf(state),
-    };
-  }
 
   interface Turn {
     /** 助手回复的 id 为 `${id}:reply`；有 user 时 id 即用户消息 id。 */
@@ -311,32 +304,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
   }
 
   function confirmConflict(state: IntakeState, factId: string, accept: boolean): IntakeEvent[] {
-    const conflict = state.conflicts.find((c) => c.factId === factId);
-    if (!conflict) return [];
-    const resolved = resolveConflict(state.profile, state.facts, conflict, accept);
-    state.profile = resolved.profile;
-    state.facts = resolved.facts;
-    state.conflicts = state.conflicts.filter((c) => c.factId !== factId);
-    const events: IntakeEvent[] = [];
-    if (resolved.changes.length > 0) {
-      events.push({
-        type: "profile_patch",
-        changes: resolved.changes,
-        facts: state.facts.filter((f) => f.id === factId),
-        profile: state.profile,
-      });
-    }
-    const remaining = state.conflicts[0];
-    if (remaining) {
-      events.push({
-        type: "ask",
-        kind: "confirm",
-        question: confirmQuestion(remaining),
-        conflict: remaining,
-      });
-    }
-    events.push(completenessEvent(state));
-    return events;
+    return settleConflict(state, factId, accept);
   }
 
   async function* resolveConflictAndContinue(

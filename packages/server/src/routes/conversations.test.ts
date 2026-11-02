@@ -487,6 +487,31 @@ describe("矛盾确认", () => {
     expect(fact?.status).toBe("superseded");
   });
 
+  it("用户打字说用原来的：模型调用 resolve_conflict，持久化的 conflicts 清空，画像保持旧值", async () => {
+    const { id, confirm } = await conflictConversation([
+      toolTurn(fauxToolCall("resolve_conflict", { field: "city", choice: "previous", quote: "用原来的" })),
+      toolTurn(ask("你的手机号是多少？")),
+    ]);
+    const { events } = await send(id, "用原来的吧");
+    const done = events.at(-1)?.data as { messageId: string | null; conflicts: unknown[] };
+    expect(done.messageId).not.toBeNull();
+    expect(done.conflicts).toEqual([]);
+
+    const [conv] = await handle.db
+      .select({ intakeState: schema.conversations.intakeState })
+      .from(schema.conversations)
+      .where(eq(schema.conversations.id, id));
+    expect(conv?.intakeState.conflicts).toEqual([]);
+    const [fact] = await handle.db
+      .select()
+      .from(schema.profileFacts)
+      .where(eq(schema.profileFacts.id, confirm.conflict.factId));
+    expect(fact?.status).toBe("superseded");
+    const detail = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    expect(detail.conflicts).toEqual([]);
+    expect(detail.profile.basics.city).toBe("上海");
+  });
+
   it("choice 不合法返回 400", async () => {
     const { id, confirm } = await conflictConversation();
     const res = await app.inject({
