@@ -104,6 +104,20 @@ describe("创建与读取会话", () => {
     expect(foreign.json()).toMatchObject({ code: "conversation_not_found", retryable: false });
     expect((await app.inject({ method: "GET", url: "/api/v1/conversations/nope" })).statusCode).toBe(404);
   });
+
+  it("列表只含自己的会话，最近更新的在前", async () => {
+    await boot();
+    const first = await createConversation();
+    const second = await createConversation();
+    const [other] = await handle.db
+      .insert(schema.users)
+      .values({ email: "other@example.com" })
+      .returning({ id: schema.users.id });
+    await createConversation({ "x-talksume-user": other?.id ?? "" });
+    const list = (await app.inject({ method: "GET", url: "/api/v1/conversations" })).json();
+    expect(list.items.map((c: { id: string }) => c.id)).toEqual([second.id, first.id]);
+    expect(list.items[0]).toMatchObject({ title: null });
+  });
 });
 
 describe("发送消息（SSE）", () => {

@@ -10,7 +10,13 @@ import {
 import { profileToResume } from "@talksume/core";
 import { z } from "zod";
 import type { LlmDeps, RouteModule } from "../app.ts";
-import { createConversation, loadConversation, loadMessages, persistState } from "../conversation-store.ts";
+import {
+  createConversation,
+  listConversations,
+  loadConversation,
+  loadMessages,
+  persistState,
+} from "../conversation-store.ts";
 import { openSse, sendError } from "../http.ts";
 import { resumeRoutes } from "./resume.ts";
 
@@ -49,6 +55,11 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     state.history.push({ id: greeting.id, role: "assistant", content: greeting.text });
     const id = await createConversation(db, req.userId, state, greeting);
     return reply.code(201).send({ id, greeting: greeting.text });
+  });
+
+  app.get("/api/v1/conversations", async (req) => {
+    const rows = await listConversations(db, req.userId);
+    return { items: rows.map((r) => ({ ...r, updatedAt: r.updatedAt.toISOString() })) };
   });
 
   app.get("/api/v1/conversations/:id", async (req, reply) => {

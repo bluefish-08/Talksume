@@ -211,6 +211,15 @@ export async function persistState(
   });
 }
 
+export async function listConversations(db: Db, userId: string, limit = 30) {
+  return db
+    .select({ id: conversations.id, title: conversations.title, updatedAt: conversations.updatedAt })
+    .from(conversations)
+    .where(eq(conversations.userId, userId))
+    .orderBy(desc(conversations.updatedAt))
+    .limit(limit);
+}
+
 export async function latestCompletedSections(db: Db, userId: string) {
   const [row] = await db
     .select({ intakeState: conversations.intakeState })
