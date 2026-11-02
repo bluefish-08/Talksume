@@ -5,6 +5,8 @@ export function Logo({ size = 18 }: { size?: number }) {
     <span className={styles.logo} style={{ fontSize: size }}>
       <LogoMark size={Math.round(size * 1.2)} />
       <span className={styles.word}>简聊</span>
+      <span className={styles.rule} aria-hidden="true" />
+      <span className={styles.latin}>Talksume</span>
     </span>
   );
 }
