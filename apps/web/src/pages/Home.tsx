@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../api/client.ts";
@@ -7,8 +7,11 @@ import { qk, useConversations, useProfile } from "../api/queries.ts";
 import type { Profile } from "../api/types.ts";
 import { useToast } from "../components/Toast.tsx";
 import { ProgressBar } from "../components/ui.tsx";
+import { useBoard } from "../features/applications/queries.ts";
 import { Composer } from "../features/chat/Composer.tsx";
-import { missingText } from "../features/resume/resumeUtils.ts";
+import { useMatches } from "../features/jobs/hooks.ts";
+import { useExportResume } from "../features/resume/queries.ts";
+import { isResumeComplete, matchesLabel, missingText } from "../features/resume/resumeUtils.ts";
 import styles from "./Home.module.css";
 
 const JOB_TYPE: Record<NonNullable<Profile["intention"]["jobType"]>, string> = {
@@ -32,6 +35,79 @@ function intentionLabel(intention: Profile["intention"] | undefined): string | n
     intention.cities.join("/"),
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function DoneCard({
+  latestId,
+  starting,
+  onStart,
+}: {
+  latestId: string | undefined;
+  starting: boolean;
+  onStart: () => void;
+}) {
+  const matches = useMatches().query.data?.total;
+  const applied = useBoard().data?.total ?? 0;
+  const { exportAs, busy } = useExportResume();
+
+  return (
+    <div className={`${styles.card} ${styles.cardDone}`}>
+      <Link to="/resume" className={styles.cardLink}>
+        <span className={styles.doc} aria-hidden="true">
+          <span className={styles.docTitle} />
+          <span className={styles.docLine} />
+          <span className={styles.docLine} />
+          <span className={`${styles.docLine} ${styles.docShort}`} />
+        </span>
+        <span className={styles.cardMain}>
+          <span className={styles.cardHead}>
+            <span className={styles.cardTitle}>简历已完成</span>
+            <span className={styles.done}>
+              <Check size={12} strokeWidth={2.4} aria-hidden="true" />
+              100%
+            </span>
+          </span>
+          <span className={styles.cardNote}>点击查看或调整我的简历</span>
+        </span>
+        <ChevronRight size={18} strokeWidth={1.8} aria-hidden="true" className={styles.chev} />
+      </Link>
+      <div className={styles.actions}>
+        <Link to="/jobs" className={styles.action}>
+          {matchesLabel(matches)}
+        </Link>
+        <Link to="/resume?polish=1" className={styles.action}>
+          润色简历
+        </Link>
+        <button
+          type="button"
+          className={styles.action}
+          disabled={busy !== null}
+          onClick={() => void exportAs("pdf")}
+        >
+          {busy ? "正在导出…" : "导出 PDF"}
+        </button>
+        {applied > 0 && (
+          <Link to="/applications" className={styles.action}>
+            投递进度
+          </Link>
+        )}
+      </div>
+      <p className={styles.again}>
+        随时可以再聊聊补充经历：
+        <button type="button" className={styles.textBtn} disabled={starting} onClick={onStart}>
+          新对话
+        </button>
+        {latestId && (
+          <>
+            <span aria-hidden="true">·</span>
+            <Link to={`/c/${latestId}`} className={styles.textBtn}>
+              回到上次的会话
+            </Link>
+          </>
+        )}
+      </p>
+    </div>
+  );
 }
 
 export function HomePage() {
@@ -137,7 +213,9 @@ export function HomePage() {
         </div>
 
         {profile.data &&
-          (latest ? (
+          (isResumeComplete(completeness) ? (
+            <DoneCard latestId={latest?.id} starting={start.isPending} onStart={() => start.mutate("")} />
+          ) : latest ? (
             <Link to={`/c/${latest.id}`} className={styles.card}>
               {cardBody}
             </Link>

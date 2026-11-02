@@ -1,5 +1,6 @@
 import { Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { ApiError } from "../../api/client.ts";
 import { useToast } from "../../components/Toast.tsx";
 import styles from "./PolishButton.module.css";
@@ -11,6 +12,7 @@ export function PolishButton() {
   const { polish } = usePolishActions();
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
 
   const entries = state.data?.entries ?? [];
   const available = state.data?.available ?? false;
@@ -34,6 +36,20 @@ export function PolishButton() {
       void state.refetch();
     }
   };
+
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (params.get("polish") !== "1" || !state.data || deepLinked.current) return;
+    deepLinked.current = true;
+    setParams(
+      (p) => {
+        p.delete("polish");
+        return p;
+      },
+      { replace: true },
+    );
+    if (!disabledReason) start();
+  });
 
   return (
     <>

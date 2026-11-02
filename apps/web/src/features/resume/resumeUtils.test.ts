@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Completeness, MissingField, ProfileSection } from "../../api/types.ts";
-import { missingText } from "./resumeUtils.ts";
+import { isResumeComplete, matchesLabel, missingText } from "./resumeUtils.ts";
 
 const miss = (
   section: ProfileSection,
@@ -84,5 +84,23 @@ describe("missingText", () => {
   it("超过 4 项时截断并加「等」", () => {
     const many = ["a", "b", "c", "d", "e"].map((f) => miss("basics", f, `项${f}`));
     expect(missingText(completeness(many))).toBe("还差项a、项b、项c、项d等");
+  });
+});
+
+describe("isResumeComplete", () => {
+  const withScore = (score: number) => ({ score, sections: [], missing: [] }) as unknown as Completeness;
+
+  it("只有显示为 100% 才算完成", () => {
+    expect(isResumeComplete(undefined)).toBe(false);
+    expect(isResumeComplete(withScore(0.99))).toBe(false);
+    expect(isResumeComplete(withScore(1))).toBe(true);
+  });
+});
+
+describe("matchesLabel", () => {
+  it("拿不到数量时不显示数字", () => {
+    expect(matchesLabel(undefined)).toBe("看看推荐岗位");
+    expect(matchesLabel(0)).toBe("看看推荐岗位");
+    expect(matchesLabel(12)).toBe("看看推荐岗位（12 个匹配）");
   });
 });

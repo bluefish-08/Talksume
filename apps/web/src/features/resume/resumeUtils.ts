@@ -102,3 +102,11 @@ export function factQuotes(
   }
   return out;
 }
+
+export function isResumeComplete(completeness: Completeness | undefined): boolean {
+  return !!completeness && Math.round(completeness.score * 100) >= 100;
+}
+
+export function matchesLabel(total: number | undefined): string {
+  return total ? `看看推荐岗位（${total} 个匹配）` : "看看推荐岗位";
+}
