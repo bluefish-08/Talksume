@@ -16,3 +16,4 @@ export {
   RedisNotifier,
 } from "./notifications/bus.ts";
 export { runReminderSweep, type SweepResult } from "./notifications/reminders.ts";
+export { gatewayTemplateAdvisor, type TemplateAdvice, type TemplateAdvisor } from "./template-advisor.ts";

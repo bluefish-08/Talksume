@@ -22,7 +22,7 @@ export interface HrApplication {
   application: Application;
   job: { id: string; title: string; company: string };
   candidate: { id: string; displayName: string; email: string };
-  resume: { id: string; template: string; content: ResumeContent; createdAt: string } | null;
+  resume: { id: string; template: string; accent?: string; content: ResumeContent; createdAt: string } | null;
 }
 
 export interface HrApplicationDetail extends HrApplication {

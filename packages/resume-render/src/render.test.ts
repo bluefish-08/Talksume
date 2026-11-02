@@ -1,7 +1,8 @@
-import type { ResumeContent } from "@talksume/core";
+import { ACCENT_INFO, RESUME_TEMPLATES, type ResumeContent } from "@talksume/core";
 import JSZip from "jszip";
 import { afterAll, describe, expect, it } from "vitest";
-import { close, renderDocx, renderHtml, renderPdf, sampleResume } from "./index.ts";
+import { skillTokens } from "./html.ts";
+import { close, renderDocx, renderFragment, renderHtml, renderPdf, sampleResume } from "./index.ts";
 
 const decoder = new TextDecoder();
 
@@ -29,9 +30,24 @@ const allTexts = (content: ResumeContent): string[] =>
 afterAll(() => close());
 
 describe("renderHtml", () => {
-  it("包含样例的全部分区与条目文本", () => {
-    const html = renderHtml(sampleResume, { template: "campus" });
+  it.each(RESUME_TEMPLATES)("%s 模板包含样例的全部分区与条目文本", (template) => {
+    const html = renderHtml(sampleResume, { template });
     for (const text of allTexts(sampleResume)) expect(html).toContain(text);
+  });
+
+  it("强调色写进 --accent，未知模板直接报错", () => {
+    expect(renderHtml(sampleResume, { template: "modern", accent: "teal" })).toContain(
+      `--accent: ${ACCENT_INFO.teal.hex}`,
+    );
+    expect(() => renderHtml(sampleResume, { template: "fancy" as never })).toThrow("未知简历模板");
+  });
+
+  it("片段的样式全部限定在 .resume 下，带条目与要点定位属性", () => {
+    const { css, html } = renderFragment(sampleResume, { template: "tech" });
+    const selectors = [...css.matchAll(/(?:^|})\s*([^{}@]+)\{/g)].flatMap((m) => (m[1] ?? "").split(","));
+    for (const selector of selectors) expect(selector.trim()).toMatch(/^\.resume/);
+    expect(html).toContain('data-item="0-0"');
+    expect(html).toContain('data-bullet="1-0-2"');
   });
 
   it("技能每组渲染成一行「标题：内容」，无标题时只有内容", () => {
@@ -48,9 +64,26 @@ describe("renderHtml", () => {
         },
       ],
     });
-    expect(html).toContain('<p class="skill-line"><span class="item-title">熟悉：</span>Go、MySQL</p>');
-    expect(html).toContain('<p class="skill-line">Python</p>');
-    expect(html).not.toContain("<li>");
+    expect(html).toContain('<span class="item-title">熟悉：</span>Go、MySQL</p>');
+    expect(html).toContain('<p class="skill-line" data-item="0-1">Python</p>');
+    expect(html).not.toContain("<li");
+  });
+
+  it("技术紧凑模板把短技能渲染成标签，整句描述退回一行", () => {
+    const skills = (text: string): ResumeContent => ({
+      basics: { name: "陈晓", contacts: [] },
+      sections: [
+        { kind: "skills", title: "专业技能", items: [{ heading: "熟悉", bullets: [{ text, factIds: [] }] }] },
+      ],
+    });
+    const tags = renderHtml(skills("Go、MySQL（索引、事务）"), { template: "tech" });
+    expect(tags).toContain('<span class="tag">Go</span> <span class="tag">MySQL（索引、事务）</span>');
+    const line = renderHtml(skills("熟练使用 Java，LeetCode 刷题 400+"), { template: "tech" });
+    expect(line).not.toContain('class="tag"');
+  });
+
+  it("切技能词时不切括号里的顿号", () => {
+    expect(skillTokens("Go、MySQL（索引、事务）；Redis")).toEqual(["Go", "MySQL（索引、事务）", "Redis"]);
   });
 
   it("转义所有用户文本，防止 XSS", () => {
@@ -70,9 +103,9 @@ describe("renderHtml", () => {
   });
 });
 
-describe("renderPdf", () => {
-  it("样例输出合法的单页 PDF", async () => {
-    const pdf = await renderPdf(sampleResume);
+describe("renderPdf", { timeout: 30_000 }, () => {
+  it.each(RESUME_TEMPLATES)("%s 模板把样例输出成合法的单页 PDF", async (template) => {
+    const pdf = await renderPdf(sampleResume, { template });
     expect(decoder.decode(pdf.subarray(0, 4))).toBe("%PDF");
     expect(countPdfPages(pdf)).toBe(1);
   });
@@ -87,13 +120,19 @@ describe("renderPdf", () => {
 });
 
 describe("renderDocx", () => {
-  it("输出合法 zip，document.xml 含姓名与各分区标题", async () => {
-    const docx = await renderDocx(sampleResume);
+  it.each(RESUME_TEMPLATES)("%s 模板输出合法 zip，document.xml 含姓名与各分区标题", async (template) => {
+    const docx = await renderDocx(sampleResume, { template });
     expect(docx[0]).toBe(0x50);
     expect(docx[1]).toBe(0x4b);
     const xml = await readZipEntry(docx, "word/document.xml");
     expect(xml).toContain(sampleResume.basics.name);
     for (const section of sampleResume.sections) expect(xml).toContain(section.title);
+  });
+
+  it("标题样式带上所选强调色", async () => {
+    const docx = await renderDocx(sampleResume, { template: "campus", accent: "wine" });
+    const styles = await readZipEntry(docx, "word/styles.xml");
+    expect(styles).toContain(ACCENT_INFO.wine.hex.slice(1).toUpperCase());
   });
 
   it("技能渲染成一行，标题与内容在同一段", async () => {

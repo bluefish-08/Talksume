@@ -4,6 +4,8 @@ import { close } from "@talksume/resume-render";
 import type { FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.ts";
+import type { TemplateAdvisor } from "../template-advisor.ts";
+import { profileDigest } from "../template-advisor.ts";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -121,4 +123,108 @@ describe("简历导出", () => {
     expect(res.rawPayload.subarray(0, 4).toString()).toBe("%PDF");
     expect(res.rawPayload.length).toBeGreaterThan(1000);
   }, 30_000);
+});
+
+describe("简历模板偏好", () => {
+  it("默认经典校园 + 品牌蓝，保存后读回，并用于导出", async () => {
+    await seedProfile();
+    const initial = await app.inject({ method: "GET", url: "/api/v1/resume/style", headers });
+    expect(initial.json()).toEqual({ style: { template: "campus", accent: "blue" } });
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/v1/resume/style",
+      headers,
+      payload: { template: "minimal", accent: "ink" },
+    });
+    expect(saved.statusCode).toBe(200);
+    const after = await app.inject({ method: "GET", url: "/api/v1/resume/style", headers });
+    expect(after.json().style).toEqual({ template: "minimal", accent: "ink" });
+  });
+
+  it("不在可选范围内的模板返回 400", async () => {
+    await seedProfile();
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/v1/resume/style",
+      headers,
+      payload: { template: "fancy", accent: "blue" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("导出参数里的模板和强调色优先，坏值回落到已保存的偏好", async () => {
+    await seedProfile();
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/resume/export?format=docx&template=modern&accent=wine",
+      headers,
+    });
+    expect(res.statusCode).toBe(200);
+    const bad = await app.inject({
+      method: "GET",
+      url: "/api/v1/resume/export?format=docx&template=fancy",
+      headers,
+    });
+    expect(bad.statusCode).toBe(200);
+  });
+});
+
+describe("智能推荐模板", () => {
+  const withAdvisor = async (advisor: TemplateAdvisor) => {
+    await app.close();
+    app = buildApp({ edition: "cloud", version: "t", db: handle.db, templateAdvisor: advisor });
+    await app.ready();
+  };
+
+  it("没配模型时返回 503", async () => {
+    await seedProfile();
+    const res = await app.inject({ method: "POST", url: "/api/v1/resume/style/recommend", headers });
+    expect(res.statusCode).toBe(503);
+  });
+
+  it("画像为空时返回 409，不调模型", async () => {
+    let called = false;
+    await withAdvisor(async () => {
+      called = true;
+      return { template: "tech", accent: "blue", reason: "x" };
+    });
+    const res = await app.inject({ method: "POST", url: "/api/v1/resume/style/recommend" });
+    expect(res.statusCode).toBe(409);
+    expect(called).toBe(false);
+  });
+
+  it("返回模型挑的组合与理由，失败时 503 可重试", async () => {
+    await seedProfile();
+    await withAdvisor(async () => ({
+      template: "tech",
+      accent: "teal",
+      reason: "技术方向内容多，紧凑版式放得下",
+    }));
+    const res = await app.inject({ method: "POST", url: "/api/v1/resume/style/recommend", headers });
+    expect(res.json()).toEqual({
+      recommendation: { template: "tech", accent: "teal", reason: "技术方向内容多，紧凑版式放得下" },
+    });
+    await withAdvisor(async () => {
+      throw new Error("boom");
+    });
+    const failed = await app.inject({ method: "POST", url: "/api/v1/resume/style/recommend", headers });
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json().retryable).toBe(true);
+  });
+
+  it("发给模型的摘要不含姓名、联系方式和学校", () => {
+    const digest = profileDigest(
+      Profile.parse({
+        basics: { name: "李明", phone: "13900000000", email: "liming@example.com" },
+        education: [{ id: "e1", school: "江城大学", degree: "bachelor", major: "软件工程" }],
+        experiences: [{ id: "x1", kind: "internship", company: "江城数科", title: "后端开发实习生" }],
+        intention: { roles: ["后端开发"], cities: [] },
+      }),
+    );
+    expect(digest).toContain("后端开发");
+    expect(digest).toContain("软件工程 本科");
+    for (const secret of ["李明", "13900000000", "liming@example.com", "江城大学", "江城数科"]) {
+      expect(digest).not.toContain(secret);
+    }
+  });
 });

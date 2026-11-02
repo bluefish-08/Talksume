@@ -11,6 +11,7 @@ import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
 import { matchingRoutes } from "./routes/matching.ts";
 import { polishRoutes } from "./routes/polish.ts";
+import type { TemplateAdvisor } from "./template-advisor.ts";
 
 export interface LlmModelOption {
   id: string;
@@ -37,6 +38,7 @@ export interface AppDeps {
   llm?: LlmDeps;
   /** 会话标题生成；不配时保留第一句话截断的标题。 */
   titler?: ConversationTitler;
+  templateAdvisor?: TemplateAdvisor;
   flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
 }
 

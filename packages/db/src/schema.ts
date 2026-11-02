@@ -7,6 +7,7 @@ import {
   type Profile,
   type ProfileSection,
   type ResumeContent,
+  type ResumeStyle,
   type StatusSource,
 } from "@talksume/core";
 import { sql } from "drizzle-orm";
@@ -56,6 +57,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   displayName: text("display_name"),
   role: text("role").$type<"candidate" | "hr" | "admin">().notNull().default("candidate"),
+  resumeStyle: jsonb("resume_style").$type<ResumeStyle>(),
   createdAt: createdAt(),
 });
 
@@ -132,6 +134,7 @@ export const resumeVersions = pgTable(
     profileVersion: integer("profile_version").notNull(),
     targetJobId: text("target_job_id").references(() => jobs.id, { onDelete: "set null" }),
     template: text("template").notNull().default("default"),
+    accent: text("accent").notNull().default("blue"),
     content: jsonb("content").$type<ResumeContent>().notNull(),
     pdfKey: text("pdf_key"),
     docxKey: text("docx_key"),

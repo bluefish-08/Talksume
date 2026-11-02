@@ -1,10 +1,11 @@
-export type TemplateName = "campus";
+import type { ResumeAccent, ResumeTemplate } from "@talksume/core";
+
+export type TemplateName = ResumeTemplate;
 
 export interface RenderOptions {
-  template?: TemplateName;
+  template?: ResumeTemplate;
+  accent?: ResumeAccent;
 }
-
-export const DEFAULT_TEMPLATE: TemplateName = "campus";
 
 export const FONT_STACK_CSS = [
   '"Source Han Sans SC"',
@@ -14,4 +15,13 @@ export const FONT_STACK_CSS = [
   '"Hiragino Sans GB"',
   '"WenQuanYi Micro Hei"',
   "sans-serif",
+].join(", ");
+
+export const SERIF_STACK_CSS = [
+  '"Source Han Serif SC"',
+  '"Noto Serif CJK SC"',
+  '"Songti SC"',
+  '"STSong"',
+  '"SimSun"',
+  "serif",
 ].join(", ");

@@ -184,6 +184,9 @@ importers:
       '@talksume/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@talksume/resume-render':
+        specifier: workspace:*
+        version: link:../../packages/resume-render
       '@tanstack/react-query':
         specifier: ^5.105.1
         version: 5.105.1(@types/react@19.3.0)(react@19.3.1)

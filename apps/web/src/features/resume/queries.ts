@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { DEFAULT_RESUME_STYLE, type ResumeStyle } from "@talksume/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { ApiError, api, toApiError } from "../../api/client.ts";
+import { ApiError, api, request, toApiError } from "../../api/client.ts";
 import { qk } from "../../api/queries.ts";
 import type { ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
@@ -39,6 +40,50 @@ export function useResume() {
   });
 }
 
+export const resumeStyleKey = ["resume-style"] as const;
+
+export function useResumeStyle() {
+  const query = useQuery({
+    queryKey: resumeStyleKey,
+    queryFn: () => api.get<{ style: ResumeStyle }>("/api/v1/resume/style").then((r) => r.style),
+  });
+  return { ...query, style: query.data ?? DEFAULT_RESUME_STYLE };
+}
+
+/** 先乐观切换预览，保存失败再退回并提示。 */
+export function useSaveResumeStyle() {
+  const client = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (style: ResumeStyle) =>
+      request<{ style: ResumeStyle }>("PUT", "/api/v1/resume/style", style).then((r) => r.style),
+    onMutate: async (style) => {
+      await client.cancelQueries({ queryKey: resumeStyleKey });
+      const previous = client.getQueryData<ResumeStyle>(resumeStyleKey);
+      client.setQueryData(resumeStyleKey, style);
+      return { previous };
+    },
+    onError: (error, _style, context) => {
+      if (context?.previous) client.setQueryData(resumeStyleKey, context.previous);
+      toast(error instanceof ApiError ? error.message : "模板保存失败，请稍后再试", { tone: "error" });
+    },
+    onSuccess: (style) => client.setQueryData(resumeStyleKey, style),
+  });
+}
+
+export interface StyleRecommendation extends ResumeStyle {
+  reason: string;
+}
+
+export function useRecommendStyle() {
+  return useMutation({
+    mutationFn: () =>
+      api
+        .post<{ recommendation: StyleRecommendation }>("/api/v1/resume/style/recommend")
+        .then((r) => r.recommendation),
+  });
+}
+
 export type ExportFormat = "pdf" | "docx";
 
 function filenameOf(header: string | null, fallback: string): string {
@@ -54,13 +99,15 @@ function filenameOf(header: string | null, fallback: string): string {
 /** 用 fetch 取文件，失败时把服务端的错误说明弹出来，而不是下载一个 JSON。 */
 export function useExportResume() {
   const toast = useToast();
+  const { style } = useResumeStyle();
   const [busy, setBusy] = useState<ExportFormat | null>(null);
 
   const exportAs = useCallback(
     async (format: ExportFormat) => {
       setBusy(format);
       try {
-        const res = await fetch(`/api/v1/resume/export?format=${format}`);
+        const params = new URLSearchParams({ format, template: style.template, accent: style.accent });
+        const res = await fetch(`/api/v1/resume/export?${params}`);
         if (!res.ok) {
           const text = await res.text();
           let body: unknown;
@@ -86,7 +133,7 @@ export function useExportResume() {
         setBusy(null);
       }
     },
-    [toast],
+    [toast, style],
   );
 
   return { exportAs, busy };

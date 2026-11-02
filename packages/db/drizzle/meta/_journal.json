@@ -43,6 +43,13 @@
       "when": 1793634222564,
       "tag": "0005_conversation_title_source",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793634250538,
+      "tag": "0006_resume_style",
+      "breakpoints": true
     }
   ]
 }

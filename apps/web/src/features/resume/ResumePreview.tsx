@@ -1,4 +1,6 @@
-import { useId } from "react";
+import { DEFAULT_RESUME_STYLE, type ResumeStyle } from "@talksume/core";
+import { renderFragment } from "@talksume/resume-render/browser";
+import { useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { ResumeContent } from "../../api/types.ts";
 import styles from "./ResumePreview.module.css";
 
@@ -12,159 +14,193 @@ type ResumeItem = ResumeContent["sections"][number]["items"][number];
 
 interface Props {
   resume: ResumeContent;
+  resumeStyle?: ResumeStyle | undefined;
   /** 刚写入的条目标题或要点原文，命中的会高亮并带「刚刚添加」标记。 */
   highlightTexts?: ReadonlySet<string>;
   /** factId → 原话，用于悬停溯源。 */
   facts?: Readonly<Record<string, FactQuote>>;
   /** 还没内容的分区标题，渲染为浅色占位。 */
   placeholders?: readonly string[];
+  /** 缩略图只看版式，不加高亮、溯源和占位。 */
+  decorated?: boolean;
+  label?: string;
+  className?: string;
+  /** 放进按钮里当缩略图时用 span，保持合法的短语内容。 */
+  as?: "article" | "span";
 }
 
-export function ResumePreview({ resume, highlightTexts, facts, placeholders = [] }: Props) {
-  const { basics, sections } = resume;
-  const empty = !basics.name && sections.length === 0;
-  return (
-    <article className={styles.page} aria-label="简历预览">
-      <header className={styles.head}>
-        <span className={basics.name ? styles.name : `${styles.name} ${styles.nameEmpty}`}>
-          {basics.name || "你的姓名"}
-        </span>
-        {basics.contacts.length > 0 && (
-          <span className={styles.contacts}>
-            {basics.contacts.map((c, i) => (
-              <span key={c}>
-                {i > 0 && <span className={styles.sep}>|</span>}
-                {c}
-              </span>
-            ))}
-          </span>
-        )}
-        {basics.summary && <span className={styles.summary}>{basics.summary}</span>}
-      </header>
+const A4_WIDTH_PX = (210 / 25.4) * 96;
 
-      {sections.map((section) => (
-        <section key={`${section.kind}:${section.title}`} className={styles.section}>
-          <h3 className={styles.title}>{section.title}</h3>
-          {section.items.map((item, i) => (
-            <Item
-              // biome-ignore lint/suspicious/noArrayIndexKey: 条目没有稳定 id，同分区内标题可能重复
-              key={`${item.heading}:${i}`}
-              item={item}
-              inline={section.kind === "skills"}
-              highlightTexts={highlightTexts}
-              facts={facts}
-            />
-          ))}
-        </section>
-      ))}
+// 高亮、标记、溯源浮层只在网页预览里叠加；字号按缩放反算，保证缩小的纸面上仍可读
+const PREVIEW_CSS = `
+:host { all: initial; display: block; }
+.page { box-sizing: border-box; width: 210mm; min-height: 297mm; background: #fff; zoom: var(--zoom, 1); }
+.resume .item, .resume .skill-line { position: relative; }
+.resume .hl { background: #eef3fe; box-shadow: 0 0 0 3pt #eef3fe, 0 0 0 calc(3pt + 1px) #bfd3f8; border-radius: 1px; }
+.resume .hl .hl { box-shadow: none; }
+.resume .new-tag { position: absolute; right: 0; top: calc(-9px / var(--zoom, 1)); z-index: 1; padding: 0 calc(6px / var(--zoom, 1));
+  border-radius: calc(4px / var(--zoom, 1)); background: #2563eb; color: #fff; font: 400 calc(11px / var(--zoom, 1)) / calc(18px / var(--zoom, 1)) -apple-system, "PingFang SC", sans-serif;
+  white-space: nowrap; text-indent: 0; }
+.resume .traceable { cursor: help; border-radius: 1px; outline: none; }
+.resume .traceable:hover, .resume .traceable:focus-visible { background: #f0f4fa; box-shadow: 0 0 0 3pt #f0f4fa; }
+.resume .hl.traceable:hover, .resume .hl.traceable:focus-visible { background: #e3ecfd; box-shadow: 0 0 0 3pt #e3ecfd, 0 0 0 calc(3pt + 1px) #bfd3f8; }
+.resume .pop { display: none; position: absolute; left: 1em; top: calc(100% + 4px); z-index: 3; width: min(calc(300px / var(--zoom, 1)), 92%);
+  flex-direction: column; gap: calc(4px / var(--zoom, 1)); padding: calc(10px / var(--zoom, 1)) calc(12px / var(--zoom, 1));
+  border-radius: calc(10px / var(--zoom, 1)); background: #0f1b2e; color: #e8eef8; box-shadow: 0 10px 24px rgba(15, 27, 46, 0.14);
+  font: 400 calc(12px / var(--zoom, 1)) / 1.6 -apple-system, "PingFang SC", sans-serif; text-align: left; letter-spacing: 0; }
+.resume .traceable:hover > .pop, .resume .traceable:focus-visible > .pop { display: flex; }
+.resume .pop-head { color: #9fb3d1; }
+.resume .ph-text { opacity: 0.4; }
+.resume .ph h2 { opacity: 0.4; }
+.resume .ph .bar { height: 6pt; margin-top: 5pt; border-radius: 3pt; background: #eef1f6; }
+.resume .blank { margin-top: 28pt; text-align: center; color: #8593a8; font-size: 10.5pt; }
+`;
 
-      {placeholders.map((title) => (
-        <section key={title} className={`${styles.section} ${styles.placeholder}`} aria-hidden="true">
-          <h3 className={`${styles.title} ${styles.titleEmpty}`}>{title}</h3>
-          <div className={styles.bar} style={{ width: "72%" }} />
-          <div className={styles.bar} style={{ width: "50%" }} />
-        </section>
-      ))}
-
-      {empty && placeholders.length === 0 && (
-        <p className={styles.blank}>聊几句之后，简历会在这里一点点长出来。</p>
-      )}
-    </article>
-  );
-}
-
-function Item({
-  item,
-  inline,
-  highlightTexts,
-  facts,
-}: {
-  item: ResumeItem;
-  /** 技能条目：标题与要点同一行。 */
-  inline: boolean;
+interface Decoration {
   highlightTexts: ReadonlySet<string> | undefined;
   facts: Props["facts"];
-}) {
-  const itemNew = highlightTexts?.has(item.heading) ?? false;
-  return (
-    <div className={inline ? `${styles.item} ${styles.inline}` : styles.item}>
-      {(!inline || item.heading) && (
-        <div className={itemNew ? `${styles.row} ${styles.hl}` : styles.row}>
-          <span className={styles.heading}>
-            {item.heading}
-            {inline && "："}
-            {item.subheading && <span className={styles.sub}>{item.subheading}</span>}
-          </span>
-          {item.period && <span className={styles.period}>{item.period}</span>}
-          {itemNew && <span className={styles.tag}>刚刚添加</span>}
-        </div>
-      )}
-      {item.bullets.length > 0 && (
-        <ul className={styles.bullets}>
-          {item.bullets.map((b, i) => {
-            const own = highlightTexts?.has(b.text) ?? false;
-            return (
-              <Bullet
-                // biome-ignore lint/suspicious/noArrayIndexKey: 同一条目下要点原文可能重复
-                key={`${b.text}:${i}`}
-                text={b.text}
-                factIds={b.factIds}
-                highlighted={itemNew || own}
-                tagged={!itemNew && own}
-                facts={facts}
-              />
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
+  placeholders: readonly string[];
+  idPrefix: string;
 }
 
-function Bullet({
-  text,
-  factIds,
-  highlighted,
-  tagged,
-  facts,
-}: {
-  text: string;
-  factIds: string[];
-  highlighted: boolean;
-  tagged: boolean;
-  facts: Props["facts"];
-}) {
-  const popId = useId();
+function el(tag: string, className: string, text?: string): HTMLElement {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function attachSources(target: HTMLElement, factIds: readonly string[], d: Decoration, id: string) {
   const sources = [
     ...new Map(
-      factIds.flatMap((id) => {
-        const f = facts?.[id];
+      factIds.flatMap((fid) => {
+        const f = d.facts?.[fid];
         return f?.quote ? [[f.quote, f] as const] : [];
       }),
     ).values(),
   ].slice(0, 3);
-  const traceable = sources.length > 0;
+  if (sources.length === 0) return;
   const round = sources.length === 1 ? sources[0]?.round : undefined;
+  const pop = el("span", "pop");
+  pop.id = id;
+  pop.setAttribute("role", "tooltip");
+  pop.append(el("span", "pop-head", `出自你的原话${round ? ` · 第 ${round} 轮` : ""}`));
+  for (const s of sources) pop.append(el("span", "", `「${s.quote}」`));
+  target.classList.add("traceable");
+  // 键盘聚焦也要能看到出处
+  target.tabIndex = 0;
+  target.setAttribute("aria-describedby", id);
+  target.append(pop);
+}
+
+function decorate(root: ShadowRoot, resume: ResumeContent, d: Decoration) {
+  const page = root.querySelector<HTMLElement>(".resume");
+  if (!page) return;
+  const has = (text: string) => d.highlightTexts?.has(text) ?? false;
+  const itemAt = (key: string | undefined): ResumeItem | undefined => {
+    const [s, i] = (key ?? "").split("-").map(Number);
+    return resume.sections[s ?? -1]?.items[i ?? -1];
+  };
+
+  const name = root.querySelector<HTMLElement>(".head h1");
+  if (name && !resume.basics.name) {
+    name.textContent = "你的姓名";
+    name.classList.add("ph-text");
+  }
+
+  for (const node of root.querySelectorAll<HTMLElement>("[data-item]")) {
+    const item = itemAt(node.dataset.item);
+    if (!item) continue;
+    const skill = node.classList.contains("skill-line");
+    const itemNew = has(item.heading) || (skill && item.bullets.some((b) => has(b.text)));
+    if (itemNew) {
+      node.classList.add("hl");
+      (node.querySelector(".item-head") ?? node).append(el("span", "new-tag", "刚刚添加"));
+    }
+    if (skill) {
+      attachSources(
+        node,
+        item.bullets.flatMap((b) => b.factIds),
+        d,
+        `${d.idPrefix}-${node.dataset.item}`,
+      );
+      continue;
+    }
+    for (const li of node.querySelectorAll<HTMLElement>("[data-bullet]")) {
+      const index = Number(li.dataset.bullet?.split("-")[2]);
+      const bullet = item.bullets[index];
+      if (!bullet) continue;
+      if (!itemNew && has(bullet.text)) {
+        li.classList.add("hl");
+        li.append(el("span", "new-tag", "刚刚添加"));
+      }
+      attachSources(li, bullet.factIds, d, `${d.idPrefix}-${li.dataset.bullet}`);
+    }
+  }
+
+  for (const title of d.placeholders) {
+    const section = el("section", "ph");
+    section.setAttribute("aria-hidden", "true");
+    const body = el("div", "sec-body");
+    for (const width of ["72%", "50%"]) {
+      const bar = el("div", "bar");
+      bar.style.width = width;
+      body.append(bar);
+    }
+    section.append(el("h2", "", title), body);
+    page.append(section);
+  }
+
+  if (!resume.basics.name && resume.sections.length === 0 && d.placeholders.length === 0) {
+    page.append(el("p", "blank", "聊几句之后，简历会在这里一点点长出来。"));
+  }
+}
+
+/** 预览直接挂 renderFragment 的输出，和 PDF 同一份 HTML/CSS；shadow DOM 隔离宿主样式。 */
+export function ResumePreview({
+  resume,
+  resumeStyle = DEFAULT_RESUME_STYLE,
+  highlightTexts,
+  facts,
+  placeholders = [],
+  decorated = true,
+  label = "简历预览",
+  className,
+  as: Tag = "article",
+}: Props) {
+  const host = useRef<HTMLElement>(null);
+  const idPrefix = useId().replace(/:/g, "");
+  const { template, accent } = resumeStyle;
+  const fragment = useMemo(() => renderFragment(resume, { template, accent }), [resume, template, accent]);
+  const highlightKey = [...(highlightTexts ?? [])].join("\u0000");
+  const factsKey = JSON.stringify(facts ?? {});
+  const placeholdersKey = placeholders.join("\u0000");
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 用序列化后的 key 判断变化，避免父组件每次重渲染都重建预览
+  useLayoutEffect(() => {
+    const node = host.current;
+    if (!node) return;
+    const root = node.shadowRoot ?? node.attachShadow({ mode: "open" });
+    root.innerHTML = `<style>${fragment.css}${PREVIEW_CSS}</style><div class="page" style="padding: ${fragment.margin}">${fragment.html}</div>`;
+    if (decorated) decorate(root, resume, { highlightTexts, facts, placeholders, idPrefix });
+  }, [fragment, decorated, highlightKey, factsKey, placeholdersKey, idPrefix]);
+
+  useLayoutEffect(() => {
+    const node = host.current;
+    if (!node) return;
+    const fit = () => node.style.setProperty("--zoom", String(Math.min(1, node.clientWidth / A4_WIDTH_PX)));
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <li
-      className={[styles.bullet, highlighted && styles.hl, traceable && styles.traceable]
-        .filter(Boolean)
-        .join(" ")}
-      // 键盘聚焦也要能看到出处
-      tabIndex={traceable ? 0 : undefined}
-      aria-describedby={traceable ? popId : undefined}
-    >
-      {text}
-      {tagged && <span className={styles.tag}>刚刚添加</span>}
-      {traceable && (
-        <div id={popId} role="tooltip" className={styles.pop}>
-          <span className={styles.popHead}>出自你的原话{round ? ` · 第 ${round} 轮` : ""}</span>
-          {sources.map((s) => (
-            <span key={s.quote}>「{s.quote}」</span>
-          ))}
-        </div>
-      )}
-    </li>
+    <Tag
+      ref={host}
+      className={className ? `${styles.sheet} ${className}` : styles.sheet}
+      aria-label={label}
+      data-template={template}
+    />
   );
 }

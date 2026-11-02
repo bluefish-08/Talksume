@@ -28,11 +28,6 @@
   min-width: 0;
 }
 
-.template {
-  font-size: 13px;
-  color: var(--text-2);
-}
-
 .canvas {
   flex: 1;
   min-height: 0;

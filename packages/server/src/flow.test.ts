@@ -367,8 +367,18 @@ describe("权限", () => {
     const incoming = await call("GET", `/api/v1/hr/applications?jobId=${first.body.job.id}`, hr);
     expect(incoming.body.items[0].resume).toMatchObject({
       template: "campus",
+      accent: "blue",
       content: { basics: { name: "李四" } },
     });
+
+    await handle.db
+      .update(schema.users)
+      .set({ resumeStyle: { template: "tech", accent: "teal" } })
+      .where(eq(schema.users.id, candidate));
+    const third = await call("POST", "/api/v1/applications", candidate, { jobId: await postJob(hr, "测试") });
+    expect(third.body.application.resumeVersionId).not.toBe(snapshotId);
+    const restyled = await call("GET", `/api/v1/hr/applications?jobId=${third.body.job.id}`, hr);
+    expect(restyled.body.items[0].resume).toMatchObject({ template: "tech", accent: "teal" });
   });
 
   it("TALKSUME_DEMO=1 时生产环境也开放演示 HR 接口", async () => {

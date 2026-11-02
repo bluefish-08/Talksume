@@ -3,9 +3,10 @@ import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { CompletenessBar } from "../features/resume/CompletenessBar.tsx";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
 import { PolishButton } from "../features/resume/PolishButton.tsx";
-import { useFacts, useResume } from "../features/resume/queries.ts";
+import { useFacts, useResume, useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
 import { factQuotes, placeholderTitles } from "../features/resume/resumeUtils.ts";
+import { TemplatePicker } from "../features/resume/TemplatePicker.tsx";
 import styles from "./Resume.module.css";
 
 export function ResumePage() {
@@ -13,6 +14,7 @@ export function ResumePage() {
   const profile = useProfile();
   const facts = useFacts();
   const start = useStartConversation();
+  const { style } = useResumeStyle();
 
   const content = resume.data?.resume;
   const completeness = profile.data?.completeness;
@@ -25,7 +27,7 @@ export function ResumePage() {
         <div className={styles.progress}>
           <CompletenessBar completeness={completeness} />
         </div>
-        <span className={styles.template}>校园模板</span>
+        <TemplatePicker resume={content} />
         <ExportMenu />
         <PolishButton />
       </header>
@@ -55,6 +57,7 @@ export function ResumePage() {
           <div className={styles.sheet}>
             <ResumePreview
               resume={content}
+              resumeStyle={style}
               facts={factQuotes(facts.data)}
               placeholders={placeholderTitles(content, completeness)}
             />

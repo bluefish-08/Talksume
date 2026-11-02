@@ -67,7 +67,7 @@ function Body({ detail }: { detail: HrApplicationDetail }) {
       <section className={styles.section}>
         <h3 className={styles.h}>简历</h3>
         {resume ? (
-          <HrResumeView content={resume.content} />
+          <HrResumeView content={resume.content} template={resume.template} accent={resume.accent} />
         ) : (
           <p className={styles.muted}>候选人投递时没有附带简历。</p>
         )}

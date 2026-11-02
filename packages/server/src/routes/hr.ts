@@ -51,6 +51,7 @@ export function registerHrRoutes(app: FastifyInstance, ctx: FlowContext): void {
     resume: {
       id: resumeVersions.id,
       template: resumeVersions.template,
+      accent: resumeVersions.accent,
       content: resumeVersions.content,
       createdAt: resumeVersions.createdAt,
     },

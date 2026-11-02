@@ -10,6 +10,7 @@ import {
 } from "@talksume/core";
 import { schema, type TransitionOptions } from "@talksume/db";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { loadResumeStyle } from "../resume-style.ts";
 import type { FlowContext } from "./context.ts";
 import { HttpError, isUniqueViolation } from "./http.ts";
 
@@ -105,20 +106,31 @@ export interface CreateApplicationInput {
 /** 投递时冻结一份简历给 HR 看；画像没变就复用上一份快照。 */
 async function snapshotResume(ctx: FlowContext, userId: string): Promise<string | null> {
   const [profile] = await ctx.db.select().from(profiles).where(eq(profiles.userId, userId));
+  const style = await loadResumeStyle(ctx.db, userId);
   const [latest] = await ctx.db
-    .select({ id: resumeVersions.id, profileVersion: resumeVersions.profileVersion })
+    .select({
+      id: resumeVersions.id,
+      profileVersion: resumeVersions.profileVersion,
+      template: resumeVersions.template,
+      accent: resumeVersions.accent,
+    })
     .from(resumeVersions)
     .where(eq(resumeVersions.userId, userId))
     .orderBy(desc(resumeVersions.createdAt))
     .limit(1);
   if (!profile) return latest?.id ?? null;
-  if (latest && latest.profileVersion === profile.version) return latest.id;
+  const same =
+    latest?.profileVersion === profile.version &&
+    latest.template === style.template &&
+    latest.accent === style.accent;
+  if (latest && same) return latest.id;
   const [created] = await ctx.db
     .insert(resumeVersions)
     .values({
       userId,
       profileVersion: profile.version,
-      template: "campus",
+      template: style.template,
+      accent: style.accent,
       content: profileToResume(Profile.parse(profile.data)),
     })
     .returning({ id: resumeVersions.id });

@@ -3,9 +3,10 @@ import { type Completeness, type ResumeContent, SECTION_LABELS } from "../../api
 import { CompletenessBar } from "../resume/CompletenessBar.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
 import { PolishButton } from "../resume/PolishButton.tsx";
-import type { FactItem } from "../resume/queries.ts";
+import { type FactItem, useResumeStyle } from "../resume/queries.ts";
 import { type FactQuote, ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
+import { TemplatePicker } from "../resume/TemplatePicker.tsx";
 import styles from "./ResumePane.module.css";
 
 interface Props {
@@ -21,6 +22,7 @@ type Tab = "resume" | "facts";
 
 export function ResumePane({ resume, completeness, highlights, facts, quotes, roundOf }: Props) {
   const [tab, setTab] = useState<Tab>("resume");
+  const { style } = useResumeStyle();
   const visible = facts.filter((f) => f.status !== "superseded" && f.quote);
 
   return (
@@ -52,7 +54,7 @@ export function ResumePane({ resume, completeness, highlights, facts, quotes, ro
           </button>
         </div>
         <span className={styles.grow} />
-        <span className={styles.template}>校园模板</span>
+        <TemplatePicker resume={resume} />
         <ExportMenu />
         <PolishButton />
       </header>
@@ -65,6 +67,7 @@ export function ResumePane({ resume, completeness, highlights, facts, quotes, ro
         <div className={styles.body} role="tabpanel" id="panel-resume" aria-labelledby="tab-resume">
           <ResumePreview
             resume={resume}
+            resumeStyle={style}
             highlightTexts={highlights}
             facts={quotes}
             placeholders={placeholderTitles(resume, completeness)}
