@@ -342,9 +342,11 @@ export interface PickOptions extends CompletenessOptions {
   /** 每个字段已经追问过的次数，用于避免死缠烂打。 */
   askCounts?: Readonly<Record<string, number>>;
   maxAsks?: number;
+  /** 用户跳过或说没有的字段 key，永远不主动再问。 */
+  skipped?: ReadonlySet<string>;
 }
 
-function toSlot(m: MissingField): Slot {
+export function toSlot(m: MissingField): Slot {
   const spec = SECTION_BY_NAME[m.section];
   if (m.kind === "new_item") return { ...m, question: spec.newItemQuestion, strategy: spec.newItemStrategy };
   if (m.kind === "quantify") {
@@ -367,7 +369,9 @@ export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot 
   const { missing } = computeCompleteness(profile, options);
   const maxAsks = options.maxAsks ?? 2;
   const askable = missing.filter(
-    (m) => (options.askCounts?.[m.key] ?? 0) < (m.kind === "quantify" ? 1 : maxAsks),
+    (m) =>
+      !options.skipped?.has(m.key) &&
+      (options.askCounts?.[m.key] ?? 0) < (m.kind === "quantify" ? 1 : maxAsks),
   );
   const order = new Map(SECTION_SPECS.map((s, i) => [s.section, i]));
   for (const wantRequired of [true, false]) {

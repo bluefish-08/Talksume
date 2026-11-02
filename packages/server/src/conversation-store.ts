@@ -6,12 +6,15 @@ import {
   createIntakeState,
   type Draft,
   type IntakeState,
+  type Ledger,
+  ledgerOf,
   type TurnMeta,
 } from "@talksume/agent";
 import { type Fact, Profile } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { fallbackTitle } from "./conversation-title.ts";
+import { loadLedger, recentSummaries, saveLedger } from "./memory-store.ts";
 
 const { conversations, messages, profileFacts, profiles } = schema;
 
@@ -22,6 +25,7 @@ export interface Snapshot {
   profile: Profile;
   facts: Map<string, { status: string; payload: unknown }>;
   historyLength: number;
+  ledger: Ledger;
 }
 
 export interface LoadedConversation {
@@ -52,8 +56,6 @@ function toFact(row: typeof profileFacts.$inferSelect): Fact {
 
 function intakeOf(state: IntakeState) {
   return {
-    completedSections: state.completedSections,
-    askCounts: state.askCounts,
     conflicts: state.conflicts,
     drafts: state.drafts,
   };
@@ -77,6 +79,21 @@ export async function loadMessages(db: Db, conversationId: string): Promise<Stor
   );
 }
 
+/** 用户级记忆：画像与事实（L1）、问答账本（L2）、最近的会话摘要（L3）。 */
+export async function loadUserMemory(db: Db, userId: string) {
+  const [{ profile }, factRows, ledger, summaries] = await Promise.all([
+    loadProfile(db, userId),
+    db
+      .select()
+      .from(profileFacts)
+      .where(eq(profileFacts.userId, userId))
+      .orderBy(asc(profileFacts.createdAt)),
+    loadLedger(db, userId),
+    recentSummaries(db, userId),
+  ]);
+  return { profile, facts: factRows.map(toFact), ledger, summaries };
+}
+
 /** 会话不属于该用户时返回 undefined，调用方一律按 404 处理。 */
 export async function loadConversation(
   db: Db,
@@ -90,24 +107,18 @@ export async function loadConversation(
     .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
   if (!conv) return undefined;
 
-  const [{ profile }, factRows, stored] = await Promise.all([
-    loadProfile(db, userId),
-    db
-      .select()
-      .from(profileFacts)
-      .where(eq(profileFacts.userId, userId))
-      .orderBy(asc(profileFacts.createdAt)),
+  const [{ profile, facts, ledger, summaries }, stored] = await Promise.all([
+    loadUserMemory(db, userId),
     loadMessages(db, conversationId),
   ]);
   const history: ChatTurn[] = stored.map((m) => ({ id: m.id, role: m.role, content: m.content }));
-  const facts = factRows.map(toFact);
   const intake = conv.intakeState;
   const state = createIntakeState({
     profile,
     facts,
     history,
-    completedSections: intake.completedSections ?? [],
-    askCounts: intake.askCounts ?? {},
+    ...structuredClone(ledger),
+    summaries,
     conflicts: (intake.conflicts ?? []) as Conflict[],
     drafts: (intake.drafts ?? []) as Draft[],
   });
@@ -119,6 +130,7 @@ export async function loadConversation(
       profile: structuredClone(profile),
       facts: new Map(facts.map((f) => [f.id, { status: f.status, payload: f.payload }])),
       historyLength: history.length,
+      ledger,
     },
   };
 }
@@ -128,8 +140,10 @@ export async function createConversation(
   userId: string,
   state: IntakeState,
   greeting: { id: string; text: string },
+  ledgerBefore: Ledger,
 ): Promise<string> {
   return db.transaction(async (tx) => {
+    await saveLedger(tx, userId, ledgerBefore, ledgerOf(state));
     const [conv] = await tx
       .insert(conversations)
       .values({ userId, intakeState: intakeOf(state) })
@@ -208,6 +222,7 @@ export async function persistState(
           },
         });
     }
+    await saveLedger(tx, userId, snapshot.ledger, ledgerOf(state));
     const firstUser = newTurns.find((t) => t.role === "user");
     await tx
       .update(conversations)
@@ -230,11 +245,5 @@ export async function listConversations(db: Db, userId: string, limit = 30) {
 }
 
 export async function latestCompletedSections(db: Db, userId: string) {
-  const [row] = await db
-    .select({ intakeState: conversations.intakeState })
-    .from(conversations)
-    .where(eq(conversations.userId, userId))
-    .orderBy(desc(conversations.updatedAt))
-    .limit(1);
-  return row?.intakeState.completedSections ?? [];
+  return (await loadLedger(db, userId)).completedSections;
 }

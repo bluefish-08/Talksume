@@ -112,6 +112,26 @@ describe("disableThinking", () => {
     expect(await hookFor({}, true)).toBeUndefined();
     expect(await hookFor({ LLM_DISABLE_THINKING: "0" }, false)).toBeTypeOf("function");
   });
+
+  it("completeStructured 的 thinking 覆盖全局配置", async () => {
+    const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }] });
+    core.setResponses([fauxAssistantMessage('{"n":1}')]);
+    let hook: unknown;
+    const gateway = createGateway(loadGatewayConfig({ ...baseEnv, LLM_DISABLE_THINKING: "0" }), {
+      baseStream: (m, c, o) => {
+        hook = o?.onPayload;
+        return core.streamSimple(m, c, o);
+      },
+    });
+    await gateway.completeStructured({
+      purpose: "memory",
+      prompt: "x",
+      schema: {},
+      validate: (v) => v,
+      thinking: false,
+    });
+    expect(hook).toBeTypeOf("function");
+  });
 });
 
 describe("pii redactor", () => {

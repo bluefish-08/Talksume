@@ -10,7 +10,7 @@ import { createDb, type DbHandle, migrate, schema } from "@talksume/db";
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppDeps, buildApp } from "../app.ts";
 import { gatewayLlm } from "../llm.ts";
 
@@ -50,8 +50,8 @@ function fakeLlm(steps: FauxResponseStep[]): NonNullable<AppDeps["llm"]> {
   return single({ streamFn: (m, c, o) => core.streamSimple(m, c, o), model: core.getModel() });
 }
 
-async function boot(llm?: AppDeps["llm"]) {
-  app = buildApp({ edition: "cloud", version: "t", db: handle.db, ...(llm && { llm }) });
+async function boot(llm?: AppDeps["llm"], extra: Partial<AppDeps> = {}) {
+  app = buildApp({ edition: "cloud", version: "t", db: handle.db, ...(llm && { llm }), ...extra });
   await app.ready();
 }
 
@@ -281,7 +281,9 @@ describe("发送消息（SSE）", () => {
     expect(row?.data.basics).toMatchObject({ name: "李明", phone: "13800000000" });
     expect(await messageCount(id)).toBe(5);
     const [conv] = await handle.db.select().from(schema.conversations);
-    expect(conv?.intakeState.askCounts).toBeDefined();
+    expect(conv?.intakeState.askCounts).toBeUndefined();
+    const [ledger] = await handle.db.select().from(schema.intakeLedgers);
+    expect(Object.values(ledger?.askCounts ?? {}).reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
     expect(conv?.title).toBe("我叫李明");
   });
 
@@ -520,5 +522,178 @@ describe("矛盾确认", () => {
       payload: { choice: "maybe" },
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("跨会话记忆", () => {
+  const devUserId = async () => {
+    const [user] = await handle.db.select({ id: schema.users.id }).from(schema.users);
+    if (!user) throw new Error("dev user missing");
+    return user.id;
+  };
+
+  const seedProfile = async (data: Record<string, unknown>) =>
+    handle.db.insert(schema.profiles).values({ userId: await devUserId(), data: data as never });
+
+  const greetingOf = async () => (await createConversation()).res.json().greeting as string;
+
+  it("会话 A 跳过成绩，会话 B 不再问成绩", async () => {
+    await boot(
+      fakeLlm([
+        toolTurn(fauxToolCall("skip_field", { quote: "成绩就不说了" })),
+        toolTurn(ask("还有别的想补充吗？")),
+      ]),
+    );
+    await createConversation();
+    await seedProfile({
+      basics: {
+        name: "李明",
+        phone: "13800000000",
+        email: "liming@example.com",
+        city: "江城",
+        summary: "后端",
+      },
+      education: [
+        {
+          id: "edu_1",
+          school: "示例大学",
+          degree: "bachelor",
+          major: "计算机",
+          start: "2021-09",
+          end: "2025-06",
+        },
+      ],
+    });
+    await handle.db
+      .update(schema.intakeLedgers)
+      .set({ completedSections: ["experiences", "projects", "skills", "awards", "intention"] });
+
+    const a = await createConversation();
+    expect(a.res.json().greeting).toContain("成绩或排名");
+    const { events } = await send(a.id, "成绩就不说了");
+    expect(events.at(-1)?.event).toBe("done");
+
+    const [ledger] = await handle.db.select().from(schema.intakeLedgers);
+    expect(ledger?.skipped).toEqual([
+      expect.objectContaining({ key: "education:edu_1:gpa", quote: "成绩就不说了" }),
+    ]);
+
+    const b = await createConversation();
+    expect(b.res.json().greeting).not.toContain("成绩");
+    const detail = await app.inject({ method: "GET", url: `/api/v1/conversations/${b.id}` });
+    expect(detail.statusCode).toBe(200);
+  });
+
+  it("已有姓名时新会话开场不问称呼，接续上次的话题", async () => {
+    await boot();
+    await createConversation();
+    await seedProfile({ basics: { name: "李明" } });
+    await handle.db.insert(schema.profileFacts).values({
+      userId: await devUserId(),
+      section: "projects",
+      payload: { name: "江城闲置" },
+      quote: "做过一个江城闲置",
+      status: "confirmed",
+    });
+    const greeting = await greetingOf();
+    expect(greeting).not.toContain("称呼");
+    expect(greeting).toContain("欢迎回来，李明");
+    expect(greeting).toContain("上次聊到项目经历里的「江城闲置」");
+  });
+
+  it("老会话 intake_state 里的完成分区和追问次数并入账本", async () => {
+    await boot();
+    await createConversation();
+    const userId = await devUserId();
+    await handle.db.delete(schema.intakeLedgers);
+    await handle.db.insert(schema.conversations).values([
+      { userId, intakeState: { completedSections: ["awards"], askCounts: { "basics:_:phone": 1 } } },
+      { userId, intakeState: { completedSections: ["skills"], askCounts: { "basics:_:phone": 1 } } },
+    ]);
+    await greetingOf();
+    const [ledger] = await handle.db.select().from(schema.intakeLedgers);
+    expect(ledger?.completedSections).toEqual(expect.arrayContaining(["awards", "skills"]));
+    expect(ledger?.askCounts["basics:_:phone"]).toBe(2);
+    expect(ledger?.askCounts["basics:_:name"]).toBe(1);
+  });
+
+  it("开新会话时在后台给上一个会话补摘要，下一轮对话的 prompt 里带上", async () => {
+    const prompts: string[] = [];
+    const core = createFauxCore({ models: [{ id: "fake-model" }] });
+    core.setResponses([
+      toolTurn(upsert([{ section: "basics", payload: { name: "李明" }, quote: "我叫李明" }])),
+      toolTurn(ask("手机号？")),
+      toolTurn(ask("邮箱？")),
+    ]);
+    const llm = single({
+      streamFn: (m, c, o) => {
+        prompts.push(JSON.stringify(c.messages[0]));
+        return core.streamSimple(m, c, o);
+      },
+      model: core.getModel(),
+    });
+    const transcripts: string[] = [];
+    await boot(llm, {
+      summarizer: async (transcript) => {
+        transcripts.push(transcript.map((t) => t.content).join("|"));
+        return { summary: "聊了基本信息，说回头补实习", topic: "基本信息" };
+      },
+    });
+    const a = await createConversation();
+    await send(a.id, "我叫李明");
+    const b = await createConversation();
+    expect(b.res.json().greeting).toContain("欢迎回来，李明");
+
+    await vi.waitFor(async () => {
+      const rows = await handle.db.select().from(schema.conversationSummaries);
+      expect(rows).toEqual([
+        expect.objectContaining({ conversationId: a.id, summary: "聊了基本信息，说回头补实习" }),
+      ]);
+    });
+    expect(transcripts[0]).toContain("我叫李明");
+
+    expect(prompts.at(-1)).not.toContain("之前几次会话的摘要");
+    await send(b.id, "手机号还没想好");
+    expect(prompts.at(-1)).toContain("之前几次会话的摘要");
+    expect(prompts.at(-1)).toContain("聊了基本信息，说回头补实习");
+
+    const c = await createConversation();
+    expect(c.res.json().greeting).toContain("上次聊到基本信息");
+  });
+
+  it("摘要生成失败不影响创建会话", async () => {
+    let calls = 0;
+    await boot(
+      fakeLlm([
+        toolTurn(upsert([{ section: "basics", payload: { name: "李明" }, quote: "我叫李明" }])),
+        toolTurn(ask("手机号？")),
+      ]),
+      {
+        summarizer: async () => {
+          calls++;
+          throw new Error("llm down");
+        },
+      },
+    );
+    const a = await createConversation();
+    await send(a.id, "我叫李明");
+    const b = await createConversation();
+    expect(b.res.statusCode).toBe(201);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    expect(await handle.db.select().from(schema.conversationSummaries)).toEqual([]);
+  });
+
+  it("只有开场白的会话不生成摘要", async () => {
+    let calls = 0;
+    await boot(undefined, {
+      summarizer: async () => {
+        calls++;
+        return { summary: "x", topic: "" };
+      },
+    });
+    await createConversation();
+    await createConversation();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toBe(0);
   });
 });

@@ -174,6 +174,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       completedSections: state.completedSections,
       conflicts: state.conflicts,
       drafts: state.drafts,
+      skipped: state.skipped,
+      ...(state.summaries ? { summaries: state.summaries } : {}),
     });
 
     let assistantText = "";

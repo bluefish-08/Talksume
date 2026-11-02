@@ -5,8 +5,9 @@ import {
   buildApp,
   createRedisNotifier,
   gatewayLlm,
-  gatewayTitler,
+  gatewaySummarizer,
   gatewayTemplateAdvisor,
+  gatewayTitler,
   InProcessNotifier,
   type NotificationBus,
   runReminderSweep,
@@ -45,6 +46,7 @@ const app = buildApp({
     llm: gatewayLlm(gateway),
     titler: gatewayTitler(gateway),
     templateAdvisor: gatewayTemplateAdvisor(gateway),
+    summarizer: gatewaySummarizer(gateway),
   }),
 });
 logCall = (log) => app.log.info({ llm: log }, "llm call");

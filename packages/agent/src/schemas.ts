@@ -89,6 +89,15 @@ export const CompleteSectionArgs = z.object({
 });
 export type CompleteSectionArgs = z.infer<typeof CompleteSectionArgs>;
 
+export const SkipFieldArgs = z.object({
+  key: z
+    .string()
+    .optional()
+    .describe("要跳过的字段 key，见「当前目标字段」或 upsert_facts 返回的下一个目标；不传则跳过当前目标字段"),
+  quote: Quote.describe("用户表示没有/不想说的原话，如「GPA 不想说」「没有个人网站」"),
+});
+export type SkipFieldArgs = z.infer<typeof SkipFieldArgs>;
+
 export const ResolveConflictArgs = z.object({
   factId: z.string().optional().describe("待确认矛盾的 factId，见系统提示里的矛盾列表"),
   field: z.string().optional().describe("没有 factId 时用矛盾所在字段名定位，如 situation"),
@@ -98,7 +107,7 @@ export const ResolveConflictArgs = z.object({
 export type ResolveConflictArgs = z.infer<typeof ResolveConflictArgs>;
 
 export interface ToolSpec {
-  name: "upsert_facts" | "ask_user" | "complete_section" | "resolve_conflict";
+  name: "upsert_facts" | "ask_user" | "complete_section" | "skip_field" | "resolve_conflict";
   description: string;
   schema: z.ZodType;
 }
@@ -120,6 +129,12 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     name: "complete_section",
     description: "标记某个分区已收集完成，或用户明确表示该分区没有内容。",
     schema: CompleteSectionArgs,
+  },
+  {
+    name: "skip_field",
+    description:
+      "用户对某一项明确说没有或不想说时调用（如「成绩不想说」）。跳过的项以后的会话都不会再问；整个分区都没有时改用 complete_section。",
+    schema: SkipFieldArgs,
   },
   {
     name: "resolve_conflict",

@@ -6,24 +6,27 @@ import {
   type IntakeEvent,
   nextSlotOf,
   noteAsked,
+  openingMessage,
+  topicOfFacts,
 } from "@talksume/agent";
 import { profileToResume } from "@talksume/core";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { LlmDeps, RouteModule } from "../app.ts";
+import { summarizePrevious } from "../conversation-memory.ts";
 import {
   createConversation,
   type LoadedConversation,
   listConversations,
   loadConversation,
   loadMessages,
+  loadUserMemory,
   persistState,
 } from "../conversation-store.ts";
 import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
 import { resumeRoutes } from "./resume.ts";
 
-const GREETING = "你好，我是简聊助手。接下来我们边聊边整理简历，聊到哪里都可以先停，下次接着来。";
 const KEEPALIVE_MS = 15_000;
 
 const MessageBody = z.object({
@@ -69,12 +72,20 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   });
 
   app.post("/api/v1/conversations", async (req, reply) => {
-    const state = createIntakeState();
+    const { profile, facts, ledger, summaries } = await loadUserMemory(db, req.userId);
+    const state = createIntakeState({ profile, facts, ...structuredClone(ledger) });
     const slot = nextSlotOf(state);
     noteAsked(state, slot);
-    const greeting = { id: randomUUID(), text: slot ? `${GREETING}${slot.question}` : GREETING };
+    const topic = summaries[0]?.topic ?? topicOfFacts(facts);
+    const greeting = { id: randomUUID(), text: openingMessage({ profile, slot, topic }) };
     state.history.push({ id: greeting.id, role: "assistant", content: greeting.text });
-    const id = await createConversation(db, req.userId, state, greeting);
+    const id = await createConversation(db, req.userId, state, greeting, ledger);
+    const { summarizer } = deps;
+    if (summarizer) {
+      void summarizePrevious(db, summarizer, req.userId, id, (err) =>
+        req.log.warn({ err }, "conversation summary failed"),
+      );
+    }
     return reply.code(201).send({ id, greeting: greeting.text });
   });
 

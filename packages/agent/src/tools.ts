@@ -2,7 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@earendil-works/pi-ai";
 import type { ProfileSection } from "@talksume/core";
 import type { z } from "zod";
-import { computeCompleteness, pickNextSlot, SECTION_BY_NAME, type Slot } from "./completeness.ts";
+import { computeCompleteness, pickNextSlot, SECTION_BY_NAME, type Slot, toSlot } from "./completeness.ts";
 import {
   applyFacts,
   type Conflict,
@@ -11,6 +11,7 @@ import {
   draftMissing,
   resolveConflict,
 } from "./facts.ts";
+import { liftSkips, sectionSkipEntry, skipEntryOf, skippedKeys } from "./memory.ts";
 import { describeSlot } from "./prompt.ts";
 import {
   AskUserArgs,
@@ -19,6 +20,7 @@ import {
   type FactInput,
   formatZodIssues,
   ResolveConflictArgs,
+  SkipFieldArgs,
   TOOL_SPECS,
   toolJsonSchema,
   UpsertFactsArgs,
@@ -72,13 +74,13 @@ function slotRef(slot: Slot): SlotRef {
 }
 
 /** 暂存的条目优先补齐，问过两次仍不答就放过，回到正常顺序。 */
-function draftSlot(state: IntakeState): Slot | null {
+function draftSlot(state: IntakeState, skipped: ReadonlySet<string>): Slot | null {
   for (const draft of state.drafts) {
     const spec = SECTION_BY_NAME[draft.section];
     const id = String(draft.item.id);
     for (const field of draftMissing(draft)) {
       const key = `${draft.section}:${id}:${field}`;
-      if ((state.askCounts[key] ?? 0) >= 2) continue;
+      if ((state.askCounts[key] ?? 0) >= 2 || skipped.has(key)) continue;
       const f = spec.fields.find((x) => x.field === field);
       return {
         key,
@@ -99,12 +101,23 @@ function draftSlot(state: IntakeState): Slot | null {
 }
 
 export function nextSlotOf(state: IntakeState): Slot | null {
-  const draft = draftSlot(state);
+  const skipped = skippedKeys(state);
+  const draft = draftSlot(state, skipped);
   if (draft) return draft;
   return pickNextSlot(state.profile, {
     completedSections: state.completedSections,
     askCounts: state.askCounts,
+    skipped,
   });
+}
+
+/** 可被 skip_field 跳过的字段：暂存条目的缺项和画像里仍缺的项。 */
+function skippableSlot(state: IntakeState, key: string): Slot | null {
+  const draft = draftSlot(state, new Set());
+  if (draft?.key === key) return draft;
+  const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
+  const hit = missing.find((m) => m.key === key);
+  return hit ? toSlot(hit) : null;
 }
 
 export function noteAsked(state: IntakeState, slot: Slot | null): void {
@@ -208,6 +221,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       state.profile = result.profile;
       state.drafts = result.drafts;
       state.facts.push(...result.facts);
+      liftSkips(state, result.changes);
       if (result.drafted.length > 0) ctx.flags.changed = true;
       if (result.changes.length > 0 || result.facts.length > 0) {
         ctx.flags.changed = true;
@@ -288,12 +302,38 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
         }
       }
       if (!state.completedSections.includes(section)) state.completedSections.push(section);
+      if (args.reason === "user_skipped" && args.quote) {
+        const entry = sectionSkipEntry(section, args.quote);
+        state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
+      }
       const next = nextSlotOf(state);
       return text(
         `已完成「${label}」。${next ? `\n下一个目标：\n${describeSlot(next)}` : "\n所有分区均已完成。"}`,
       );
     },
   );
+
+  const skipField = tool("skip_field", "跳过字段", SkipFieldArgs, (args: z.infer<typeof SkipFieldArgs>) => {
+    if (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, args.quote)) {
+      return text(`quote「${args.quote}」不是用户说过的原话，请逐字摘抄用户表示没有/不想说的那句话。`, true);
+    }
+    const slot = args.key ? skippableSlot(state, args.key) : nextSlotOf(state);
+    if (!slot) {
+      return text(
+        args.key
+          ? `找不到 key=${args.key} 的待补字段，请用「当前目标字段」里的 key。`
+          : "当前没有待补的字段。",
+        true,
+      );
+    }
+    const entry = skipEntryOf(slot, args.quote);
+    state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
+    ctx.flags.changed = true;
+    const next = nextSlotOf(state);
+    return text(
+      `已记下用户不提供「${entry.label}」，以后不会再问。${next ? `\n下一个目标：\n${describeSlot(next)}` : "\n下一个目标：无，信息已基本完整。"}`,
+    );
+  });
 
   const resolveConflictTool = tool(
     "resolve_conflict",
@@ -330,5 +370,5 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     },
   );
 
-  return [upsertFacts, askUser, completeSection, resolveConflictTool];
+  return [upsertFacts, askUser, completeSection, skipField, resolveConflictTool];
 }

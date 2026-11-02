@@ -1,4 +1,4 @@
-import { createIntakeState } from "@talksume/agent";
+import { createIntakeState, emptyLedger } from "@talksume/agent";
 import type { Gateway } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
 import type { LoadedConversation } from "./conversation-store.ts";
@@ -79,7 +79,7 @@ describe("titleRound", () => {
       state,
       title: null,
       titleSource: "auto",
-      snapshot: { profile: state.profile, facts: new Map(), historyLength: before },
+      snapshot: { profile: state.profile, facts: new Map(), historyLength: before, ledger: emptyLedger() },
     };
   };
 

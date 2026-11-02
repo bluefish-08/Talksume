@@ -495,6 +495,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         ...(request.signal ? { signal: request.signal } : {}),
         ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
         ...(request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {}),
+        ...(request.thinking !== undefined ? { thinking: request.thinking } : {}),
         temperature: request.temperature ?? 0,
       });
       try {

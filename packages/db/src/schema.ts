@@ -88,6 +88,34 @@ export const conversations = pgTable(
   (t) => [index("conversations_user_idx").on(t.userId, t.updatedAt)],
 );
 
+/** L2 问答账本：用户级，跨会话共享；早期存在 conversations.intake_state 里，首次读取时合并过来。 */
+export const intakeLedgers = pgTable("intake_ledgers", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  completedSections: jsonb("completed_sections").$type<ProfileSection[]>().notNull().default([]),
+  askCounts: jsonb("ask_counts").$type<Record<string, number>>().notNull().default({}),
+  skipped: jsonb("skipped").$type<Record<string, unknown>[]>().notNull().default([]),
+  updatedAt: updatedAt(),
+});
+
+/** L3 会话摘要：用户开新会话时给上一个会话补生成。 */
+export const conversationSummaries = pgTable(
+  "conversation_summaries",
+  {
+    conversationId: uuid("conversation_id")
+      .primaryKey()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    summary: text("summary").notNull(),
+    topic: text("topic").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("conversation_summaries_user_idx").on(t.userId, t.createdAt)],
+);
+
 export const messages = pgTable(
   "messages",
   {

@@ -3,6 +3,7 @@ import type { Edition } from "@talksume/core";
 import type { Db } from "@talksume/db";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerDevAuth } from "./auth.ts";
+import type { ConversationSummarizer } from "./conversation-memory.ts";
 import type { ConversationTitler } from "./conversation-title.ts";
 import type { ConnectorRegistry } from "./flow/channels.ts";
 import type { NotificationBus } from "./notifications/bus.ts";
@@ -39,6 +40,8 @@ export interface AppDeps {
   /** 会话标题生成；不配时保留第一句话截断的标题。 */
   titler?: ConversationTitler;
   templateAdvisor?: TemplateAdvisor;
+  /** 开新会话时给上一个会话补摘要；不传则不生成。 */
+  summarizer?: ConversationSummarizer;
   flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
 }
 

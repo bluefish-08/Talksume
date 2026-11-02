@@ -1,6 +1,7 @@
 import { type Fact, Profile, type ProfileSection } from "@talksume/core";
 import type { Completeness, Slot } from "./completeness.ts";
 import type { Conflict, Draft, ProfileChange } from "./facts.ts";
+import type { SkipEntry, SummaryNote } from "./memory.ts";
 
 /** 随助手消息落库的附加信息：本轮写入的变更与快捷回复。 */
 export type TurnMeta = {
@@ -22,6 +23,9 @@ export interface IntakeState {
   history: ChatTurn[];
   completedSections: ProfileSection[];
   askCounts: Record<string, number>;
+  skipped: SkipEntry[];
+  /** 之前会话的摘要（L3），只读，由近到远。 */
+  summaries?: SummaryNote[];
   /** 等待用户确认的矛盾。 */
   conflicts: Conflict[];
   drafts: Draft[];
@@ -34,6 +38,7 @@ export function createIntakeState(init: Partial<IntakeState> = {}): IntakeState 
     history: [],
     completedSections: [],
     askCounts: {},
+    skipped: [],
     conflicts: [],
     drafts: [],
     ...init,
