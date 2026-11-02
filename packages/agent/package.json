@@ -1,0 +1,19 @@
+{
+  "name": "@talksume/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "eval": "node --env-file-if-exists=../../.env eval/run.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@talksume/core": "workspace:*",
+    "@talksume/llm-gateway": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src", "eval"],
+  "references": [{ "path": "../core" }, { "path": "../llm-gateway" }]
+}
