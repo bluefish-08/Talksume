@@ -10,7 +10,13 @@ import { describe, expect, it } from "vitest";
 import { computeCompleteness } from "./completeness.ts";
 import { createIntakeController } from "./controller.ts";
 import { buildSystemPrompt } from "./prompt.ts";
-import { createIntakeState, type IntakeEvent, type JobCard, type JobTools } from "./types.ts";
+import {
+  createIntakeState,
+  type IntakeEvent,
+  type JobCard,
+  type JobTools,
+  type ResumeTailor,
+} from "./types.ts";
 
 const JOBS: JobCard[] = [
   {
@@ -76,7 +82,7 @@ function fakeJobs(overrides: Partial<JobTools> = {}): { jobs: JobTools; calls: C
 let n = 0;
 const genId = (prefix: string) => `${prefix}_${++n}`;
 
-function fake(steps: FauxResponseStep[], jobs?: JobTools, prompts: string[] = []) {
+function fake(steps: FauxResponseStep[], jobs?: JobTools, prompts: string[] = [], tailor?: ResumeTailor) {
   const core = createFauxCore({ models: [{ id: "fake-model" }] });
   core.setResponses(steps);
   const controller = createIntakeController({
@@ -87,6 +93,7 @@ function fake(steps: FauxResponseStep[], jobs?: JobTools, prompts: string[] = []
     model: core.getModel(),
     genId,
     ...(jobs && { jobs }),
+    ...(tailor && { tailor }),
   });
   return { controller };
 }
@@ -219,6 +226,70 @@ describe("岗位工具", () => {
   });
 });
 
+describe("定制简历工具", () => {
+  const card = { jobId: "demo:2", company: "云帆网络", title: "Java 后台开发实习", changes: 2, rejected: 1 };
+
+  function run(tailor: ResumeTailor) {
+    let toolResult = "";
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("tailor_resume", { jobId: "demo:2" })),
+        (context) => {
+          toolResult = JSON.stringify(context.messages.at(-1));
+          return fauxAssistantMessage([fauxText("好的。")]);
+        },
+      ],
+      fakeJobs().jobs,
+      [],
+      tailor,
+    );
+    const state = createIntakeState();
+    return collect(controller.handleUserMessage(state, { id: "u1", text: "第二个帮我定制一下简历" })).then(
+      (events) => ({ events, state, toolResult: () => toolResult }),
+    );
+  }
+
+  it("成功时推出定制卡片并落进消息，结果提醒模型还没生效", async () => {
+    const calls: string[] = [];
+    const { events, state, toolResult } = await run({
+      async tailor(_profile, _facts, jobId) {
+        calls.push(jobId);
+        return { card, lines: ["- 个人摘要：熟悉 Java 后端开发", "- 技能展示顺序：Java、MySQL 排在前面"] };
+      },
+    });
+    expect(calls).toEqual(["demo:2"]);
+    expect(events.find((e) => e.type === "tailor")).toEqual({ type: "tailor", tailor: card });
+    expect(toolResult()).toContain("生成定制版草稿，共 2 处调整");
+    expect(toolResult()).toContain("1 处因出现简历里没有的内容被拦下");
+    expect(toolResult()).toContain("不要说已经改好");
+    expect(state.history.at(-1)?.meta?.tailor).toEqual(card);
+    expect(events.some((e) => e.type === "ask")).toBe(false);
+  });
+
+  it("失败或找不到岗位时不出卡片，结果要求如实说明", async () => {
+    const failed = await run({
+      async tailor() {
+        throw new Error("模型超时");
+      },
+    });
+    expect(failed.events.some((e) => e.type === "tailor")).toBe(false);
+    expect(failed.toolResult()).toContain("定制简历失败：模型超时");
+    expect(failed.state.history.at(-1)?.meta?.tailor).toBeUndefined();
+
+    const missing = await run({ tailor: async () => null });
+    expect(missing.events.some((e) => e.type === "tailor")).toBe(false);
+    expect(missing.toolResult()).toContain("找不到 jobId=demo:2");
+  });
+
+  it("没有可采用的调整时不出卡片", async () => {
+    const { events, toolResult } = await run({
+      tailor: async () => ({ card: { ...card, changes: 0 }, lines: [] }),
+    });
+    expect(events.some((e) => e.type === "tailor")).toBe(false);
+    expect(toolResult()).toContain("没有得到可采用的调整");
+  });
+});
+
 describe("岗位相关的系统提示", () => {
   const input = (jobTools: boolean) => {
     const state = createIntakeState();
@@ -239,5 +310,13 @@ describe("岗位相关的系统提示", () => {
     expect(prompt).toContain("recommend_jobs");
     expect(prompt).toContain("去投递");
     expect(prompt).not.toContain("比如生成简历、改写措辞、重点突出某条、投递");
+    expect(prompt).not.toContain("tailor_resume");
+  });
+
+  it("开放定制工具后可以按岗位改侧重，但只有工具成功才能说生成了", () => {
+    const prompt = buildSystemPrompt({ ...input(true), tailorTool: true });
+    expect(prompt).toContain("tailor_resume 按岗位定制简历");
+    expect(prompt).toContain("只有 tailor_resume 返回「已生成定制版草稿」时");
+    expect(prompt).not.toContain("改写措辞、重点突出某条");
   });
 });

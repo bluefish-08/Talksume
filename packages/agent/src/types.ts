@@ -50,6 +50,27 @@ export interface JobTools {
   explain(profile: Profile, jobId: string): Promise<JobInsight | null>;
 }
 
+/** 对话里展示的定制简历卡片，点开后由用户逐条确认才会采用。 */
+export interface TailorCard {
+  jobId: string;
+  company: string;
+  title: string;
+  /** 可采用的调整数，不含被拦下的。 */
+  changes: number;
+  rejected: number;
+}
+
+export interface TailorOutcome {
+  card: TailorCard;
+  /** 给模型看的可采用调整，一行一处。 */
+  lines: string[];
+}
+
+/** 服务端注入的按岗位定制简历；找不到岗位返回 null。 */
+export interface ResumeTailor {
+  tailor(profile: Profile, facts: readonly Fact[], jobId: string): Promise<TailorOutcome | null>;
+}
+
 /** 落库的工具调用，下一轮重放进模型上下文，便于追问「第二个怎么样」。 */
 export interface ToolRecord {
   name: string;
@@ -64,6 +85,7 @@ export type TurnMeta = {
   slot?: string;
   quickReplies?: string[];
   jobs?: JobCard[];
+  tailor?: TailorCard;
   tools?: ToolRecord[];
 };
 
@@ -126,5 +148,6 @@ export type IntakeEvent =
       inText?: boolean;
     }
   | { type: "jobs"; source: "recommend" | "search" | "explain"; jobs: JobCard[] }
+  | { type: "tailor"; tailor: TailorCard }
   | { type: "completeness"; completeness: Completeness; nextSlot: Slot | null }
   | { type: "error"; code: string; message: string; recoverable: boolean };

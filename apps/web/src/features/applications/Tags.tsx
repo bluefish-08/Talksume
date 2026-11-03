@@ -26,3 +26,9 @@ export function StatusTag({
 export function ChannelTag({ channel }: { channel: Channel }) {
   return <span className={[styles.tag, styles.outline].join(" ")}>{CHANNEL_LABELS[channel]}</span>;
 }
+
+export function ResumeTag({ tailored }: { tailored: boolean }) {
+  return (
+    <span className={[styles.tag, styles.outline].join(" ")}>{tailored ? "定制版简历" : "通用简历"}</span>
+  );
+}

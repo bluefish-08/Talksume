@@ -1,10 +1,9 @@
 import { profileToResume } from "@talksume/core";
-import { createGateway, GatewayConfigError, loadGatewayConfig } from "@talksume/llm-gateway";
 import { z } from "zod";
 import type { RouteModule } from "../app.ts";
 import { loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
-import { polishTargetsWithLlm, type StructuredLlm } from "../polish-llm.ts";
+import { polishTargetsWithLlm, type StructuredLlm, structuredLlmFromEnv } from "../polish-llm.ts";
 import { decidePolishes, loadPolishRows, polishEntries, savePolishOutcomes } from "../polish-store.ts";
 
 const PolishBody = z
@@ -22,19 +21,10 @@ const DecisionBody = z.object({
   action: z.enum(["accept", "dismiss", "revert"]),
 });
 
-function llmFromEnv(): StructuredLlm | null {
-  try {
-    return createGateway(loadGatewayConfig());
-  } catch (error) {
-    if (error instanceof GatewayConfigError) return null;
-    throw error;
-  }
-}
-
 /** 传 llm 为 null 显式关闭；不传则按环境变量决定。 */
 export function createPolishRoutes(options: { llm?: StructuredLlm | null } = {}): RouteModule {
   return (app, { db }) => {
-    const llm = options.llm === undefined ? llmFromEnv() : options.llm;
+    const llm = options.llm === undefined ? structuredLlmFromEnv() : options.llm;
     const busy = new Set<string>();
 
     const snapshot = async (userId: string) => {

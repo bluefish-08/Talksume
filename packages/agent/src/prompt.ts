@@ -14,6 +14,8 @@ export interface PromptInput {
   summaries?: readonly SummaryNote[];
   /** 是否开放岗位推荐、搜索与解读工具。 */
   jobTools?: boolean;
+  /** 是否开放按岗位定制简历，依赖岗位工具。 */
+  tailorTool?: boolean;
 }
 
 function stripIds(value: unknown): unknown {
@@ -50,6 +52,13 @@ const JOB_LINES = [
   "- 用户这条消息里如果同时说了求职意向、技能等个人信息，照常先用 upsert_facts 写入。",
 ];
 
+const TAILOR_LINES = [
+  "- 用户想针对某个岗位改简历（「帮我针对美团这个岗位改一下」「让简历更适配那个岗位」「定制一下」）时调用 tailor_resume；jobId 和 explain_job 一样从之前工具结果里找，找不到先用 search_jobs。",
+  "- tailor_resume 只生成定制版草稿：调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增事实，主简历不变；用户在卡片里确认采用后，投递这个岗位才默认用定制版。",
+  "- 只有 tailor_resume 返回「已生成定制版草稿」时，才能说「定制版已经生成，点卡片确认」；即便这样也不要说已经改好、已经替换或已经生效。工具失败、没有可采用的调整或还没调用时，绝不能说已经定制或改好。",
+  "- 用户想加的内容简历里本来没有（如岗位要的某项技能），定制补不上：先如实说明，再问用户有没有相关经历，有就照常用 upsert_facts 记下，之后再定制。",
+];
+
 export function describeSlot(slot: Slot): string {
   const where = slot.itemLabel ? `「${slot.itemLabel}」的` : "";
   const lines = [
@@ -70,7 +79,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? "；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配" : ""}。回应和下一个问题直接用文字写出来，写完调用 ask_user，question 填你刚问的那句。`,
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}。回应和下一个问题直接用文字写出来，写完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -82,7 +91,9 @@ export function buildSystemPrompt(input: PromptInput): string {
     `- 用户闲聊时，礼貌回应一句再拉回当前目标${input.jobTools ? "（问岗位不算闲聊，见「岗位问题」）" : ""}。用户对某一项说没有或不想说时，不要强迫，用 skip_field 记下；整个分区都没有时用 complete_section（reason=user_skipped）。跳过的项以后都不会再问。`,
     "- 如果用户说的内容与已记录的信息矛盾，照常写入，系统会自动发出确认问句和按钮，你不要自行决定以哪个为准，不要说已经改了，也不要在文字里复述这个矛盾问题。补充细节（新说法包含旧说法）不算矛盾，系统会直接更新。",
     "- 叙述性字段（项目的 situation、获奖的 description、basics.summary、要点的 detail）已有内容时，补充新信息要写出包含原有内容的完整合并文本：原文逐字保留，新信息接在后面；只有用户明确纠正某处时，才写成替换后的文本。",
-    `- 不要承诺任何没有工具支持的动作，比如生成简历、改写措辞、重点突出某条、替用户投递。信息基本齐全或用户说「去生成吧」时，告诉用户：${RESUME_HINT}`,
+    input.tailorTool
+      ? `- 不要承诺任何没有工具支持的动作，比如生成简历、直接改主简历、替用户投递。按岗位调整简历侧重只能通过 tailor_resume（见「岗位问题」），通用的措辞优化让用户点「润色」。信息基本齐全或用户说「去生成吧」时，告诉用户：${RESUME_HINT}`
+      : `- 不要承诺任何没有工具支持的动作，比如生成简历、改写措辞、重点突出某条、替用户投递。信息基本齐全或用户说「去生成吧」时，告诉用户：${RESUME_HINT}`,
     ...(input.jobTools
       ? []
       : ["- 暂时没法在聊天里查岗位；用户问岗位时，告诉用户可以去「职位推荐」页看，再接着聊。"]),
@@ -110,7 +121,10 @@ export function buildSystemPrompt(input: PromptInput): string {
     "",
     `## 完整度：${percent}%`,
   ];
-  if (input.jobTools) lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...JOB_LINES);
+  if (input.jobTools) {
+    const jobLines = input.tailorTool ? [...JOB_LINES, ...TAILOR_LINES] : JOB_LINES;
+    lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...jobLines);
+  }
   if (input.drafts && input.drafts.length > 0) {
     lines.push("", "## 暂存中（必填项没齐，还没写进画像）");
     for (const d of input.drafts) {

@@ -1,4 +1,6 @@
-import type { JobCard, JobTools } from "@talksume/agent";
+import type { JobCard, JobTools, ResumeTailor } from "@talksume/agent";
+import type { TailorChange } from "@talksume/core";
+import type { Db } from "@talksume/db";
 import {
   DIMENSION_LABELS,
   DIMENSIONS,
@@ -6,6 +8,8 @@ import {
   type MatchDims,
   type MatchingService,
 } from "@talksume/matching";
+import type { StructuredLlm } from "./polish-llm.ts";
+import { generateTailoring, TailorError, usable } from "./tailor-store.ts";
 
 function toCard(job: JobSummary, score: number, reason: string | undefined): JobCard {
   return {
@@ -83,6 +87,49 @@ export function matchingJobTools(service: MatchingService, userId: string): JobT
           evidence: d.evidence ?? [],
         })),
         ...(r.blocked && { blocked: r.blocked }),
+      };
+    },
+  };
+}
+
+const ITEM_SECTION_LABEL = { experiences: "经历", projects: "项目" } as const;
+
+export function describeTailorChange(change: TailorChange): string {
+  switch (change.kind) {
+    case "summary":
+      return `- 个人摘要：${change.after}`;
+    case "bullet":
+      return `- 「${change.heading}」要点：${change.before} → ${change.after}`;
+    case "bullet_order":
+      return `- 「${change.heading}」要点顺序：把「${change.after[0] ?? ""}」放到最前`;
+    case "item_order":
+      return `- ${ITEM_SECTION_LABEL[change.section]}顺序：${change.after.join(" → ")}`;
+    case "skill_order":
+      return `- 技能展示顺序：${change.after.slice(0, 5).join("、")} 排在前面`;
+  }
+}
+
+export function storeResumeTailor(db: Db, llm: StructuredLlm, userId: string): ResumeTailor {
+  return {
+    async tailor(profile, facts, jobId) {
+      const quotes = facts.map((f) => f.quote).filter(Boolean);
+      const result = await generateTailoring(db, llm, userId, jobId, { profile, quotes }).catch(
+        (error: unknown) => {
+          if (error instanceof TailorError && error.code === "job_not_found") return null;
+          throw error;
+        },
+      );
+      if (!result) return null;
+      const ok = result.changes.filter(usable);
+      return {
+        card: {
+          jobId: result.job.id,
+          company: result.job.company,
+          title: result.job.title,
+          changes: ok.length,
+          rejected: result.changes.length - ok.length,
+        },
+        lines: ok.map(describeTailorChange),
       };
     },
   };

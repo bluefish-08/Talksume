@@ -8,7 +8,14 @@ import { useToast } from "../../components/Toast.tsx";
 import { factsKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
 import { useModelChoice } from "./modelChoice.ts";
-import type { ChatMessage, Conflict, ConversationDetail, JobCard, ProfileChange } from "./types.ts";
+import type {
+  ChatMessage,
+  Conflict,
+  ConversationDetail,
+  JobCard,
+  ProfileChange,
+  TailorCard,
+} from "./types.ts";
 
 interface Frame {
   event: string;
@@ -31,6 +38,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     changes: m.changes ?? [],
     quickReplies: m.quickReplies ?? [],
     jobs: m.jobs ?? [],
+    ...(m.tailor && { tailor: m.tailor }),
     state: "done",
   }));
 }
@@ -119,6 +127,9 @@ export function useChatSession(detail: ConversationDetail) {
               }));
               break;
             }
+            case "tailor":
+              patch(replyKey, (m) => ({ ...m, tailor: data.tailor as TailorCard }));
+              break;
             case "ask": {
               const question = String(data.question ?? "");
               const quickReplies = Array.isArray(data.quickReplies) ? (data.quickReplies as string[]) : [];

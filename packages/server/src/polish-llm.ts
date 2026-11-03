@@ -1,8 +1,17 @@
 import { type PolishTarget, ungroundedTokens } from "@talksume/core";
-import type { Gateway } from "@talksume/llm-gateway";
+import { createGateway, type Gateway, GatewayConfigError, loadGatewayConfig } from "@talksume/llm-gateway";
 import { z } from "zod";
 
 export type StructuredLlm = Pick<Gateway, "completeStructured">;
+
+export function structuredLlmFromEnv(): StructuredLlm | null {
+  try {
+    return createGateway(loadGatewayConfig());
+  } catch (error) {
+    if (error instanceof GatewayConfigError) return null;
+    throw error;
+  }
+}
 
 export interface PolishOutcome {
   target: PolishTarget;

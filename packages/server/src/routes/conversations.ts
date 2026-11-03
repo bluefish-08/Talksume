@@ -27,7 +27,7 @@ import {
 } from "../conversation-store.ts";
 import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
-import { matchingJobTools } from "../job-tools.ts";
+import { matchingJobTools, storeResumeTailor } from "../job-tools.ts";
 import { matchingServiceFor } from "./matching.ts";
 import { resumeRoutes } from "./resume.ts";
 
@@ -58,6 +58,10 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   const titles = createTitleScheduler(db, deps.titler, app.log);
   app.addHook("onClose", () => titles.drain());
   const jobService = matchingServiceFor(db, deps.matching ?? {}, app.log);
+  const chatTools = (userId: string) => ({
+    jobs: matchingJobTools(jobService, userId),
+    ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId) }),
+  });
 
   const snapshotOf = (state: ReturnType<typeof createIntakeState>) => ({
     profile: state.profile,
@@ -114,6 +118,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         changes: m.meta.changes ?? [],
         quickReplies: m.meta.quickReplies ?? [],
         jobs: m.meta.jobs ?? [],
+        ...(m.meta.tailor && { tailor: m.meta.tailor }),
         createdAt: m.createdAt.toISOString(),
       })),
       ...snapshotOf(loaded.state),
@@ -204,7 +209,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const controller = createIntakeController({
       ...llm.resolve({ model, thinking }),
       genId,
-      jobs: matchingJobTools(jobService, req.userId),
+      ...chatTools(req.userId),
     });
     const messageId = randomUUID();
     await streamTurn(req, reply, id, loaded, `${messageId}:reply`, (signal) =>
@@ -225,7 +230,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
 
     const controller = createIntakeController({
       ...resolveDefault(),
-      jobs: matchingJobTools(jobService, req.userId),
+      ...chatTools(req.userId),
     });
     await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>
       controller.resolveConflict(loaded.state, conflictId, body.data.choice === "proposed", {

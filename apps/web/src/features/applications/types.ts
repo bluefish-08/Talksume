@@ -20,6 +20,8 @@ export interface Application {
   channel: Channel;
   pitch: string | null;
   resumeVersionId: string | null;
+  /** 投递用的是针对该岗位采用的定制版简历。 */
+  resumeTailored?: boolean;
   externalId: string | null;
   createdAt: string;
   updatedAt: string;

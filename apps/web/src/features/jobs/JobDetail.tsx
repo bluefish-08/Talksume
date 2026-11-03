@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { Button, IconButton, Spinner } from "../../components/ui.tsx";
+import { TailorLine } from "../tailor/TailorLine.tsx";
 import {
   dimRows,
   EXCLUDED_NOTICE,
@@ -208,6 +209,12 @@ export function JobDetail(props: DetailProps) {
       </div>
 
       <div className={styles.foot}>
+        <TailorLine
+          jobId={job.id}
+          appliedTailored={
+            application && application.status !== "pending" ? application.resumeTailored : undefined
+          }
+        />
         <div className={styles.actions}>
           <Button size="lg" className={styles.optimize} disabled={busy.optimize} onClick={props.onOptimize}>
             {busy.optimize && <Spinner label="准备中" />}针对这个岗位优化简历

@@ -15,7 +15,17 @@ import {
   settleConflict,
   skipUnquantified,
 } from "./tools.ts";
-import type { ChatTurn, IntakeEvent, IntakeState, JobCard, JobTools, ToolRecord, TurnMeta } from "./types.ts";
+import type {
+  ChatTurn,
+  IntakeEvent,
+  IntakeState,
+  JobCard,
+  JobTools,
+  ResumeTailor,
+  TailorCard,
+  ToolRecord,
+  TurnMeta,
+} from "./types.ts";
 
 export interface IntakeDeps {
   streamFn: StreamFn;
@@ -29,6 +39,8 @@ export interface IntakeDeps {
   historyLimit?: number;
   /** 岗位推荐与解读；不传则助手只建档。 */
   jobs?: JobTools;
+  /** 按岗位定制简历；需同时提供 jobs。 */
+  tailor?: ResumeTailor;
 }
 
 export interface UserMessage {
@@ -175,6 +187,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let quickReplies: string[] = [];
     let askedSlot: string | undefined;
     const cards: JobCard[] = [];
+    let tailored: TailorCard | undefined;
     const toolLog: ToolRecord[] = [];
     const flags: RunContext["flags"] = { asked: false, changed: false };
     const userTexts = [
@@ -204,7 +217,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
             if (at >= 0) cards[at] = { ...cards[at], ...job };
             else cards.push(job);
           }
-        }
+        } else if (event.type === "tailor") tailored = event.tailor;
         queue.push(event);
       },
       flags,
@@ -222,6 +235,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       skipped: state.skipped,
       ...(state.summaries ? { summaries: state.summaries } : {}),
       jobTools: Boolean(deps.jobs),
+      tailorTool: Boolean(deps.jobs && deps.tailor),
     });
 
     let assistantText = "";
@@ -238,7 +252,10 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         systemPrompt,
         model: deps.model,
         thinkingLevel: "off",
-        tools: [...createIntakeTools(ctx), ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog) : [])],
+        tools: [
+          ...createIntakeTools(ctx),
+          ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog, deps.tailor) : []),
+        ],
         messages: historyToMessages(state, deps.model, historyLimit),
       },
       streamFn: deps.streamFn,
@@ -342,9 +359,10 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
       ...(askedSlot ? { slot: askedSlot } : {}),
       ...(cards.length > 0 ? { jobs: cards } : {}),
+      ...(tailored ? { tailor: tailored } : {}),
       ...(toolLog.length > 0 ? { tools: toolLog } : {}),
     };
-    if (!llmError || flags.changed || changes.length > 0 || cards.length > 0) {
+    if (!llmError || flags.changed || changes.length > 0 || cards.length > 0 || tailored) {
       if (user) state.history.push({ id: user.id, role: "user", content: user.text });
       if (user || reply || changes.length > 0) {
         state.history.push({

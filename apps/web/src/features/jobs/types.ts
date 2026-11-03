@@ -88,6 +88,7 @@ export interface ApplicationRef {
   id: string;
   status: ApplicationStatus;
   channel: string;
+  resumeTailored?: boolean;
   job: { id: string };
 }
 

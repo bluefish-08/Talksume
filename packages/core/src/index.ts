@@ -6,3 +6,4 @@ export * from "./profile.ts";
 export * from "./profile-to-resume.ts";
 export * from "./resume.ts";
 export * from "./resume-style.ts";
+export * from "./tailor.ts";

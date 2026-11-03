@@ -9,6 +9,7 @@ import {
   type ResumeContent,
   type ResumeStyle,
   type StatusSource,
+  type TailorChange,
 } from "@talksume/core";
 import { sql } from "drizzle-orm";
 import {
@@ -197,6 +198,28 @@ export const resumePolishes = pgTable(
     uniqueIndex("resume_polishes_source_uq").on(t.userId, t.itemKey, t.sourceHash),
     check("resume_polishes_status_check", sql`${t.status} in ('pending', 'accepted', 'dismissed')`),
   ],
+);
+
+/** 每个岗位一份定制草稿；selected 是最近一次采用的调整，resumeVersionId 指向采用后冻结的版本。 */
+export const resumeTailorings = pgTable(
+  "resume_tailorings",
+  {
+    id: textId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    baseContent: jsonb("base_content").$type<ResumeContent>().notNull(),
+    changes: jsonb("changes").$type<TailorChange[]>().notNull().default([]),
+    selected: jsonb("selected").$type<string[]>().notNull().default([]),
+    resumeVersionId: uuid("resume_version_id").references(() => resumeVersions.id, { onDelete: "set null" }),
+    model: text("model"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("resume_tailorings_user_job_uq").on(t.userId, t.jobId)],
 );
 
 export const jobs = pgTable(

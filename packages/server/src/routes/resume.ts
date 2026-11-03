@@ -1,8 +1,8 @@
 import { computeCompleteness } from "@talksume/agent";
-import { profileToResume, ResumeStyle, resolveResumeStyle } from "@talksume/core";
+import { profileToResume, type ResumeContent, ResumeStyle, resolveResumeStyle } from "@talksume/core";
 import { schema } from "@talksume/db";
 import { renderDocx, renderPdf } from "@talksume/resume-render";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { RouteModule } from "../app.ts";
 import { latestCompletedSections, listFacts, loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
@@ -16,6 +16,8 @@ const FORMATS = {
     render: renderDocx,
   },
 } as const;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** ASCII 兜底名 + RFC 5987 的 UTF-8 名，中文文件名在各浏览器都不乱码。 */
 function contentDisposition(name: string, format: string): string {
@@ -88,12 +90,24 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
   });
 
   app.get("/api/v1/resume/export", async (req, reply) => {
-    const { format, template, accent } = req.query as Record<string, string | undefined>;
+    const { format, template, accent, version } = req.query as Record<string, string | undefined>;
     if (format !== "pdf" && format !== "docx") {
       return sendError(reply, 400, "invalid_request", "format 必须是 pdf 或 docx");
     }
-    const { profile } = await loadProfile(db, req.userId);
-    const resume = await polishedResume(db, req.userId, profileToResume(profile));
+    let resume: ResumeContent;
+    if (version) {
+      const [row] = UUID.test(version)
+        ? await db
+            .select({ content: schema.resumeVersions.content })
+            .from(schema.resumeVersions)
+            .where(and(eq(schema.resumeVersions.id, version), eq(schema.resumeVersions.userId, req.userId)))
+        : [];
+      if (!row) return sendError(reply, 404, "resume_not_found", "简历版本不存在");
+      resume = row.content;
+    } else {
+      const { profile } = await loadProfile(db, req.userId);
+      resume = await polishedResume(db, req.userId, profileToResume(profile));
+    }
     if (!resume.basics.name && resume.sections.length === 0) {
       return sendError(reply, 409, "profile_empty", "还没有可导出的内容，先和助手聊几句吧");
     }

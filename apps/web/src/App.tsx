@@ -8,6 +8,7 @@ import { HomePage } from "./pages/Home.tsx";
 import { HrPage } from "./pages/Hr.tsx";
 import { JobsPage } from "./pages/Jobs.tsx";
 import { ResumePage } from "./pages/Resume.tsx";
+import { TailorPage } from "./pages/Tailor.tsx";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } },
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
       { path: "resume", element: <ResumePage /> },
       { path: "jobs", element: <JobsPage /> },
       { path: "applications", element: <ApplicationsPage /> },
+      { path: "tailor/:jobId", element: <TailorPage /> },
     ],
   },
   { path: "hr", element: <HrPage /> },

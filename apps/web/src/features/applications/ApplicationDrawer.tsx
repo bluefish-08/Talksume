@@ -7,7 +7,7 @@ import styles from "./ApplicationDrawer.module.css";
 import { cityText, JOB_TYPE_LABELS } from "./format.ts";
 import { Modal } from "./Modal.tsx";
 import { type ApplicationAction, useApplicationAction, useApplicationDetail } from "./queries.ts";
-import { ChannelTag, StatusTag } from "./Tags.tsx";
+import { ChannelTag, ResumeTag, StatusTag } from "./Tags.tsx";
 import { Timeline } from "./Timeline.tsx";
 import type { Application, ApplicationDetail } from "./types.ts";
 
@@ -65,6 +65,7 @@ function Body({ detail }: { detail: ApplicationDetail }) {
         <div className={styles.tags}>
           <StatusTag status={app.status} outcome={app.outcome} />
           <ChannelTag channel={app.channel} />
+          {app.resumeVersionId && <ResumeTag tailored={!!app.resumeTailored} />}
         </div>
         {job.url && (
           <a className={styles.link} href={job.url} target="_blank" rel="noreferrer">

@@ -10,9 +10,10 @@ import {
   type StatusSource,
 } from "@talksume/core";
 import { schema, type TransitionOptions } from "@talksume/db";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { polishedResume } from "../polish-store.ts";
 import { loadResumeStyle } from "../resume-style.ts";
+import { adoptedVersionFor } from "../tailor-store.ts";
 import type { FlowContext } from "./context.ts";
 import { HttpError, isUniqueViolation } from "./http.ts";
 
@@ -39,6 +40,8 @@ export const applicationColumns = {
   channel: applications.channel,
   pitch: applications.pitch,
   resumeVersionId: applications.resumeVersionId,
+  /** 投递用的是针对该岗位采用的定制版；查询需 left join resume_versions。 */
+  resumeTailored: sql<boolean>`${resumeVersions.targetJobId} is not null`,
   externalId: applications.externalId,
   createdAt: applications.createdAt,
   updatedAt: applications.updatedAt,
@@ -118,7 +121,7 @@ async function snapshotResume(ctx: FlowContext, userId: string): Promise<string 
       content: resumeVersions.content,
     })
     .from(resumeVersions)
-    .where(eq(resumeVersions.userId, userId))
+    .where(and(eq(resumeVersions.userId, userId), isNull(resumeVersions.targetJobId)))
     .orderBy(desc(resumeVersions.createdAt))
     .limit(1);
   if (!profile) return latest?.id ?? null;
@@ -156,7 +159,8 @@ export async function createApplication(ctx: FlowContext, userId: string, input:
     if (!own) throw new HttpError(404, "resume_not_found", "简历版本不存在");
     resumeVersionId = own.id;
   } else {
-    resumeVersionId = await snapshotResume(ctx, userId);
+    resumeVersionId =
+      (await adoptedVersionFor(ctx.db, userId, job.id)) ?? (await snapshotResume(ctx, userId));
   }
 
   const plan = ctx.connectors.resolve(job.source);
@@ -224,6 +228,7 @@ export async function loadCandidateDetail(ctx: FlowContext, userId: string, appl
     .select({ application: applicationColumns, job: jobSummaryColumns })
     .from(applications)
     .innerJoin(jobs, eq(jobs.id, applications.jobId))
+    .leftJoin(resumeVersions, eq(resumeVersions.id, applications.resumeVersionId))
     .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)));
   if (!row) throw new HttpError(404, "not_found", "投递不存在");
   return { ...row, timeline: await loadTimeline(ctx, applicationId) };
@@ -234,6 +239,7 @@ export async function loadBoard(ctx: FlowContext, userId: string) {
     .select({ application: applicationColumns, job: jobSummaryColumns })
     .from(applications)
     .innerJoin(jobs, eq(jobs.id, applications.jobId))
+    .leftJoin(resumeVersions, eq(resumeVersions.id, applications.resumeVersionId))
     .where(eq(applications.userId, userId))
     .orderBy(desc(applications.updatedAt));
 

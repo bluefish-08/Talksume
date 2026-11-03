@@ -107,10 +107,11 @@ export function useExportResume() {
   const [busy, setBusy] = useState<ExportFormat | null>(null);
 
   const exportAs = useCallback(
-    async (format: ExportFormat) => {
+    async (format: ExportFormat, version?: string) => {
       setBusy(format);
       try {
         const params = new URLSearchParams({ format, template: style.template, accent: style.accent });
+        if (version) params.set("version", version);
         const res = await fetch(`/api/v1/resume/export?${params}`);
         if (!res.ok) {
           const text = await res.text();

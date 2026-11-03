@@ -8,12 +8,14 @@ import type { ConversationSummarizer } from "./conversation-memory.ts";
 import type { ConversationTitler } from "./conversation-title.ts";
 import type { ConnectorRegistry } from "./flow/channels.ts";
 import type { NotificationBus } from "./notifications/bus.ts";
+import { type StructuredLlm, structuredLlmFromEnv } from "./polish-llm.ts";
 import { conversationTitleRoutes } from "./routes/conversation-title.ts";
 import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
 import { jobsBrowseRoutes } from "./routes/jobs-browse.ts";
 import { matchingRoutes } from "./routes/matching.ts";
 import { polishRoutes } from "./routes/polish.ts";
+import { tailorRoutes } from "./routes/tailor.ts";
 import type { TemplateAdvisor } from "./template-advisor.ts";
 
 export interface LlmModelOption {
@@ -46,6 +48,8 @@ export interface AppDeps {
   summarizer?: ConversationSummarizer;
   /** 对话里岗位工具用的匹配服务参数；不传按环境变量。 */
   matching?: MatchingServiceOptions;
+  /** 按岗位定制简历用的结构化输出模型；null 显式关闭，不传按环境变量。 */
+  resumeLlm?: StructuredLlm | null;
   flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
 }
 
@@ -58,6 +62,7 @@ const routes: RouteModule[] = [
   jobsBrowseRoutes,
   matchingRoutes,
   polishRoutes,
+  tailorRoutes,
 ];
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -74,7 +79,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const { db } = deps;
   if (db) {
     registerDevAuth(app, db);
-    for (const register of routes) register(app, { ...deps, db });
+    const resumeLlm = deps.resumeLlm === undefined ? structuredLlmFromEnv() : deps.resumeLlm;
+    for (const register of routes) register(app, { ...deps, db, resumeLlm });
   }
 
   return app;

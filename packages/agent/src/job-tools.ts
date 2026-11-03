@@ -7,10 +7,11 @@ import {
   MAX_JOB_RESULTS,
   RecommendJobsArgs,
   SearchJobsArgs,
+  TailorResumeArgs,
   type ToolName,
 } from "./schemas.ts";
 import { type RunContext, text, tool } from "./tools.ts";
-import type { JobCard, JobTools, ToolRecord } from "./types.ts";
+import type { JobCard, JobTools, ResumeTailor, ToolRecord } from "./types.ts";
 
 const JOB_TYPE_LABEL = { internship: "实习", campus: "校招", experienced: "社招" } as const;
 
@@ -42,8 +43,21 @@ const clampLimit = (n: number | undefined) => Math.min(MAX_JOB_RESULTS, Math.max
 
 const plain = (args: object) => JSON.parse(JSON.stringify(args)) as Record<string, unknown>;
 
+const TAILOR_NOTE =
+  "定制版卡片已展示给用户，但还没有生效：用户点卡片「查看并确认」逐条确认、采用后，投递这个岗位时才会默认用定制版，主简历不变。用一两句话说明这次调整了哪些侧重，请用户点卡片确认；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。";
+
+const failedNote = (name: ToolName, reason: string) =>
+  name === "tailor_resume"
+    ? `定制简历失败：${reason}。如实告诉用户这次没有生成成功，可以稍后再试，或去岗位详情页点「定制简历」；绝对不要说已经改好或已经定制。`
+    : `岗位服务出错：${reason}。如实告诉用户暂时查不到，可以稍后再试或去「职位推荐」页看看，不要编造岗位。`;
+
 /** 岗位工具不写画像，出错也不计入 failures，避免触发「没听懂」的兜底追问。 */
-export function createJobTools(ctx: RunContext, jobs: JobTools, log: ToolRecord[]): AgentTool<TSchema>[] {
+export function createJobTools(
+  ctx: RunContext,
+  jobs: JobTools,
+  log: ToolRecord[],
+  tailor?: ResumeTailor,
+): AgentTool<TSchema>[] {
   const { state } = ctx;
 
   async function run(name: ToolName, args: object, work: () => Promise<string>) {
@@ -51,8 +65,7 @@ export function createJobTools(ctx: RunContext, jobs: JobTools, log: ToolRecord[
     try {
       result = await work();
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      result = `岗位服务出错：${reason}。如实告诉用户暂时查不到，可以稍后再试或去「职位推荐」页看看，不要编造岗位。`;
+      result = failedNote(name, error instanceof Error ? error.message : String(error));
     }
     ctx.flags.jobs = true;
     log.push({ name, args: plain(args), result });
@@ -124,5 +137,35 @@ export function createJobTools(ctx: RunContext, jobs: JobTools, log: ToolRecord[
     }),
   );
 
-  return [recommendJobs, searchJobs, explainJob];
+  const tailorResume = tool(
+    "tailor_resume",
+    "定制简历",
+    TailorResumeArgs,
+    (args: z.infer<typeof TailorResumeArgs>) =>
+      run("tailor_resume", args, async () => {
+        if (!tailor) throw new Error("定制服务未开启");
+        const outcome = await tailor.tailor(state.profile, state.facts, args.jobId);
+        if (!outcome) {
+          return `找不到 jobId=${args.jobId} 的岗位，定制没有进行。用之前岗位结果里的 jobId，或先用 search_jobs 搜到再定制；不要说已经改好。`;
+        }
+        const { card, lines } = outcome;
+        const target = `${card.company} · ${card.title}`;
+        const blocked =
+          card.rejected > 0 ? `另有 ${card.rejected} 处因出现简历里没有的内容被拦下，不会采用。` : "";
+        if (card.changes === 0) {
+          return `针对「${target}」没有得到可采用的调整，简历维持原样。${blocked}如实告诉用户现在的简历和这个岗位已经比较贴合，或者可以先补充相关经历；不要说已经改好。`;
+        }
+        ctx.emit({ type: "tailor", tailor: card });
+        return [
+          `已为「${target}」生成定制版草稿，共 ${card.changes} 处调整：`,
+          ...lines,
+          blocked,
+          TAILOR_NOTE,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }),
+  );
+
+  return [recommendJobs, searchJobs, explainJob, ...(tailor ? [tailorResume] : [])];
 }

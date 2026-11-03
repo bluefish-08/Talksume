@@ -1,6 +1,7 @@
 import { Download } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Spinner } from "../../components/ui.tsx";
+import { useAdoptedTailorings } from "../tailor/queries.ts";
 import styles from "./ExportMenu.module.css";
 import { type ExportFormat, type TriggerSize, useExportResume } from "./queries.ts";
 
@@ -13,6 +14,7 @@ export function ExportMenu({ size = "sm" }: { size?: TriggerSize }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const { exportAs, busy } = useExportResume();
+  const tailored = useAdoptedTailorings().data ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +47,7 @@ export function ExportMenu({ size = "sm" }: { size?: TriggerSize }) {
       </button>
       {open && (
         <div className={styles.menu} role="menu">
+          {tailored.length > 0 && <div className={styles.group}>通用简历</div>}
           {OPTIONS.map(({ format, label }) => (
             <button
               key={format}
@@ -58,6 +61,27 @@ export function ExportMenu({ size = "sm" }: { size?: TriggerSize }) {
             >
               {label}
             </button>
+          ))}
+          {tailored.map((t) => (
+            <Fragment key={t.resumeVersionId}>
+              <div className={styles.group}>
+                定制版 · {t.company} {t.title}
+              </div>
+              {OPTIONS.map(({ format, label }) => (
+                <button
+                  key={format}
+                  type="button"
+                  role="menuitem"
+                  className={styles.item}
+                  onClick={() => {
+                    setOpen(false);
+                    void exportAs(format, t.resumeVersionId);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </Fragment>
           ))}
         </div>
       )}

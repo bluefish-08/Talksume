@@ -31,6 +31,15 @@ export interface JobCard {
   reason?: string;
 }
 
+/** 与 packages/agent 的 TailorCard 保持一致：助手生成的定制简历草稿。 */
+export interface TailorCard {
+  jobId: string;
+  company: string;
+  title: string;
+  changes: number;
+  rejected: number;
+}
+
 export interface ConversationDetail {
   id: string;
   title: string | null;
@@ -42,6 +51,7 @@ export interface ConversationDetail {
     changes: ProfileChange[];
     quickReplies: string[];
     jobs?: JobCard[];
+    tailor?: TailorCard;
     createdAt: string;
   }[];
   profile: Profile;
@@ -61,6 +71,7 @@ export interface ChatMessage {
   /** 助手追问附带的快捷回复，只在最后一条消息上展示。 */
   quickReplies: string[];
   jobs: JobCard[];
+  tailor?: TailorCard;
   /** 已落库的消息 ID；用户消息用它换算“第几轮”。 */
   serverId?: string;
   state: "done" | "streaming" | "failed";

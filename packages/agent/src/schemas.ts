@@ -156,6 +156,15 @@ export const ExplainJobArgs = z.object({
 });
 export type ExplainJobArgs = z.infer<typeof ExplainJobArgs>;
 
+export const TailorResumeArgs = z.object({
+  jobId: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("岗位 id，取自之前 recommend_jobs / search_jobs / explain_job 返回的 jobId"),
+});
+export type TailorResumeArgs = z.infer<typeof TailorResumeArgs>;
+
 export type ToolName =
   | "upsert_facts"
   | "ask_user"
@@ -164,9 +173,15 @@ export type ToolName =
   | "resolve_conflict"
   | "recommend_jobs"
   | "search_jobs"
-  | "explain_job";
+  | "explain_job"
+  | "tailor_resume";
 
-export const JOB_TOOL_NAMES: readonly ToolName[] = ["recommend_jobs", "search_jobs", "explain_job"];
+export const JOB_TOOL_NAMES: readonly ToolName[] = [
+  "recommend_jobs",
+  "search_jobs",
+  "explain_job",
+  "tailor_resume",
+];
 
 export interface ToolSpec {
   name: ToolName;
@@ -221,6 +236,12 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description:
       "解读用户和某个岗位的匹配情况：匹配度、优势、短板和投递前可以补充什么。用户问「我差在哪」「这个岗位怎么样」「第二个呢」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。",
     schema: ExplainJobArgs,
+  },
+  {
+    name: "tailor_resume",
+    description:
+      "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。用户说「帮我针对这个岗位改一下简历」「让简历更适配美团那个」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。草稿要用户点卡片确认后才生效。",
+    schema: TailorResumeArgs,
   },
 ];
 
