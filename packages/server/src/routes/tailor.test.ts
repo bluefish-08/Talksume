@@ -373,7 +373,7 @@ describe("对话里定制简历", () => {
         toolTurn(fauxToolCall("tailor_resume", { jobId: MEITUAN })),
         (context) => {
           toolResult = JSON.stringify(context.messages.at(-1));
-          return fauxAssistantMessage([fauxText("给美团这个岗位生成了定制版，点卡片确认后投递时会用它。")]);
+          return fauxAssistantMessage([fauxText("给美团这个岗位生成了定制版草稿，放在右边的简历里了。")]);
         },
       ],
       llm,
@@ -388,11 +388,17 @@ describe("对话里定制简历", () => {
     });
     expect(toolResult).toContain("已为「美团 · 后端开发工程师」生成定制版草稿");
     expect(toolResult).toContain("还没有生效");
+    expect(toolResult).toContain("右侧简历面板");
+    expect(events.find((e) => e.event === "about_job")?.data.job).toMatchObject({
+      id: MEITUAN,
+      company: "美团",
+    });
     expect(toolResult).not.toContain("50%");
     expect(events.some((e) => e.event === "error")).toBe(false);
 
     const detail = await call("GET", `/api/v1/conversations/${id}`);
     expect(detail.body.messages.at(-1).tailor).toEqual(card);
+    expect(detail.body.messages.at(-1).about).toMatchObject({ id: MEITUAN });
     const view = await call("GET", tailorUrl(MEITUAN));
     expect(view.body.tailoring.adopted).toBeNull();
     expect((await call("GET", "/api/v1/resume")).body.resume.basics.summary).toBeUndefined();

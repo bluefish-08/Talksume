@@ -3,7 +3,7 @@ import type { Api, AssistantMessage, Model, ToolResultMessage } from "@earendil-
 import { errorKindOf } from "@talksume/llm-gateway";
 import { computeCompleteness, SECTION_SPECS } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
-import { createJobTools } from "./job-tools.ts";
+import { createJobTools, withoutCards } from "./job-tools.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import {
   buildUserCorpus,
@@ -230,6 +230,11 @@ export interface IntakeController {
   ): AsyncGenerator<IntakeEvent, void>;
 }
 
+/** 只定制不解读时，岗位标签沿用之前轮次里这个岗位的匹配度。 */
+function earlierJob(state: IntakeState, id: string): JobCard | undefined {
+  return state.history.flatMap((t) => [t.meta?.about, ...(t.meta?.jobs ?? [])]).findLast((j) => j?.id === id);
+}
+
 export function createIntakeController(deps: IntakeDeps): IntakeController {
   const genId = deps.genId ?? createIdGenerator();
   const verifyQuote = deps.verifyQuote ?? true;
@@ -257,6 +262,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let quickReplies: string[] = [];
     let askedSlot: string | undefined;
     const cards: JobCard[] = [];
+    let cardSource: "recommend" | "search" = "recommend";
+    let about: JobCard | undefined;
     let tailored: TailorCard | undefined;
     const toolLog: ToolRecord[] = [];
     const flags: RunContext["flags"] = { asked: false, changed: false };
@@ -282,11 +289,22 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           asks.push(event.question);
         } else if (event.type === "profile_patch") changes.push(...event.changes);
         else if (event.type === "jobs") {
+          // 卡片等到本轮结束再发：之后要是讲到了具体岗位，就只显示岗位标签
+          cardSource = event.source;
           for (const job of event.jobs) {
             const at = cards.findIndex((c) => c.id === job.id);
             if (at >= 0) cards[at] = { ...cards[at], ...job };
             else cards.push(job);
           }
+          return;
+        } else if (event.type === "about_job") {
+          const known =
+            about?.id === event.job.id
+              ? about
+              : (cards.find((c) => c.id === event.job.id) ?? earlierJob(state, event.job.id));
+          about = known && event.job.score === undefined ? known : { ...known, ...event.job };
+          queue.push({ type: "about_job", job: about });
+          return;
         } else if (event.type === "tailor") tailored = event.tailor;
         queue.push(event);
       },
@@ -413,6 +431,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     await run;
 
     if (options.signal?.aborted) return;
+    if (!about && cards.length > 0) yield { type: "jobs", source: cardSource, jobs: cards };
 
     // 模型想跳过却没跳成：按上一轮问的（或本轮目标）字段替它跳过，免得下一轮又卡在同一处
     if (user && skipFailed && !skipDone) {
@@ -489,11 +508,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
       ...(askedSlot ? { slot: askedSlot } : {}),
       ...(clarified ? { clarified } : {}),
-      ...(cards.length > 0 ? { jobs: cards } : {}),
+      ...(about ? { about } : cards.length > 0 ? { jobs: cards } : {}),
       ...(tailored ? { tailor: tailored } : {}),
-      ...(toolLog.length > 0 ? { tools: toolLog } : {}),
+      ...(toolLog.length > 0 ? { tools: about ? withoutCards(toolLog) : toolLog } : {}),
     };
-    if (!llmError || flags.changed || changes.length > 0 || cards.length > 0 || tailored) {
+    if (!llmError || flags.changed || changes.length > 0 || cards.length > 0 || about || tailored) {
       if (user) state.history.push({ id: user.id, role: "user", content: user.text });
       if (user || reply || changes.length > 0) {
         state.history.push({

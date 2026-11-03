@@ -1,16 +1,18 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useConversations } from "../../api/queries.ts";
 import { SECTION_LABELS } from "../../api/types.ts";
 import { usePolishedResume } from "../resume/polishQueries.ts";
 import { useFacts } from "../resume/queries.ts";
 import { factQuotes } from "../resume/resumeUtils.ts";
+import { tailoringKey } from "../tailor/queries.ts";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
-import { ResumePane } from "./ResumePane.tsx";
-import type { ConversationDetail } from "./types.ts";
+import { ResumePane, type TailorTarget } from "./ResumePane.tsx";
+import type { ConversationDetail, TailorCard } from "./types.ts";
 import { useChatSession } from "./useChatSession.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
 
@@ -24,6 +26,8 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const conversations = useConversations();
   const [draft, setDraft] = useState("");
   const [paneOpen, setPaneOpen] = useState(false);
+  const [tailor, setTailor] = useState<TailorTarget | null>(null);
+  const client = useQueryClient();
   const input = useRef<HTMLTextAreaElement>(null);
   const initialSent = useRef(false);
 
@@ -37,6 +41,27 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   }, [location.state, location.pathname, navigate, send]);
 
   useEffect(() => input.current?.focus(), []);
+
+  const showTailor = useCallback(
+    (card: TailorCard) =>
+      setTailor({
+        jobId: card.jobId,
+        company: card.company,
+        title: card.title,
+        showing: true,
+        at: Date.now(),
+      }),
+    [],
+  );
+
+  // 本轮刚生成的定制版直接在面板里打开；窄屏不自动弹抽屉，免得盖住正在输出的回复
+  const live = messages.at(-1);
+  const liveTailor = live?.state === "streaming" ? live.tailor : undefined;
+  useEffect(() => {
+    if (!liveTailor) return;
+    void client.invalidateQueries({ queryKey: tailoringKey(liveTailor.jobId) });
+    showTailor(liveTailor);
+  }, [liveTailor, client, showTailor]);
 
   const scroller = useStickToBottom(messages, session.conflicts);
 
@@ -83,6 +108,10 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
               scroller.pin();
               session.send(text);
             }}
+            onOpenTailor={(card) => {
+              showTailor(card);
+              setPaneOpen(true);
+            }}
           />
         </div>
 
@@ -116,6 +145,9 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           facts={facts.data ?? []}
           quotes={quotes}
           roundOf={roundOf}
+          tailor={tailor}
+          onTailorShow={(showing) => setTailor((t) => t && { ...t, showing })}
+          onTailorDiscard={() => setTailor(null)}
         />
       </div>
     </div>

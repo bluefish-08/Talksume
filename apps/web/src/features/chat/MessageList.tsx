@@ -3,10 +3,16 @@ import { Fragment, useState } from "react";
 import { SECTION_LABELS } from "../../api/types.ts";
 import { Button, Chip } from "../../components/ui.tsx";
 import { describeChange } from "./describe.ts";
-import { JobCards } from "./JobCards.tsx";
+import { JobAbout, JobCards } from "./JobCards.tsx";
 import styles from "./MessageList.module.css";
 import { TailorCardView } from "./TailorCard.tsx";
-import { type ChatMessage, type Conflict, messageText, type ProfileChange } from "./types.ts";
+import {
+  type ChatMessage,
+  type Conflict,
+  messageText,
+  type ProfileChange,
+  type TailorCard,
+} from "./types.ts";
 
 interface Props {
   messages: ChatMessage[];
@@ -16,6 +22,7 @@ interface Props {
   onRetry: (key: string) => void;
   onResolve: (conflict: Conflict, choice: "proposed" | "previous") => void;
   onQuickReply: (text: string) => void;
+  onOpenTailor: (card: TailorCard) => void;
 }
 
 export function MessageList({
@@ -26,6 +33,7 @@ export function MessageList({
   onRetry,
   onResolve,
   onQuickReply,
+  onOpenTailor,
 }: Props) {
   const pending = !streaming ? conflicts[0] : undefined;
   const last = messages.at(-1);
@@ -47,7 +55,7 @@ export function MessageList({
             )}
           </div>
         ) : (
-          <Assistant key={m.key} message={m} />
+          <Assistant key={m.key} message={m} onOpenTailor={onOpenTailor} />
         ),
       )}
       {pending && (
@@ -81,16 +89,24 @@ export function MessageList({
   );
 }
 
-function Assistant({ message }: { message: ChatMessage }) {
+function Assistant({
+  message,
+  onOpenTailor,
+}: {
+  message: ChatMessage;
+  onOpenTailor: (card: TailorCard) => void;
+}) {
   const text = messageText(message);
   const waiting =
     message.state === "streaming" &&
     !text &&
     message.changes.length === 0 &&
     message.jobs.length === 0 &&
+    !message.about &&
     !message.tailor;
   return (
     <div className={styles.assistant}>
+      {message.about && <JobAbout job={message.about} />}
       {message.changes.length > 0 && <Written changes={message.changes} />}
       {waiting && (
         <span className={styles.typing} role="status" aria-label="正在回复">
@@ -109,7 +125,7 @@ function Assistant({ message }: { message: ChatMessage }) {
         </div>
       )}
       {message.jobs.length > 0 && <JobCards jobs={message.jobs} />}
-      {message.tailor && <TailorCardView card={message.tailor} />}
+      {message.tailor && <TailorCardView card={message.tailor} onOpen={onOpenTailor} />}
     </div>
   );
 }

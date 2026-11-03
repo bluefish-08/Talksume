@@ -38,6 +38,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     changes: m.changes ?? [],
     quickReplies: m.quickReplies ?? [],
     jobs: m.jobs ?? [],
+    ...(m.about && { about: m.about }),
     ...(m.tailor && { tailor: m.tailor }),
     state: "done",
   }));
@@ -127,6 +128,9 @@ export function useChatSession(detail: ConversationDetail) {
               }));
               break;
             }
+            case "about_job":
+              patch(replyKey, (m) => ({ ...m, about: data.job as JobCard }));
+              break;
             case "tailor":
               patch(replyKey, (m) => ({ ...m, tailor: data.tailor as TailorCard }));
               break;

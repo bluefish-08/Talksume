@@ -86,7 +86,10 @@ export type TurnMeta = {
   /** 这条回复因为没记下哪句话而请用户重说；同一句话只请一次。 */
   clarified?: string;
   quickReplies?: string[];
+  /** 只是在找岗位时展示的卡片；和 about 互斥。 */
   jobs?: JobCard[];
+  /** 这条回复在讲的具体岗位（解读或定制过），只在回复顶部显示一行标签。 */
+  about?: JobCard;
   tailor?: TailorCard;
   tools?: ToolRecord[];
 };
@@ -149,7 +152,8 @@ export type IntakeEvent =
       /** 问题已写在助手正文里，前端不必再单独显示。 */
       inText?: boolean;
     }
-  | { type: "jobs"; source: "recommend" | "search" | "explain"; jobs: JobCard[] }
+  | { type: "jobs"; source: "recommend" | "search"; jobs: JobCard[] }
+  | { type: "about_job"; job: JobCard }
   | { type: "tailor"; tailor: TailorCard }
   | { type: "completeness"; completeness: Completeness; nextSlot: Slot | null }
   | { type: "error"; code: string; message: string; recoverable: boolean };

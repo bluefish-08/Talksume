@@ -118,6 +118,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         changes: m.meta.changes ?? [],
         quickReplies: m.meta.quickReplies ?? [],
         jobs: m.meta.jobs ?? [],
+        ...(m.meta.about && { about: m.meta.about }),
         ...(m.meta.tailor && { tailor: m.meta.tailor }),
         createdAt: m.createdAt.toISOString(),
       })),

@@ -147,9 +147,42 @@ describe("对话里推荐和解读岗位", () => {
 
     const second = await send(id, "第二个怎么样");
     expect(replayed).toContain("recommend_jobs");
-    const explained = second.find((e) => e.event === "jobs");
-    expect(explained?.data.source).toBe("explain");
-    const explainedCards = (explained?.data.jobs ?? []) as { id: string }[];
-    expect(explainedCards[0]?.id).toBe(cards[1]?.id);
+    expect(second.some((e) => e.event === "jobs")).toBe(false);
+    const about = second.find((e) => e.event === "about_job")?.data.job as { id: string; score: number };
+    expect(about.id).toBe(cards[1]?.id);
+    expect(typeof about.score).toBe("number");
+
+    const after = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    expect(after.messages.at(-1)).toMatchObject({ jobs: [], about: { id: cards[1]?.id } });
+  });
+
+  it("先搜到再解读同一个岗位：不出卡片，只出岗位标签，落库的工具结果也说没展示卡片", async () => {
+    let replayed = "";
+    await boot([
+      toolTurn(fauxToolCall("search_jobs", { query: "Java 后台开发", company: "云帆" })),
+      (context) => {
+        const result = context.messages.filter((m) => m.role === "toolResult").at(-1);
+        const first = /1\. jobId=([^｜]+)/.exec(JSON.stringify(result?.content))?.[1] ?? "missing";
+        return toolTurn(fauxToolCall("explain_job", { jobId: first }));
+      },
+      fauxAssistantMessage([fauxText("这个岗位技能对得上，还缺一个后台项目。要不要补一下？")]),
+      (context) => {
+        replayed = JSON.stringify(context.messages);
+        return fauxAssistantMessage([fauxText("好的。")]);
+      },
+    ]);
+    const id = (await app.inject({ method: "POST", url: "/api/v1/conversations" })).json().id as string;
+
+    const events = await send(id, "我想投云帆的后端，帮我看看还缺什么");
+    expect(events.some((e) => e.event === "jobs")).toBe(false);
+    const about = events.find((e) => e.event === "about_job")?.data.job as { company: string };
+    expect(about.company).toBe("云帆网络");
+
+    const detail = (await app.inject({ method: "GET", url: `/api/v1/conversations/${id}` })).json();
+    expect(detail.messages.at(-1)).toMatchObject({ jobs: [], about: { company: "云帆网络" } });
+
+    await send(id, "嗯");
+    expect(replayed).toContain("没有以卡片展示给用户");
+    expect(replayed).not.toContain("会以卡片展示给用户（带匹配度");
   });
 });

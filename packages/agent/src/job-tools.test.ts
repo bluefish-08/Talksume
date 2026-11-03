@@ -163,10 +163,61 @@ describe("岗位工具", () => {
 
     expect(seen).toContain("recommend_jobs");
     expect(calls.explain.map(([, id]) => id)).toEqual(["demo:2"]);
-    const [card] = jobEvents(events);
-    expect(card).toMatchObject({ source: "explain" });
-    expect(card?.jobs[0]).toMatchObject({ id: "demo:2", reason: "技能对口，缺少分布式项目经历" });
-    expect(state.history.at(-1)?.meta?.tools?.[0]?.result).toContain("没有高并发项目");
+    expect(jobEvents(events)).toHaveLength(0);
+    expect(events.find((e) => e.type === "about_job")).toMatchObject({ job: { id: "demo:2", score: 71 } });
+    const meta = state.history.at(-1)?.meta;
+    expect(meta?.about).toMatchObject({ id: "demo:2" });
+    expect(meta?.jobs).toBeUndefined();
+    expect(meta?.tools?.[0]?.result).toContain("没有高并发项目");
+  });
+
+  it("为了拿 jobId 先搜再解读：搜索结果不出卡片，标签沿用搜索时的匹配度，落库结果改口", async () => {
+    const { jobs } = fakeJobs({
+      explain: async () => {
+        const { score: _score, ...job } = JOBS[1] as JobCard;
+        return { job, strengths: [], gaps: [], dims: [] };
+      },
+    });
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("search_jobs", { query: "后台开发", company: "云帆" })),
+        toolTurn(fauxToolCall("explain_job", { jobId: "demo:2" })),
+        fauxAssistantMessage([fauxText("还差一个高并发项目，要不要补一下？")]),
+      ],
+      jobs,
+    );
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "u1", text: "云帆那个还缺什么" }));
+
+    expect(jobEvents(events)).toHaveLength(0);
+    expect(events.find((e) => e.type === "about_job")).toMatchObject({ job: { id: "demo:2", score: 71 } });
+    const meta = state.history.at(-1)?.meta;
+    expect(meta?.jobs).toBeUndefined();
+    expect(meta?.about).toMatchObject({ id: "demo:2", company: "云帆网络", score: 71 });
+    expect(meta?.tools?.[0]?.result).toContain("没有以卡片展示给用户");
+    expect(meta?.tools?.[0]?.result).not.toContain("会以卡片展示");
+    expect(meta?.tools?.[1]?.result).toContain("不要提卡片");
+  });
+
+  it("只在找岗位时，卡片在本轮结束时一次发出", async () => {
+    const { jobs } = fakeJobs();
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("search_jobs", { query: "后台", company: "云帆" })),
+        toolTurn(fauxToolCall("recommend_jobs", {})),
+        fauxAssistantMessage([fauxText("找到这些。")]),
+      ],
+      jobs,
+    );
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "u1", text: "找几个后台岗位" }),
+    );
+    const sent = jobEvents(events);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.jobs.map((j) => j.id)).toEqual(["demo:2", "demo:1", "demo:3"]);
+    expect(events.findIndex((e) => e.type === "jobs")).toBeGreaterThan(
+      events.findLastIndex((e) => e.type === "token"),
+    );
   });
 
   it("问具体公司时用 search_jobs，画像会传给岗位服务", async () => {
@@ -259,11 +310,31 @@ describe("定制简历工具", () => {
     });
     expect(calls).toEqual(["demo:2"]);
     expect(events.find((e) => e.type === "tailor")).toEqual({ type: "tailor", tailor: card });
+    expect(events.find((e) => e.type === "about_job")).toMatchObject({
+      job: { id: "demo:2", company: "云帆网络" },
+    });
+    expect(state.history.at(-1)?.meta?.about).toMatchObject({ id: "demo:2" });
     expect(toolResult()).toContain("生成定制版草稿，共 2 处调整");
     expect(toolResult()).toContain("1 处因出现简历里没有的内容被拦下");
     expect(toolResult()).toContain("不要说已经改好");
     expect(state.history.at(-1)?.meta?.tailor).toEqual(card);
     expect(events.some((e) => e.type === "ask")).toBe(false);
+  });
+
+  it("只定制时岗位标签沿用之前轮次的匹配度", async () => {
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("tailor_resume", { jobId: "demo:2" })),
+        fauxAssistantMessage([fauxText("好的。")]),
+      ],
+      fakeJobs().jobs,
+      [],
+      { tailor: async () => ({ card, lines: ["- 个人摘要：熟悉 Java 后端开发"] }) },
+    );
+    const state = createIntakeState();
+    state.history.push({ id: "a0", role: "assistant", content: "推荐了几个。", meta: { jobs: JOBS } });
+    const events = await collect(controller.handleUserMessage(state, { id: "u1", text: "帮我优化一下" }));
+    expect(events.find((e) => e.type === "about_job")).toMatchObject({ job: { id: "demo:2", score: 71 } });
   });
 
   it("失败或找不到岗位时不出卡片，结果要求如实说明", async () => {
@@ -287,6 +358,7 @@ describe("定制简历工具", () => {
     });
     expect(events.some((e) => e.type === "tailor")).toBe(false);
     expect(toolResult()).toContain("没有得到可采用的调整");
+    expect(events.some((e) => e.type === "about_job")).toBe(true);
   });
 });
 

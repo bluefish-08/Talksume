@@ -129,6 +129,8 @@ export async function loadConversation(
       ? {
           meta: {
             ...(m.meta.tools ? { tools: m.meta.tools } : {}),
+            ...(m.meta.about ? { about: m.meta.about } : {}),
+            ...(m.meta.jobs ? { jobs: m.meta.jobs } : {}),
             ...(m.meta.slot ? { slot: m.meta.slot } : {}),
             ...(m.meta.clarified ? { clarified: m.meta.clarified } : {}),
           },

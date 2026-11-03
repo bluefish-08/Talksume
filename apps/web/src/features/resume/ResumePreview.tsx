@@ -11,6 +11,23 @@ export interface FactQuote {
   round?: number;
 }
 
+export interface ChangeNote {
+  label: string;
+  /** 改动前的样子，一行一段。 */
+  before: string[];
+}
+
+/** 定制版里的改动，命中的地方高亮并在浮层里给出原文。 */
+export interface ChangeMarks {
+  summary?: ChangeNote;
+  /** 改写后的要点原文 → */
+  bullets: ReadonlyMap<string, ChangeNote>;
+  /** 调整过要点顺序的条目标题 → */
+  items: ReadonlyMap<string, ChangeNote>;
+  /** 调整过条目顺序的分区 kind → */
+  sections: ReadonlyMap<string, ChangeNote>;
+}
+
 type ResumeItem = ResumeContent["sections"][number]["items"][number];
 
 interface Props {
@@ -20,6 +37,7 @@ interface Props {
   highlightTexts?: ReadonlySet<string>;
   /** factId → 原话，用于悬停溯源。 */
   facts?: Readonly<Record<string, FactQuote>>;
+  changeMarks?: ChangeMarks | undefined;
   /** 高亮变化时把第一处高亮滚进视野。 */
   revealHighlight?: boolean;
   /** 还没内容的分区标题，渲染为浅色占位。 */
@@ -53,6 +71,11 @@ const PREVIEW_CSS = `
   font: 400 calc(12px / var(--zoom, 1)) / 1.6 -apple-system, "PingFang SC", sans-serif; text-align: left; letter-spacing: 0; }
 .resume .traceable:hover > .pop, .resume .traceable:focus-visible > .pop { display: flex; }
 .resume .pop-head { color: #9fb3d1; }
+.resume section > h2, .resume li.changed, .resume .summary.changed { position: relative; }
+.resume .changed { background: #fdf6e3; box-shadow: 0 0 0 3pt #fdf6e3, 0 0 0 calc(3pt + 1px) #ecd28f; border-radius: 1px; }
+.resume .changed.traceable:hover, .resume .changed.traceable:focus-visible { background: #fbefcc; box-shadow: 0 0 0 3pt #fbefcc, 0 0 0 calc(3pt + 1px) #ecd28f; }
+.resume .changed .changed { box-shadow: none; }
+.resume .new-tag.tailor-tag { background: #b7791f; }
 .resume .ph-text { opacity: 0.4; }
 .resume .ph h2 { opacity: 0.4; }
 .resume .ph .bar { height: 6pt; margin-top: 5pt; border-radius: 3pt; background: #eef1f6; }
@@ -62,6 +85,7 @@ const PREVIEW_CSS = `
 interface Decoration {
   highlightTexts: ReadonlySet<string> | undefined;
   facts: Props["facts"];
+  changes: ChangeMarks | undefined;
   placeholders: readonly string[];
   idPrefix: string;
 }
@@ -96,6 +120,42 @@ function attachSources(target: HTMLElement, factIds: readonly string[], d: Decor
   target.append(pop);
 }
 
+function markChanged(target: HTMLElement, note: ChangeNote, id: string, tagHost: HTMLElement = target) {
+  target.classList.add("changed", "traceable");
+  tagHost.append(el("span", "new-tag tailor-tag", "已定制"));
+  const pop = el("span", "pop");
+  pop.id = id;
+  pop.setAttribute("role", "tooltip");
+  pop.append(el("span", "pop-head", `${note.label} · 原文`));
+  for (const line of note.before) pop.append(el("span", "", line));
+  target.tabIndex = 0;
+  target.setAttribute("aria-describedby", id);
+  target.append(pop);
+}
+
+function decorateChanges(root: ShadowRoot, resume: ResumeContent, marks: ChangeMarks, idPrefix: string) {
+  const summary = root.querySelector<HTMLElement>(".head .summary");
+  if (summary && marks.summary) markChanged(summary, marks.summary, `${idPrefix}-summary`);
+  for (const section of root.querySelectorAll<HTMLElement>("section[data-kind]")) {
+    const note = marks.sections.get(section.dataset.kind ?? "");
+    const h2 = section.querySelector<HTMLElement>("h2");
+    if (note && h2) markChanged(h2, note, `${idPrefix}-s${section.dataset.section}`);
+  }
+  for (const node of root.querySelectorAll<HTMLElement>("[data-item]")) {
+    const [s, i] = (node.dataset.item ?? "").split("-").map(Number);
+    const item = resume.sections[s ?? -1]?.items[i ?? -1];
+    if (!item) continue;
+    const order = marks.items.get(item.heading);
+    if (order)
+      markChanged(node, order, `${idPrefix}-${node.dataset.item}`, node.querySelector(".item-head") ?? node);
+    for (const li of node.querySelectorAll<HTMLElement>("[data-bullet]")) {
+      const bullet = item.bullets[Number(li.dataset.bullet?.split("-")[2])];
+      const note = bullet && marks.bullets.get(bullet.text);
+      if (note) markChanged(li, note, `${idPrefix}-${li.dataset.bullet}`);
+    }
+  }
+}
+
 function decorate(root: ShadowRoot, resume: ResumeContent, d: Decoration) {
   const page = root.querySelector<HTMLElement>(".resume");
   if (!page) return;
@@ -104,6 +164,11 @@ function decorate(root: ShadowRoot, resume: ResumeContent, d: Decoration) {
     const [s, i] = (key ?? "").split("-").map(Number);
     return resume.sections[s ?? -1]?.items[i ?? -1];
   };
+
+  if (d.changes) {
+    decorateChanges(root, resume, d.changes, d.idPrefix);
+    return;
+  }
 
   const name = root.querySelector<HTMLElement>(".head h1");
   if (name && !resume.basics.name) {
@@ -166,6 +231,7 @@ export function ResumePreview({
   highlightTexts,
   revealHighlight = false,
   facts,
+  changeMarks,
   placeholders = [],
   decorated = true,
   label = "简历预览",
@@ -180,6 +246,9 @@ export function ResumePreview({
   const highlightKey = [...(highlightTexts ?? [])].join("\u0000");
   const factsKey = JSON.stringify(facts ?? {});
   const placeholdersKey = placeholders.join("\u0000");
+  const changesKey = JSON.stringify(
+    changeMarks && Object.values(changeMarks).map((v) => (v instanceof Map ? [...v] : v)),
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 用序列化后的 key 判断变化，避免父组件每次重渲染都重建预览
   useLayoutEffect(() => {
@@ -187,8 +256,9 @@ export function ResumePreview({
     if (!node) return;
     const root = node.shadowRoot ?? node.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${fragment.css}${PREVIEW_CSS}</style><div class="page" style="padding: ${fragment.margin}">${fragment.html}</div>`;
-    if (decorated) decorate(root, resume, { highlightTexts, facts, placeholders, idPrefix });
-  }, [fragment, decorated, highlightKey, factsKey, placeholdersKey, idPrefix]);
+    if (decorated)
+      decorate(root, resume, { highlightTexts, facts, changes: changeMarks, placeholders, idPrefix });
+  }, [fragment, decorated, highlightKey, factsKey, changesKey, placeholdersKey, idPrefix]);
 
   useEffect(() => {
     if (!revealHighlight || !highlightKey) return;

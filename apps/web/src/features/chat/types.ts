@@ -51,6 +51,7 @@ export interface ConversationDetail {
     changes: ProfileChange[];
     quickReplies: string[];
     jobs?: JobCard[];
+    about?: JobCard;
     tailor?: TailorCard;
     createdAt: string;
   }[];
@@ -71,6 +72,8 @@ export interface ChatMessage {
   /** 助手追问附带的快捷回复，只在最后一条消息上展示。 */
   quickReplies: string[];
   jobs: JobCard[];
+  /** 这条回复在讲的具体岗位，顶部显示一行标签；有它时不出岗位卡片。 */
+  about?: JobCard;
   tailor?: TailorCard;
   /** 已落库的消息 ID；用户消息用它换算“第几轮”。 */
   serverId?: string;

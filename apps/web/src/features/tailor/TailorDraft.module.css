@@ -1,0 +1,154 @@
+.draft {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.empty {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--warning-soft);
+}
+
+.bar[data-tone="ok"] {
+  background: var(--success-soft);
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.badge {
+  font-weight: 500;
+  color: var(--warning);
+}
+
+.bar[data-tone="ok"] .badge {
+  color: var(--success);
+}
+
+.note {
+  color: var(--text-2);
+}
+
+.warn {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--warning);
+}
+
+.changes > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent-strong);
+}
+
+.list {
+  max-height: 38vh;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.item[data-bad] {
+  border-color: #f3c4c6;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+}
+
+.blocked {
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 400;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.full {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.full:hover {
+  color: var(--accent-strong);
+}
+
+.grow {
+  flex: 1;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  background: var(--bg);
+}
+
+@media (max-width: 560px) {
+  .bar {
+    padding: 12px 16px;
+  }
+
+  .scroll {
+    padding: 16px;
+  }
+}

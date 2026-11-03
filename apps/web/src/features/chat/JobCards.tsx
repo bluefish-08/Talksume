@@ -3,12 +3,27 @@ import { citiesText, jobTypeLabel } from "../jobs/format.ts";
 import styles from "./JobCards.module.css";
 import type { JobCard } from "./types.ts";
 
+const detailHref = (id: string) => `/jobs?job=${encodeURIComponent(id)}`;
+
+export function JobAbout({ job }: { job: JobCard }) {
+  return (
+    <Link className={styles.about} to={detailHref(job.id)} title="查看岗位详情">
+      <span className={styles.aboutLabel}>关于</span>
+      <span className={styles.aboutText}>
+        {job.company} · {job.title}
+        {job.score !== undefined && ` · 匹配 ${Math.round(job.score)}`}
+      </span>
+      <span aria-hidden="true">›</span>
+    </Link>
+  );
+}
+
 /** 投递只跳到职位页，由用户在那里亲手确认。 */
 export function JobCards({ jobs }: { jobs: JobCard[] }) {
   return (
     <ul className={styles.list} aria-label="岗位">
       {jobs.map((job) => {
-        const href = `/jobs?job=${encodeURIComponent(job.id)}`;
+        const href = detailHref(job.id);
         const meta = [job.company, citiesText(job.cities), jobTypeLabel(job.jobType)]
           .filter(Boolean)
           .join(" · ");

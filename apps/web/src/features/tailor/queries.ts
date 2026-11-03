@@ -26,7 +26,7 @@ export interface AdoptedTailoring {
 }
 
 export const tailoringsKey = ["tailorings"] as const;
-const tailoringKey = (jobId: string) => ["tailorings", "job", jobId] as const;
+export const tailoringKey = (jobId: string) => ["tailorings", "job", jobId] as const;
 const urlOf = (jobId: string) => `/api/v1/jobs/${encodeURIComponent(jobId)}/tailoring`;
 
 export const tailorPath = (jobId: string) => `/tailor/${encodeURIComponent(jobId)}`;

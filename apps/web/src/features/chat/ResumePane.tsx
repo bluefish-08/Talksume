@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type Completeness, type ResumeContent, SECTION_LABELS } from "../../api/types.ts";
 import { CompletenessBar } from "../resume/CompletenessBar.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
@@ -7,6 +7,7 @@ import { type FactItem, useResumeStyle } from "../resume/queries.ts";
 import { type FactQuote, ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
 import { TemplatePicker } from "../resume/TemplatePicker.tsx";
+import { TailorDraft } from "../tailor/TailorDraft.tsx";
 import styles from "./ResumePane.module.css";
 
 interface Props {
@@ -16,12 +17,39 @@ interface Props {
   facts: readonly FactItem[];
   quotes: Readonly<Record<string, FactQuote>>;
   roundOf: (messageId: string) => number | undefined;
+  tailor: TailorTarget | null;
+  onTailorShow: (showing: boolean) => void;
+  onTailorDiscard: () => void;
+}
+
+/** 面板里打开的定制版；at 每次请求打开都会变，用来切回简历页签。 */
+export interface TailorTarget {
+  jobId: string;
+  company: string;
+  title: string;
+  showing: boolean;
+  at: number;
 }
 
 type Tab = "resume" | "facts";
 
-export function ResumePane({ resume, completeness, highlights, facts, quotes, roundOf }: Props) {
+export function ResumePane({
+  resume,
+  completeness,
+  highlights,
+  facts,
+  quotes,
+  roundOf,
+  tailor,
+  onTailorShow,
+  onTailorDiscard,
+}: Props) {
   const [tab, setTab] = useState<Tab>("resume");
+  const openedAt = tailor?.showing ? tailor.at : undefined;
+  useEffect(() => {
+    if (openedAt !== undefined) setTab("resume");
+  }, [openedAt]);
+  const tailoring = tab === "resume" && tailor?.showing;
   const { style } = useResumeStyle();
   const visible = facts.filter((f) => f.status !== "superseded" && f.quote);
 
@@ -56,14 +84,37 @@ export function ResumePane({ resume, completeness, highlights, facts, quotes, ro
         <span className={styles.grow} />
         <TemplatePicker resume={resume} />
         <ExportMenu />
-        <PolishButton />
+        {!tailoring && <PolishButton />}
       </header>
 
       <div className={styles.progress}>
         <CompletenessBar completeness={completeness} />
       </div>
 
-      {tab === "resume" ? (
+      {tab === "resume" && tailor && (
+        <fieldset className={styles.versions} aria-label="简历版本">
+          <button
+            type="button"
+            className={styles.version}
+            aria-pressed={!tailor.showing}
+            onClick={() => onTailorShow(false)}
+          >
+            通用简历
+          </button>
+          <button
+            type="button"
+            className={styles.version}
+            aria-pressed={tailor.showing}
+            onClick={() => onTailorShow(true)}
+          >
+            {tailor.company} · {tailor.title} 定制版
+          </button>
+        </fieldset>
+      )}
+
+      {tailoring ? (
+        <TailorDraft jobId={tailor.jobId} onDiscard={onTailorDiscard} />
+      ) : tab === "resume" ? (
         <div className={styles.body} role="tabpanel" id="panel-resume" aria-labelledby="tab-resume">
           <ResumePreview
             resume={resume}

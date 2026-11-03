@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Maximize2, PanelRightClose, SquarePen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { ApiError, api } from "../../api/client.ts";
 import { qk, useConversations } from "../../api/queries.ts";
 import type { Completeness, ResumeContent } from "../../api/types.ts";
@@ -9,6 +9,7 @@ import { useToast } from "../../components/Toast.tsx";
 import { Button, Chip, IconButton, Spinner } from "../../components/ui.tsx";
 import { usePolishedResume } from "../resume/polishQueries.ts";
 import type { ResumeSuggestion } from "../resume/workbench.ts";
+import { tailorPath } from "../tailor/queries.ts";
 import styles from "./ChatPanel.module.css";
 import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
@@ -264,6 +265,7 @@ function PanelSession({
     onConsumed();
   }, [queued, send, onConsumed, scroller]);
 
+  const navigate = useNavigate();
   const talk = (text: string) => {
     scroller.pin();
     return send(text);
@@ -284,6 +286,7 @@ function PanelSession({
           }}
           onResolve={(c, choice) => void session.resolveConflict(c, choice)}
           onQuickReply={talk}
+          onOpenTailor={(card) => navigate(tailorPath(card.jobId))}
         />
         {fresh && !session.streaming && (
           <StarterPrompts prompts={prompts} suggestions={suggestions} onPick={talk} />

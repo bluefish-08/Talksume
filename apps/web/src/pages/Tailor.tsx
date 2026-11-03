@@ -1,106 +1,12 @@
-import { applyTailoring, type TailorChange } from "@talksume/core";
 import { ArrowLeft } from "lucide-react";
-import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ApiError } from "../api/client.ts";
 import { useToast } from "../components/Toast.tsx";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
+import { Diff, errorText, titleOf, useTailorDraft } from "../features/tailor/changes.tsx";
 import { type TailoringView, useTailorActions, useTailoring } from "../features/tailor/queries.ts";
 import styles from "./Tailor.module.css";
-
-const KIND_LABEL: Record<TailorChange["kind"], string> = {
-  summary: "个人摘要",
-  bullet: "要点措辞",
-  bullet_order: "要点顺序",
-  item_order: "经历顺序",
-  skill_order: "技能顺序",
-};
-
-const SECTION_LABEL = { experiences: "实习与工作经历", projects: "项目经历" } as const;
-
-const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "操作失败，请稍后再试");
-
-function titleOf(c: TailorChange): string {
-  if (c.kind === "bullet" || c.kind === "bullet_order") return `${KIND_LABEL[c.kind]} · ${c.heading}`;
-  if (c.kind === "item_order") return `${SECTION_LABEL[c.section]}顺序`;
-  return KIND_LABEL[c.kind];
-}
-
-function Marked({ text, marks }: { text: string; marks: string[] }) {
-  if (marks.length === 0) return <>{text}</>;
-  const pattern = new RegExp(
-    `(${marks.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-    "g",
-  );
-  return (
-    <>
-      {text.split(pattern).map((part, i) =>
-        marks.includes(part) ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: 切分结果顺序固定
-          <mark key={i} className={styles.bad}>
-            {part}
-          </mark>
-        ) : (
-          part
-        ),
-      )}
-    </>
-  );
-}
-
-function Diff({ change }: { change: TailorChange }) {
-  if (change.kind === "summary" || change.kind === "bullet") {
-    return (
-      <>
-        <p className={styles.before}>
-          <span className={styles.tag}>原版</span>
-          {change.before ?? "（无）"}
-        </p>
-        <p className={styles.after} data-bad={change.violations.length > 0 || undefined}>
-          <span className={styles.tag}>定制</span>
-          <span>
-            <Marked text={change.after} marks={change.violations} />
-          </span>
-        </p>
-      </>
-    );
-  }
-  const separator = change.kind === "skill_order" ? "、" : " → ";
-  if (change.kind === "bullet_order") {
-    return (
-      <div className={styles.orders}>
-        {(["before", "after"] as const).map((side) => (
-          <div key={side}>
-            <span className={styles.tag}>{side === "before" ? "原版" : "定制"}</span>
-            <ol className={styles.ol}>
-              {change[side].map((text) => (
-                <li key={text}>{text}</li>
-              ))}
-            </ol>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <>
-      <p className={styles.before}>
-        <span className={styles.tag}>原版</span>
-        {change.before.join(separator)}
-      </p>
-      <p className={styles.after}>
-        <span className={styles.tag}>定制</span>
-        {change.after.join(separator)}
-      </p>
-    </>
-  );
-}
-
-function changedTexts(changes: readonly TailorChange[]): Set<string> {
-  return new Set(changes.flatMap((c) => (c.kind === "bullet" ? [c.after] : [])));
-}
 
 type Draft = NonNullable<TailoringView["tailoring"]>;
 
@@ -108,20 +14,8 @@ function Review({ view, draft }: { view: TailoringView; draft: Draft }) {
   const toast = useToast();
   const { style } = useResumeStyle();
   const { generate, adopt, revoke } = useTailorActions(view.job.id);
-  const usable = draft.changes.filter((c) => c.violations.length === 0);
-  const [picked, setPicked] = useState<ReadonlySet<string>>(
-    () => new Set(draft.selected.length > 0 ? draft.selected : usable.map((c) => c.id)),
-  );
-  const chosen = usable.filter((c) => picked.has(c.id));
-  const preview = useMemo(() => applyTailoring(draft.base, chosen), [draft.base, chosen]);
+  const { picked, toggle, chosen, preview, marks } = useTailorDraft(draft);
   const busy = generate.isPending || adopt.isPending || revoke.isPending;
-
-  const toggle = (id: string) =>
-    setPicked((s) => {
-      const next = new Set(s);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
 
   return (
     <div className={styles.body}>
@@ -215,12 +109,7 @@ function Review({ view, draft }: { view: TailoringView; draft: Draft }) {
       </section>
 
       <section className={styles.preview} aria-label="定制版预览">
-        <ResumePreview
-          resume={preview}
-          resumeStyle={style}
-          highlightTexts={changedTexts(chosen)}
-          label="定制版简历"
-        />
+        <ResumePreview resume={preview} resumeStyle={style} changeMarks={marks} label="定制版简历" />
       </section>
     </div>
   );
