@@ -48,8 +48,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const quotes = factQuotes(facts.data, roundOf);
 
   const title = conversations.data?.find((c) => c.id === detail.id)?.title ?? detail.title;
-  const asked = messages.filter((m) => m.role === "assistant").length;
-  const progress = session.focus ? `${SECTION_LABELS[session.focus]} · 第 ${asked} 问` : "信息已基本完整";
+  const progress = session.focus ? SECTION_LABELS[session.focus] : "信息已基本完整";
 
   const submit = () => {
     scroller.pin();
