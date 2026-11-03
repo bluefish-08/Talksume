@@ -6,6 +6,7 @@ import {
   computeCompleteness,
   isQuantified,
   isSkipped,
+  type MissingField,
   pickNextSlot,
   SECTION_BY_NAME,
   type Slot,
@@ -136,28 +137,73 @@ export function nextSlotOf(state: IntakeState): Slot | null {
 
 const NO_NUMBERS =
   /没(?:有)?(?:什么|啥)?(?:具体|准确|明确)?的?(?:数字|数据|量化|统计)|没(?:有)?(?:统计|量化)过?|记不(?:清|得|太清)|不记得|忘了|说不上来/;
+const NOTHING_TO_SAY =
+  /没(?:有)?遇到|没(?:有)?(?:什么|啥)?(?:特别|太|很)?(?:难|挑战|问题|可说|好说)|没有|记不(?:清|得|太清)|不记得|忘了|想不起来|说不上来|跳过|不想说/;
+/** 超过这个长度或带了英文、数字的回答多半含有内容，交给模型去写。 */
+const SHORT_DECLINE = 12;
 
-/** 上一轮问的是量化结果、用户答没有数字或记不清时直接记为跳过，不指望模型记得调用 skip_field。 */
-export function skipUnquantified(state: IntakeState, text: string): SkipEntry | null {
-  const key = state.history.findLast((t) => t.role === "assistant")?.meta?.slot;
-  if (!key || isQuantified(text)) return null;
-  const hit = text.match(NO_NUMBERS);
-  if (!hit) return null;
+/** 上一轮追问的字段 key。 */
+export function lastAskedKey(state: IntakeState): string | undefined {
+  return state.history.findLast((t) => t.role === "assistant")?.meta?.slot;
+}
+
+function declineOf(m: MissingField, text: string): string | undefined {
+  if (m.kind === "quantify") return isQuantified(text) ? undefined : text.match(NO_NUMBERS)?.[0];
+  if (!m.depth) return undefined;
+  const plain = normalizeQuote(text);
+  if (plain.length > SHORT_DECLINE || /[a-z0-9]/.test(plain)) return undefined;
+  return NOTHING_TO_SAY.test(text) ? text.trim() : undefined;
+}
+
+/** 上一轮问的是深挖项，用户答没有、没遇到、记不清时直接记为跳过，不指望模型记得调用 skip_field。 */
+export function skipDeclined(state: IntakeState, text: string): SkipEntry | null {
+  const key = lastAskedKey(state);
+  if (!key) return null;
   const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
-  const slot = missing.find((m) => m.key === key && m.kind === "quantify");
-  if (!slot) return null;
-  const entry = skipEntryOf(toSlot(slot), hit[0]);
+  const slot = missing.find((m) => m.key === key);
+  const quote = slot && declineOf(slot, text);
+  return slot && quote ? skipSlot(state, toSlot(slot), quote) : null;
+}
+
+export function skipSlot(state: IntakeState, slot: Slot, quote: string): SkipEntry {
+  const entry = skipEntryOf(slot, quote);
   state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
   return entry;
 }
 
 /** 可被 skip_field 跳过的字段：暂存条目的缺项和画像里仍缺的项。 */
-function skippableSlot(state: IntakeState, key: string): Slot | null {
+export function skippableSlot(state: IntakeState, key: string): Slot | null {
   const draft = draftSlot(state, new Set());
   if (draft?.key === key) return draft;
   const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
   const hit = missing.find((m) => m.key === key);
   return hit ? toSlot(hit) : null;
+}
+
+/** key 指向的字段已有内容或分区已完成：跳过无从谈起，也不算失败。 */
+function alreadySettled(state: IntakeState, key: string): boolean {
+  const [section, itemId, field] = key.split(":");
+  const spec = SECTION_BY_NAME[section as ProfileSection] as
+    | (typeof SECTION_BY_NAME)[ProfileSection]
+    | undefined;
+  if (!spec) return false;
+  if (state.completedSections.includes(spec.section)) return true;
+  if (!itemId || !field || !spec.fields.some((f) => f.field === field)) return false;
+  const items = spec.kind === "list" ? (state.profile[spec.section] as { id: string }[]) : undefined;
+  if (items ? !items.some((i) => i.id === itemId) : itemId !== "_") return false;
+  return !skippableSlot(state, key);
+}
+
+function skippableKeys(state: IntakeState): string[] {
+  const skipped = skippedKeys(state);
+  const draft = draftSlot(state, skipped);
+  const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
+  return [
+    ...(draft ? [`${draft.key}（${draft.label}）`] : []),
+    ...missing
+      .filter((m) => m.kind !== "new_item" && !isSkipped(m, skipped))
+      .map((m) => `${m.key}（${m.itemLabel ? `${m.itemLabel}-` : ""}${m.label}）`),
+  ].slice(0, 10);
 }
 
 export function noteAsked(state: IntakeState, slot: Slot | null): void {
@@ -366,23 +412,37 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     if (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, args.quote)) {
       return text(`quote「${args.quote}」不是用户说过的原话，请逐字摘抄用户表示没有/不想说的那句话。`, true);
     }
-    const slot = args.key ? skippableSlot(state, args.key) : nextSlotOf(state);
+    const asked = lastAskedKey(state);
+    const askedSlot = asked ? skippableSlot(state, asked) : null;
+    if (!args.key) {
+      const slot = askedSlot ?? nextSlotOf(state);
+      if (!slot) return text("当前没有待补的字段。", true);
+      return skipped(skipSlot(state, slot, args.quote));
+    }
+    const exact = skippableSlot(state, args.key);
+    if (exact) return skipped(skipSlot(state, exact, args.quote));
+    if (alreadySettled(state, args.key)) {
+      return text(`key=${args.key} 已有内容或所在分区已完成，不需要跳过，直接回应用户并问下一个问题。`);
+    }
+    // 模型常把 key 抄错（漏了条目 id、写成条目名），字段名对得上就按上一轮问的那项处理
+    const slot = askedSlot?.field === args.key.split(":").at(-1) ? askedSlot : null;
     if (!slot) {
+      const keys = skippableKeys(state);
       return text(
-        args.key
-          ? `找不到 key=${args.key} 的待补字段，请用「当前目标字段」里的 key。`
-          : "当前没有待补的字段。",
+        `找不到 key=${args.key} 的待补字段。${keys.length > 0 ? `可用的 key：\n${keys.join("\n")}` : "当前没有待补的字段。"}`,
         true,
       );
     }
-    const entry = skipEntryOf(slot, args.quote);
-    state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
+    return skipped(skipSlot(state, slot, args.quote), `key=${args.key} 不存在，已按上一轮问的字段处理。`);
+  });
+
+  function skipped(entry: SkipEntry, note = ""): AgentToolResult<unknown> {
     ctx.flags.changed = true;
     const next = nextSlotOf(state);
     return text(
-      `已记下用户不提供「${entry.label}」，以后不会再问。${next ? `\n下一个目标：\n${describeSlot(next)}` : "\n下一个目标：无，信息已基本完整。"}`,
+      `${note}已记下用户不提供「${entry.label}」，以后不会再问。${next ? `\n下一个目标：\n${describeSlot(next)}` : "\n下一个目标：无，信息已基本完整。"}`,
     );
-  });
+  }
 
   const resolveConflictTool = tool(
     "resolve_conflict",

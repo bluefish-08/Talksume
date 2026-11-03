@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Model, ToolResultMessage } from "@earendil-works/pi-ai";
 import { errorKindOf } from "@talksume/llm-gateway";
-import { computeCompleteness } from "./completeness.ts";
+import { computeCompleteness, SECTION_SPECS } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { createJobTools } from "./job-tools.ts";
 import { buildSystemPrompt } from "./prompt.ts";
@@ -9,11 +9,15 @@ import {
   buildUserCorpus,
   completenessEvent,
   createIntakeTools,
+  lastAskedKey,
   nextSlotOf,
+  normalizeQuote,
   noteAsked,
   type RunContext,
   settleConflict,
-  skipUnquantified,
+  skipDeclined,
+  skippableSlot,
+  skipSlot,
 } from "./tools.ts";
 import type {
   ChatTurn,
@@ -133,14 +137,80 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
     });
 }
 
-const CLAIMS_RECORDED = /记(?:下|好|上|到|一下)|写(?:进|入|上)|补(?:到|上|进)|已记录/;
-const NUDGE =
-  "[系统提示，不是用户发言] 你在回复里说已经记下，但这一轮没有调用 upsert_facts，画像里还没有这些信息。请现在用 upsert_facts 写入用户上一条消息里的信息（quote 逐字摘抄原话），然后用 ask_user 问下一个问题，不要重复前面的文字。";
+/** 只认已完成的说法，「简历上写上 GPA 更好」这类建议不算。 */
+const CLAIMS_RECORDED =
+  /已(?:经)?(?:记(?:下|录|上|好)|写(?:入|进|上|好)|补(?:上|进|好)|录入|保存)|(?:记|写|补|存)(?:下|好|上|到|进|入)(?:来|去)?(?:了|啦|咯)|记录(?:好)?了/;
+const CLAIM_FILLER =
+  /^(?:好的?|嗯|明白了?|收到|了解|ok)|你说的|刚才(?:说)?的|帮你|给你|已经|这边|这些|这个|这条|这段|[我已也都先就把那了的]/gi;
+/** 「技能记下了」「学历也记上了」这类泛指说法，只要这一轮确实写入了就算数。 */
+const GENERIC_SUBJECTS = [
+  ...SECTION_SPECS.flatMap((s) => [s.label, ...s.fields.map((f) => f.label)]),
+  ..."信息 内容 经历 项目 实习 奖项 学历 教育 要点 经验 技术栈 本科 硕士 博士 专科 校招 社招 全职 兼职".split(
+    " ",
+  ),
+]
+  .map(normalizeQuote)
+  .sort((a, b) => b.length - a.length);
+
+/** 回复里每一处「X 记下了」的 X，泛指时为空串。 */
+function claimedSubjects(text: string): string[] {
+  return text.split(/[，,。！!？?；;\n]/).flatMap((clause) => {
+    const hit = clause.match(CLAIMS_RECORDED);
+    if (hit?.index === undefined) return [];
+    const parts = clause
+      .slice(0, hit.index)
+      .replace(CLAIM_FILLER, "")
+      .split(/以及|还有|[和及与跟、]/);
+    return parts.map((part) => {
+      let subject = normalizeQuote(part);
+      for (const word of GENERIC_SUBJECTS) subject = subject.replaceAll(word, "");
+      return subject.length >= 2 ? subject : "";
+    });
+  });
+}
+
+function bigrams(text: string): string[] {
+  return Array.from({ length: Math.max(0, text.length - 1) }, (_, i) => text.slice(i, i + 2));
+}
+
+/** 原话和画像里的写法常有出入（「答辩优秀」对「毕业答辩：优秀」），按字对重合度放宽。 */
+function mentioned(corpus: string, phrase: string): boolean {
+  if (corpus.includes(phrase)) return true;
+  const grams = bigrams(phrase);
+  return grams.length > 0 && grams.filter((g) => corpus.includes(g)).length / grams.length >= 0.6;
+}
+
+/** 被说成已记下的内容尽量用用户原话复述。 */
+function userWordsFor(userText: string, subject: string): string {
+  const clauses = userText
+    .split(/[，,。！!？?；;\n]/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (!subject) return userText.trim().slice(0, 40);
+  const grams = bigrams(subject);
+  const score = (c: string) => grams.filter((g) => normalizeQuote(c).includes(g)).length;
+  const best = clauses.reduce<string | undefined>((a, c) => (!a || score(c) > score(a) ? c : a), undefined);
+  return (best && score(best) > 0 ? best : subject).slice(0, 40);
+}
+
+function nudgeText(subjects: string[], asked: boolean): string {
+  const what = subjects
+    .filter(Boolean)
+    .map((s) => `「${s}」`)
+    .join("");
+  return `[系统提示，不是用户发言] 你在回复里说已经记下${what}，但画像里没有${what ? "这些内容" : "新写入的内容"}（没有调用 upsert_facts 或调用失败）。请现在用 upsert_facts 写入用户上一条消息里对应的信息（quote 逐字摘抄原话）。${asked ? "问题已经发给用户，写完不要再输出文字，也不要再调用 ask_user。" : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
+}
 
 function clarifyQuestion(quote: string | undefined): string {
   return quote
     ? `我没能准确记下你说的「${quote.slice(0, 40)}」，可以再具体说一下吗？`
     : "刚才那部分我没能准确理解，可以再具体说一下吗？";
+}
+
+function sameWords(a: string, b: string): boolean {
+  const x = normalizeQuote(a);
+  const y = normalizeQuote(b);
+  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
 }
 
 export interface IntakeController {
@@ -223,12 +293,14 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       flags,
     };
 
-    if (user) skipUnquantified(state, user.text);
+    const autoSkipped = user ? skipDeclined(state, user.text) : null;
     const completeness = computeCompleteness(state.profile, { completedSections: state.completedSections });
+    const target = nextSlotOf(state);
     const systemPrompt = buildSystemPrompt({
       profile: state.profile,
       completeness,
-      slot: nextSlotOf(state),
+      slot: target,
+      ...(autoSkipped ? { autoSkipped } : {}),
       completedSections: state.completedSections,
       conflicts: state.conflicts,
       drafts: state.drafts,
@@ -241,11 +313,24 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let assistantText = "";
     let llmError: string | undefined;
     let failures = 0;
+    let writeFailures = 0;
     let lastFailedQuote: string | undefined;
     let modelTurns = 0;
     let wrote = false;
     let nudged = false;
+    let skipFailed = false;
+    let skipDone = false;
     const toolArgs = new Map<string, unknown>();
+    const snapshot = () => JSON.stringify([state.profile, state.drafts]);
+    const beforeWrite = new Map<string, string>();
+    const said = normalizeQuote(user?.text ?? "");
+    // 用户没说过的词（「联系方式」「时间线」）是模型的概括，只看这一轮写没写；用户原话里的具体内容要真在画像里
+    const unrecorded = (): string[] => {
+      const corpus = normalizeQuote(snapshot());
+      return claimedSubjects(assistantText).filter((s) =>
+        s && mentioned(said, s) ? !mentioned(corpus, s) : !wrote,
+      );
+    };
 
     const agent = new Agent({
       initialState: {
@@ -263,15 +348,18 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       finishTurn: (turn) => {
         if (turn.message.role === "assistant" && turn.message.stopReason === "error") return;
         modelTurns++;
-        if (flags.asked || failures >= 2 || modelTurns >= maxModelTurns) return { action: "end" };
-        // 关思考时模型偶尔只回一句「记下了」却没调工具，提醒一次
         const calledTool =
           turn.message.role === "assistant" && turn.message.content.some((c) => c.type === "toolCall");
-        if (user && !wrote && !nudged && !calledTool && CLAIMS_RECORDED.test(assistantText)) {
-          nudged = true;
-          agent.followUp({ role: "user", content: NUDGE, timestamp: Date.now() });
-          return { action: "continue" };
+        const stopping = flags.asked || !calledTool;
+        if (user && stopping && !nudged && failures < 2 && modelTurns < maxModelTurns) {
+          const missed = unrecorded();
+          if (missed.length > 0) {
+            nudged = true;
+            agent.followUp({ role: "user", content: nudgeText(missed, flags.asked), timestamp: Date.now() });
+            return { action: "continue" };
+          }
         }
+        if (flags.asked || failures >= 2 || modelTurns >= maxModelTurns) return { action: "end" };
       },
     });
 
@@ -290,15 +378,22 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           break;
         case "tool_execution_start":
           toolArgs.set(event.toolCallId, event.args);
-          if (event.toolName === "upsert_facts") wrote = true;
+          if (event.toolName === "upsert_facts") beforeWrite.set(event.toolCallId, snapshot());
           break;
         case "tool_execution_end":
+          if (event.toolName === "skip_field") {
+            if (event.isError) skipFailed = true;
+            else skipDone = true;
+          }
+          if (event.toolName === "upsert_facts" && !event.isError) {
+            if (beforeWrite.get(event.toolCallId) !== snapshot()) wrote = true;
+          }
           if (event.isError) {
             failures++;
-            const args = toolArgs.get(event.toolCallId) as
-              | { facts?: { quote?: unknown }[]; quote?: unknown }
-              | undefined;
-            const quote = args?.facts?.find((f) => typeof f?.quote === "string")?.quote ?? args?.quote;
+            if (event.toolName !== "upsert_facts") break;
+            writeFailures++;
+            const args = toolArgs.get(event.toolCallId) as { facts?: { quote?: unknown }[] } | undefined;
+            const quote = args?.facts?.find((f) => typeof f?.quote === "string")?.quote;
             if (typeof quote === "string") lastFailedQuote = quote;
           }
           break;
@@ -319,8 +414,22 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
 
     if (options.signal?.aborted) return;
 
+    // 模型想跳过却没跳成：按上一轮问的（或本轮目标）字段替它跳过，免得下一轮又卡在同一处
+    if (user && skipFailed && !skipDone) {
+      const asked = lastAskedKey(state);
+      const slot = (asked && skippableSlot(state, asked)) || (target && skippableSlot(state, target.key));
+      if (slot) {
+        skipSlot(state, slot, user.text.trim().slice(0, 40));
+        flags.changed = true;
+      }
+    }
+
     // 问题已经说出口后才卡住的，用户拿到的回复是完整的，不再报错
     const delivered = flags.asked || /[?？]/.test(assistantText);
+    const missed = user && !llmError ? unrecorded() : [];
+    const previous = state.history.findLast((t) => t.role === "assistant")?.meta?.clarified;
+    const failedWords = lastFailedQuote ?? user?.text ?? "";
+    let clarified: string | undefined;
     if (llmError && !delivered) {
       const kind = errorKindOf(llmError) ?? "unknown";
       yield {
@@ -329,9 +438,30 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         message: llmError.replace(/^\[llm:[a-z_]+\] /, ""),
         recoverable: kind !== "quota_exhausted" && kind !== "auth",
       };
-    } else if (failures >= 2 && !flags.asked) {
+    } else if (user && missed.length > 0) {
+      const words = [...new Set(missed.map((s) => userWordsFor(user.text, s)))]
+        .map((w) => `「${w}」`)
+        .join("");
+      const question = delivered
+        ? `刚才说的${words}其实还没记进简历，回头可以再具体说一下。`
+        : `刚才说的${words}还没记进简历，能再具体说一下吗？`;
+      asks.push(question);
+      yield {
+        type: "ask",
+        kind: "clarify",
+        question,
+        ...(quickReplies.length > 0 ? { quickReplies } : {}),
+      };
+    } else if (
+      writeFailures > 0 &&
+      failures >= 2 &&
+      !flags.asked &&
+      !(previous && sameWords(previous, failedWords))
+    ) {
       const question = clarifyQuestion(lastFailedQuote);
       asks.push(question);
+      clarified = failedWords;
+      askedSlot ??= lastAskedKey(state);
       yield { type: "ask", kind: "clarify", question };
     } else if (!flags.asked && !flags.jobs) {
       const slot = nextSlotOf(state);
@@ -358,6 +488,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(changes.length > 0 ? { changes } : {}),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
       ...(askedSlot ? { slot: askedSlot } : {}),
+      ...(clarified ? { clarified } : {}),
       ...(cards.length > 0 ? { jobs: cards } : {}),
       ...(tailored ? { tailor: tailored } : {}),
       ...(toolLog.length > 0 ? { tools: toolLog } : {}),
@@ -368,7 +499,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         state.history.push({
           id: `${turn.id}:reply`,
           role: "assistant",
-          content: reply || (user ? "（已记录）" : ""),
+          content: reply || (user && changes.length > 0 ? "（已记录）" : ""),
           ...(Object.keys(meta).length > 0 ? { meta } : {}),
         });
       }

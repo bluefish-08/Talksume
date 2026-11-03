@@ -11,6 +11,8 @@ export interface PromptInput {
   conflicts: readonly Conflict[];
   drafts?: readonly Draft[];
   skipped?: readonly SkipEntry[];
+  /** 本轮用户这句话已被系统直接记为跳过的字段。 */
+  autoSkipped?: SkipEntry;
   summaries?: readonly SummaryNote[];
   /** 是否开放岗位推荐、搜索与解读工具。 */
   jobTools?: boolean;
@@ -83,7 +85,8 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
-    "- 每次只问一件事，口语化、简短，像朋友聊天。可以先用一句话回应或确认用户刚说的内容。",
+    "- 每次只问一件事，口语化、简短，像朋友聊天。可以先用一句话回应用户刚说的内容。",
+    "- 不要说「记下了」「已记录」「记上了」「已写入」这类话：写没写进简历由界面上的「已写入简历」标签显示，你只回应内容本身，再问下一个问题。",
     `- 技能熟练度 level 只按原话里的程度词映射：${LEVEL_LINE}。原话没有这些词（如「比较熟」「用过」「会」）就省略 level，不要从年限、项目经历推断，也不要降级；系统会丢弃 quote 里找不到程度词的 level。`,
     "- 获奖的 date 只在用户说了年份或时间时填，不要从在校时间推算；quote 里没有年份或日期的 date 会被丢弃。",
     "- ask_user 时尽量附带 quickReplies：2 到 4 条用户可能的简短回答（第一人称、12 字以内，可含「跳过这个」）。选项必须是用户真实可能的回答，不要替用户编造经历；不确定就不给。",
@@ -107,7 +110,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 实习和项目不要再写 bullets、task、action、result，统一写 highlights；项目背景可以写 situation。",
     "- 技术栈写进对应条目的 techStack，一项一条，和已有的取并集；技能区只记用户聊技能时说的，不要把技术栈复制过去。",
     "- 一轮只问「当前目标字段」这一项，不要顺带问背景或别的。深挖顺序由系统给出：技术栈 → 你具体负责什么 → 遇到的难点和你的做法 → 量化结果。用户一次说了好几件，全部写入后直接问下一个还缺的。",
-    "- 用户说「没有数字」「记不清」「没统计过」，用 skip_field 跳过量化结果，不要再追问；用户说没遇到难点，也用 skip_field 跳过。",
+    "- 用户说「没有数字」「记不清」「没统计过」，用 skip_field 跳过量化结果，不要再追问；用户说没遇到难点，也用 skip_field 跳过。skip_field 的 key 照抄「当前目标字段」里的 key，不确定就不传。",
     "",
     "## 其他字段",
     "- 教育：gpa 写用户说的原样（如 3.7/4.0），排名写 rank（如 专业前 10%、3/120），有一个就够；courses 一门一条。奖学金、竞赛奖项写 awards；三好学生、优秀毕业生这类荣誉称号写 education 的 honors。",
@@ -144,10 +147,17 @@ export function buildSystemPrompt(input: PromptInput): string {
   lines.push(...memoryPromptLines(input.skipped ?? [], input.summaries ?? []));
 
   lines.push("", "## 当前目标字段");
+  if (input.autoSkipped) {
+    lines.push(
+      `用户这句「${input.autoSkipped.quote}」是在回答上一轮问的「${input.autoSkipped.label}」，系统已记为跳过，不要再调用 skip_field，也不要把这句话当成对下面目标的回答。`,
+    );
+  }
   if (input.slot) {
     lines.push(
       describeSlot(input.slot),
-      `用户这条消息很可能正是在回答这个目标：先写入，再根据 upsert_facts 返回的「下一个目标」继续追问${input.jobTools ? "；问的是岗位就先回答岗位问题" : ""}。`,
+      input.autoSkipped
+        ? "简短回应一句，直接问这个目标。"
+        : `用户这条消息很可能正是在回答这个目标：先写入，再根据 upsert_facts 返回的「下一个目标」继续追问${input.jobTools ? "；问的是岗位就先回答岗位问题" : ""}。`,
     );
   } else {
     lines.push(`信息已基本收集完整。可以简短总结，并告诉用户：${RESUME_HINT}`);

@@ -83,6 +83,8 @@ export type TurnMeta = {
   changes?: ProfileChange[];
   /** 这条回复追问的目标字段 key。 */
   slot?: string;
+  /** 这条回复因为没记下哪句话而请用户重说；同一句话只请一次。 */
+  clarified?: string;
   quickReplies?: string[];
   jobs?: JobCard[];
   tailor?: TailorCard;

@@ -90,3 +90,25 @@ describe("upsert_facts tool", () => {
     expect(text).toContain("第 2 条的 date");
   });
 });
+
+describe("skip_field", () => {
+  it("lists the usable keys when neither the key nor the last asked slot matches", async () => {
+    const state = createIntakeState();
+    const ctx: RunContext = {
+      state,
+      messageId: "m1",
+      userCorpus: buildUserCorpus(["不想说"]),
+      verifyQuote: true,
+      genId: (prefix) => `${prefix}_1`,
+      emit: () => {},
+      flags: { asked: false, changed: false },
+    };
+    const skipField = createIntakeTools(ctx).find((t) => t.name === "skip_field");
+    const result = await skipField?.execute("c1", { key: "nope", quote: "不想说" } as never);
+    const out = result?.content.map((c) => (c.type === "text" ? c.text : "")).join("") ?? "";
+    expect(out).toContain("找不到 key=nope");
+    expect(out).toContain("可用的 key：");
+    expect(out).toContain("basics:_:name");
+    expect(state.skipped).toEqual([]);
+  });
+});

@@ -137,6 +137,9 @@ describe("跳过的项", () => {
     const call = toolsFor(state, ["成绩就不说了"]);
     expect(await call("skip_field", { quote: "我没说过这句" })).toContain("不是用户说过的原话");
     expect(await call("skip_field", { key: "education:edu_1:school", quote: "成绩就不说了" })).toContain(
+      "不需要跳过",
+    );
+    expect(await call("skip_field", { key: "education:edu_9:gpa", quote: "成绩就不说了" })).toContain(
       "找不到",
     );
     expect(state.skipped).toEqual([]);

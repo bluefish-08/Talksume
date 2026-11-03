@@ -125,11 +125,12 @@ export async function loadConversation(
     id: m.id,
     role: m.role,
     content: m.content,
-    ...(m.meta.tools || m.meta.slot
+    ...(m.meta.tools || m.meta.slot || m.meta.clarified
       ? {
           meta: {
             ...(m.meta.tools ? { tools: m.meta.tools } : {}),
             ...(m.meta.slot ? { slot: m.meta.slot } : {}),
+            ...(m.meta.clarified ? { clarified: m.meta.clarified } : {}),
           },
         }
       : {}),

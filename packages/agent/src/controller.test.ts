@@ -903,3 +903,216 @@ describe("intake controller: old profile data", () => {
     ]);
   });
 });
+
+describe("intake controller: saying it was recorded must match what was written", () => {
+  const claimTurn = (text: string, ...calls: ReturnType<typeof fauxToolCall>[]) =>
+    fauxAssistantMessage([fauxText(text), ...calls], { stopReason: "toolUse" });
+  const award = (quote: string) => upsert([{ section: "awards", payload: { name: "毕业答辩优秀" }, quote }]);
+  const python = upsert([{ section: "skills", payload: { name: "Python" }, quote: "我会 Python" }]);
+  const lastReply = (state: ReturnType<typeof createIntakeState>) =>
+    state.history.findLast((t) => t.role === "assistant")?.content ?? "";
+
+  it("corrects the reply when the write failed but the model said 记上了", async () => {
+    const { core, controller } = fake([
+      claimTurn("好的，答辩优秀也记上了。还拿过别的奖吗？", award("答辩被评为优秀"), ask("还拿过别的奖吗？")),
+      toolTurn(award("答辩被评为优秀")),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m1", text: "我毕业答辩拿了优秀" }),
+    );
+    expect(core.state.callCount).toBe(2);
+    expect(state.profile.awards).toHaveLength(0);
+    const correction = asks(events).at(-1);
+    expect(correction).toMatchObject({ kind: "clarify" });
+    expect(correction?.question).toBe(
+      "刚才说的「我毕业答辩拿了优秀」其实还没记进简历，回头可以再具体说一下。",
+    );
+    expect(lastReply(state)).toContain("还没记进简历");
+  });
+
+  it("corrects only the part that was not written when A was written but B was claimed", async () => {
+    const { controller } = fake([
+      claimTurn("Python 和答辩优秀都记上了。", python, ask("还会别的吗？")),
+      toolTurn(ask("还会别的吗？")),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m1", text: "我会 Python，毕业答辩拿了优秀" }),
+    );
+    expect(state.profile.skills.map((s) => s.name)).toEqual(["Python"]);
+    expect(asks(events).at(-1)?.question).toBe(
+      "刚才说的「毕业答辩拿了优秀」其实还没记进简历，回头可以再具体说一下。",
+    );
+    expect(events.some((e) => e.type === "profile_patch")).toBe(true);
+  });
+
+  it("lets the nudged rewrite stand without a correction", async () => {
+    const { controller } = fake([
+      claimTurn("答辩优秀也记上了，还拿过别的奖吗？", ask("还拿过别的奖吗？")),
+      toolTurn(award("毕业答辩拿了优秀")),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m1", text: "我毕业答辩拿了优秀" }),
+    );
+    expect(state.profile.awards.map((a) => a.name)).toEqual(["毕业答辩优秀"]);
+    expect(asks(events).map((a) => a.kind)).toEqual(["followup"]);
+    expect(lastReply(state)).not.toContain("还没记进");
+  });
+
+  it("does not nudge or correct a claim that matches what was written", async () => {
+    const { core, controller } = fake([
+      claimTurn("好的，技能和 Python 都记下了。还会别的吗？", python, ask("还会别的吗？")),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "我会 Python" }));
+    expect(core.state.callCount).toBe(1);
+    expect(asks(events).map((a) => a.kind)).toEqual(["followup"]);
+  });
+
+  it("treats a summary word the user never said as covered by any write this turn", async () => {
+    const { core, controller } = fake([
+      claimTurn(
+        "联系方式我记好了，还会别的吗？",
+        upsert([{ section: "basics", payload: { phone: "13600005555" }, quote: "电话13600005555" }]),
+        ask("还会别的吗？"),
+      ),
+    ]);
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "m1", text: "电话13600005555" }),
+    );
+    expect(core.state.callCount).toBe(1);
+    expect(asks(events).map((a) => a.kind)).toEqual(["followup"]);
+  });
+
+  it("does not read advice like 写上 GPA 更好 as a claim", async () => {
+    const { core, controller } = fake([
+      claimTurn("你已经写过学校了，简历上写上 GPA 会更好，你的 GPA 是多少？", ask("你的 GPA 是多少？")),
+    ]);
+    await collect(controller.handleUserMessage(createIntakeState(), { id: "m1", text: "GPA 要写吗" }));
+    expect(core.state.callCount).toBe(1);
+  });
+
+  it("tells the model not to announce writes itself", async () => {
+    const prompts: string[] = [];
+    const { controller } = fake([toolTurn(ask("你叫什么？"))], prompts);
+    await collect(controller.handleUserMessage(createIntakeState(), { id: "m1", text: "你好" }));
+    expect(prompts[0]).toContain("不要说「记下了」「已记录」「记上了」");
+  });
+});
+
+describe("intake controller: declining a deep-dive question", () => {
+  const CHALLENGE = "projects:prj_1:challenge";
+  const seeded = (askedSlot?: string) =>
+    createIntakeState({
+      profile: Profile.parse({
+        basics: { name: "李明", phone: "13800001111", email: "liming@example.com" },
+        education: [{ id: "edu_1", school: "江城大学", degree: "bachelor", major: "软件工程" }],
+        projects: [
+          {
+            id: "prj_1",
+            name: "江城闲置",
+            role: "后端",
+            techStack: ["Java"],
+            highlights: [{ title: "订单模块", detail: "负责订单模块" }],
+          },
+        ],
+        skills: ["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, name })),
+        intention: { roles: ["后端开发"], cities: ["江城"], jobType: "campus" },
+      }),
+      completedSections: ["experiences", "awards"],
+      history: askedSlot
+        ? [
+            { id: "m0", role: "user", content: "负责订单模块" },
+            {
+              id: "m0:reply",
+              role: "assistant",
+              content: "做的过程中遇到过什么难点？",
+              meta: { slot: askedSlot },
+            },
+          ]
+        : [],
+    });
+  const target = (prompt: string | undefined) => prompt?.match(/key=([\w:]+)/)?.[1];
+  const skip = (key: string, quote: string) => fauxToolCall("skip_field", { key, quote });
+
+  it("records 没遇到特别难的 as a skip without the model and moves on", async () => {
+    const prompts: string[] = [];
+    const { controller } = fake([toolTurn(ask("最后效果怎么样？"))], prompts);
+    const state = seeded(CHALLENGE);
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "没遇到特别难的" }));
+    expect(state.skipped).toEqual([expect.objectContaining({ key: CHALLENGE, quote: "没遇到特别难的" })]);
+    expect(target(prompts[0])).toBe("projects:prj_1:impact");
+    expect(prompts[0]).toContain("系统已记为跳过");
+  });
+
+  it("leaves a longer answer with real content to the model", async () => {
+    const { controller } = fake([toolTurn(ask("最后效果怎么样？"))]);
+    const state = seeded(CHALLENGE);
+    await collect(
+      controller.handleUserMessage(state, { id: "m1", text: "没遇到什么大问题，就是 Redis 缓存要注意" }),
+    );
+    expect(state.skipped).toEqual([]);
+  });
+
+  it("falls back to the slot asked last turn when skip_field gets a wrong key", async () => {
+    const { controller } = fake([
+      toolTurn(skip("challenge", "这块就不说了吧")),
+      toolTurn(ask("最后效果怎么样？")),
+    ]);
+    const state = seeded(CHALLENGE);
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "这块就不说了吧" }));
+    expect(state.skipped.map((e) => e.key)).toEqual([CHALLENGE]);
+    expect(asks(events).map((a) => a.kind)).toEqual(["followup"]);
+  });
+
+  it("treats skipping a field that already has content as a no-op, not a failure", async () => {
+    const { core, controller } = fake([
+      toolTurn(skip("projects:prj_1:duty", "没遇到特别难的")),
+      toolTurn(ask("最后效果怎么样？")),
+    ]);
+    const state = seeded();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "没遇到特别难的" }));
+    expect(core.state.callCount).toBe(2);
+    expect(state.skipped).toEqual([]);
+    expect(asks(events).map((a) => a.kind)).toEqual(["followup"]);
+  });
+
+  it("skips the target itself after two bad skip_field calls instead of a clarify loop", async () => {
+    const prompts: string[] = [];
+    const { core, controller } = fake(
+      [
+        toolTurn(skip("challenge", "没遇到特别难的")),
+        toolTurn(skip("江城闲置:challenge", "没遇到特别难的")),
+        fauxAssistantMessage([fauxText("应届生一页就够了。"), ask("这个项目最后效果怎么样？")], {
+          stopReason: "toolUse",
+        }),
+      ],
+      prompts,
+    );
+    const state = seeded();
+    const e1 = await collect(controller.handleUserMessage(state, { id: "m1", text: "没遇到特别难的" }));
+    expect(core.state.callCount).toBe(2);
+    expect(asks(e1).map((a) => [a.kind, a.slot?.key])).toEqual([["followup", "projects:prj_1:impact"]]);
+    expect(state.skipped).toEqual([expect.objectContaining({ key: CHALLENGE, quote: "没遇到特别难的" })]);
+
+    const e2 = await collect(controller.handleUserMessage(state, { id: "m2", text: "简历一般写几页？" }));
+    expect(prompts.slice(2).map(target)).not.toContain(CHALLENGE);
+    expect(asks(e2).some((a) => a.kind === "clarify")).toBe(false);
+    expect(state.history.at(-1)?.content).toContain("一页就够了");
+  });
+
+  it("asks the user to clarify the same failed words only once", async () => {
+    const bad = upsert([
+      { section: "education", payload: { school: "清华大学", degree: "本科" }, quote: "清华大学本科" },
+    ]);
+    const { controller } = fake([toolTurn(bad), toolTurn(bad), toolTurn(bad), toolTurn(bad)]);
+    const state = createIntakeState();
+    const e1 = await collect(controller.handleUserMessage(state, { id: "m1", text: "我在清华大学本科" }));
+    expect(asks(e1).map((a) => a.kind)).toEqual(["clarify"]);
+    const e2 = await collect(controller.handleUserMessage(state, { id: "m2", text: "就是清华大学本科" }));
+    expect(asks(e2).map((a) => a.kind)).toEqual(["followup"]);
+    expect(state.history.at(-1)?.content).toBeTruthy();
+  });
+});
