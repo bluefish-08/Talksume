@@ -4,6 +4,8 @@ import type { LlmDeps, LlmModelOption } from "./app.ts";
 const KNOWN: Record<string, Omit<LlmModelOption, "id">> = {
   "deepseek-v4.1-flash": { label: "DeepSeek V4.1 Flash", hint: "默认模型，回复快" },
   "glm-5.3": { label: "GLM-5.3", hint: "备用模型，可换个风格试试" },
+  "deepseek-flash": { label: "DeepSeek V4.1 Flash", hint: "默认模型，回复快" },
+  "deepseek-v4-pro": { label: "DeepSeek V4 Pro", hint: "备用模型，更强但更慢" },
 };
 
 const optionOf = (id: string): LlmModelOption => ({ id, ...(KNOWN[id] ?? { label: id, hint: "" }) });
