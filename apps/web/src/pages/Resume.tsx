@@ -1,4 +1,4 @@
-import { MessageSquare, PanelRightOpen } from "lucide-react";
+import { FileUp, MessageSquare, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useProfile } from "../api/queries.ts";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
@@ -23,6 +23,7 @@ import {
   type ZoomMode,
 } from "../features/resume/workbench.ts";
 import { ZoomControl } from "../features/resume/ZoomControl.tsx";
+import { useResumeImport } from "../features/resume-import/useResumeImport.tsx";
 import styles from "./Resume.module.css";
 
 const CHAT_OPEN_KEY = "talksume.resume.chatOpen";
@@ -75,6 +76,7 @@ export function ResumePage() {
   const [request, setRequest] = useState<PanelRequest | null>(null);
   const [zoom, setZoom] = useState<ZoomMode>(() => readZoom(ZOOM_KEY));
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
+  const importer = useResumeImport();
   const viewport = useViewport(stage);
   const scale = paperScale(zoom, viewport);
   const chooseZoom = (mode: ZoomMode) => {
@@ -138,6 +140,10 @@ export function ResumePage() {
             )}
           </div>
           <div className={styles.tools}>
+            <Button onClick={() => importer.open()} title="上传旧简历，只补缺的内容">
+              <FileUp size={16} strokeWidth={1.7} aria-hidden="true" />
+              导入简历
+            </Button>
             <TemplatePicker resume={content} size="md" />
             <PolishButton size="md" />
             <ExportMenu size="md" />
@@ -209,6 +215,7 @@ export function ResumePage() {
           AI 助手
         </button>
       )}
+      {importer.dialog}
     </div>
   );
 }

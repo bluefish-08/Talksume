@@ -21,6 +21,8 @@ interface Props {
   /** 模型选择器后面的位置：意向胶囊或快捷键提示。 */
   tools?: ReactNode;
   inputRef?: Ref<HTMLTextAreaElement>;
+  /** 附件按钮：导入已有简历。不传则按钮禁用。 */
+  onAttach?: () => void;
 }
 
 const MAX_HEIGHT = 220;
@@ -38,6 +40,7 @@ export function Composer({
   rows,
   tools,
   inputRef,
+  onAttach,
 }: Props) {
   const id = useId();
   const local = useRef<HTMLTextAreaElement | null>(null);
@@ -85,11 +88,23 @@ export function Composer({
         onKeyDown={onKeyDown}
       />
       <div className={styles.tools}>
-        <span title="即将支持">
-          <button type="button" className={styles.attach} aria-label="添加附件（即将支持）" disabled>
+        {onAttach ? (
+          <button
+            type="button"
+            className={styles.attach}
+            aria-label="导入已有简历"
+            title="导入已有简历（PDF / Word / 粘贴文本）"
+            onClick={onAttach}
+          >
             <Paperclip size={16} strokeWidth={1.6} aria-hidden="true" />
           </button>
-        </span>
+        ) : (
+          <span title="即将支持">
+            <button type="button" className={styles.attach} aria-label="添加附件（即将支持）" disabled>
+              <Paperclip size={16} strokeWidth={1.6} aria-hidden="true" />
+            </button>
+          </span>
+        )}
         <ModelPicker />
         {tools}
         <span className={styles.grow} />

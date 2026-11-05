@@ -133,12 +133,13 @@ export function ResumePane({
           ) : (
             <ul className={styles.list}>
               {visible.map((f) => {
-                const round = f.sourceMessageId ? roundOf(f.sourceMessageId) : undefined;
+                const round =
+                  f.source !== "resume" && f.sourceMessageId ? roundOf(f.sourceMessageId) : undefined;
                 return (
                   <li key={f.id} className={styles.fact}>
                     <span className={styles.meta}>
                       {SECTION_LABELS[f.section as keyof typeof SECTION_LABELS] ?? f.section}
-                      {round ? ` · 第 ${round} 轮` : ""}
+                      {f.source === "resume" ? " · 来自简历原文" : round ? ` · 第 ${round} 轮` : ""}
                       {f.status === "pending" ? " · 待确认" : ""}
                     </span>
                     <span>「{f.quote}」</span>

@@ -63,7 +63,17 @@
   border-radius: var(--r-pill);
   background: var(--surface);
   color: var(--text-2);
+  cursor: pointer;
+}
+
+.attach:disabled {
   opacity: 0.5;
+  cursor: default;
+}
+
+.attach:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  color: var(--accent);
 }
 
 .chat .attach {

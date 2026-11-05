@@ -181,6 +181,15 @@ export async function createConversation(
   });
 }
 
+export async function createEmptyConversation(db: Db, userId: string, title: string): Promise<string> {
+  const [conv] = await db
+    .insert(conversations)
+    .values({ userId, title, intakeState: {} })
+    .returning({ id: conversations.id });
+  if (!conv) throw new Error("创建会话失败");
+  return conv.id;
+}
+
 /** 把 state 相对加载时快照的增量写库：新消息、变更的事实、画像、断点状态。 */
 export async function persistState(
   db: Db,
@@ -309,13 +318,18 @@ export async function listFacts(db: Db, userId: string) {
     .select({
       fact: profileFacts,
       sourceAlive: sql<boolean>`(${conversations.id} is null or ${conversations.deletedAt} is null)`,
+      fromResume: sql<boolean>`coalesce((${messages.metadata} -> 'resumeImport') is not null, false)`,
     })
     .from(profileFacts)
     .leftJoin(messages, eq(messages.id, profileFacts.sourceMessageId))
     .leftJoin(conversations, eq(conversations.id, messages.conversationId))
     .where(eq(profileFacts.userId, userId))
     .orderBy(asc(profileFacts.createdAt));
-  return rows.map((r) => ({ ...r.fact, sourceMessageId: r.sourceAlive ? r.fact.sourceMessageId : null }));
+  return rows.map((r) => ({
+    ...r.fact,
+    sourceMessageId: r.sourceAlive ? r.fact.sourceMessageId : null,
+    source: r.fromResume ? ("resume" as const) : ("chat" as const),
+  }));
 }
 
 export async function latestCompletedSections(db: Db, userId: string) {

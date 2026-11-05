@@ -92,6 +92,8 @@ export type TurnMeta = {
   about?: JobCard;
   tailor?: TailorCard;
   tools?: ToolRecord[];
+  /** 这条用户消息是导入的简历原文，正文即抽取出的文字。 */
+  resumeImport?: { fileName?: string; facts: number };
 };
 
 export interface ChatTurn {

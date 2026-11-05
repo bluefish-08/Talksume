@@ -40,6 +40,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     jobs: m.jobs ?? [],
     ...(m.about && { about: m.about }),
     ...(m.tailor && { tailor: m.tailor }),
+    ...(m.resumeImport && { resumeImport: m.resumeImport }),
     state: "done",
   }));
 }

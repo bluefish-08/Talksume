@@ -30,6 +30,7 @@ import { openSse, sendError } from "../http.ts";
 import { matchingJobTools, storeResumeTailor } from "../job-tools.ts";
 import { matchingServiceFor } from "./matching.ts";
 import { resumeRoutes } from "./resume.ts";
+import { resumeImportRoutes } from "./resume-import.ts";
 
 const KEEPALIVE_MS = 15_000;
 
@@ -120,6 +121,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         jobs: m.meta.jobs ?? [],
         ...(m.meta.about && { about: m.meta.about }),
         ...(m.meta.tailor && { tailor: m.meta.tailor }),
+        ...(m.meta.resumeImport && { resumeImport: m.meta.resumeImport }),
         createdAt: m.createdAt.toISOString(),
       })),
       ...snapshotOf(loaded.state),
@@ -242,4 +244,5 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   });
 
   resumeRoutes(app, deps);
+  resumeImportRoutes(app, deps, busy);
 };

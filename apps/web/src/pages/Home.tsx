@@ -12,6 +12,8 @@ import { Composer } from "../features/chat/Composer.tsx";
 import { useMatches } from "../features/jobs/hooks.ts";
 import { useExportResume } from "../features/resume/queries.ts";
 import { isResumeComplete, matchesLabel, missingText } from "../features/resume/resumeUtils.ts";
+import { ImportPrompt } from "../features/resume-import/ImportPrompt.tsx";
+import { useResumeImport } from "../features/resume-import/useResumeImport.tsx";
 import styles from "./Home.module.css";
 
 const JOB_TYPE: Record<NonNullable<Profile["intention"]["jobType"]>, string> = {
@@ -24,7 +26,6 @@ const STARTERS = [
   { label: "聊一段实习", text: "我想聊聊我的一段实习经历：" },
   { label: "整理课程项目", text: "帮我整理一个课程项目：" },
   { label: "聊聊获奖经历", text: "我想说说我拿过的奖项：" },
-  { label: "粘贴旧简历", text: "这是我之前的简历内容，帮我整理一下：\n" },
 ];
 
 function intentionLabel(intention: Profile["intention"] | undefined): string | null {
@@ -118,6 +119,7 @@ export function HomePage() {
   const conversations = useConversations();
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  const importer = useResumeImport();
 
   const start = useMutation({
     mutationFn: (message: string) =>
@@ -183,6 +185,7 @@ export function HomePage() {
             onChange={setText}
             pending={start.isPending}
             inputRef={input}
+            onAttach={() => importer.open()}
             onSubmit={() => start.mutate(text.trim())}
             tools={
               <button
@@ -209,8 +212,18 @@ export function HomePage() {
                 </button>
               </span>
             ))}
+            <span className={styles.starterWrap}>
+              <span className={styles.sep} aria-hidden="true">
+                ·
+              </span>
+              <button type="button" className={styles.starter} onClick={() => importer.open("paste")}>
+                粘贴旧简历
+              </button>
+            </span>
           </div>
         </div>
+
+        {profile.data && !isResumeComplete(completeness) && <ImportPrompt onImport={() => importer.open()} />}
 
         {profile.data &&
           (isResumeComplete(completeness) ? (
@@ -230,6 +243,7 @@ export function HomePage() {
             </button>
           ))}
       </div>
+      {importer.dialog}
     </div>
   );
 }

@@ -11,6 +11,8 @@ export interface FactItem {
   section: string;
   quote: string;
   sourceMessageId: string | null;
+  /** resume：导入简历时从原文摘出的；旧后端不返回时按对话处理。 */
+  source?: "chat" | "resume";
   status: "pending" | "confirmed" | "superseded";
   createdAt: string;
 }

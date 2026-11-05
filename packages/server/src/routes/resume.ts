@@ -83,6 +83,7 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
         section: r.section,
         quote: r.quote,
         sourceMessageId: r.sourceMessageId,
+        source: r.source,
         status: r.status,
         createdAt: r.createdAt.toISOString(),
       })),

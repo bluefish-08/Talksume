@@ -38,5 +38,6 @@ export function ChatPage() {
       </EmptyState>
     );
   }
-  return <ChatView key={detail.data.id} detail={detail.data} />;
+  // 导入简历后会刷新快照，换 key 让会话按新消息重建
+  return <ChatView key={`${detail.data.id}:${detail.dataUpdatedAt}`} detail={detail.data} />;
 }

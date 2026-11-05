@@ -40,6 +40,12 @@ export interface TailorCard {
   rejected: number;
 }
 
+/** 导入简历时落库的那条用户消息，正文是抽取出的简历原文。 */
+export interface ResumeImportNote {
+  fileName?: string;
+  facts: number;
+}
+
 export interface ConversationDetail {
   id: string;
   title: string | null;
@@ -53,6 +59,7 @@ export interface ConversationDetail {
     jobs?: JobCard[];
     about?: JobCard;
     tailor?: TailorCard;
+    resumeImport?: ResumeImportNote;
     createdAt: string;
   }[];
   profile: Profile;
@@ -75,6 +82,7 @@ export interface ChatMessage {
   /** 这条回复在讲的具体岗位，顶部显示一行标签；有它时不出岗位卡片。 */
   about?: JobCard;
   tailor?: TailorCard;
+  resumeImport?: ResumeImportNote;
   /** 已落库的消息 ID；用户消息用它换算“第几轮”。 */
   serverId?: string;
   state: "done" | "streaming" | "failed";

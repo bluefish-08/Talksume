@@ -9,6 +9,7 @@ import { useToast } from "../../components/Toast.tsx";
 import { Button, Chip, IconButton, Spinner } from "../../components/ui.tsx";
 import { usePolishedResume } from "../resume/polishQueries.ts";
 import type { ResumeSuggestion } from "../resume/workbench.ts";
+import { useResumeImport } from "../resume-import/useResumeImport.tsx";
 import { tailorPath } from "../tailor/queries.ts";
 import styles from "./ChatPanel.module.css";
 import { Composer } from "./Composer.tsx";
@@ -50,6 +51,7 @@ export function ChatPanel({ visible, prompts, suggestions, request, onLive, onCl
   const [queued, setQueued] = useState<PanelRequest | null>(null);
   const latest = conversations.data?.[0]?.id;
   const id = chosen ?? latest;
+  const importer = useResumeImport(id);
 
   // 锁定进入页面时的最近会话，避免列表重排后面板跳到别的会话
   useEffect(() => {
@@ -128,9 +130,16 @@ export function ChatPanel({ visible, prompts, suggestions, request, onLive, onCl
           queued={queued}
           onConsumed={() => setQueued(null)}
           onLive={onLive}
+          onAttach={() => importer.open()}
         />
       ) : noConversation ? (
-        <PanelStart prompts={prompts} suggestions={suggestions} pending={create.isPending} onSend={enqueue} />
+        <PanelStart
+          prompts={prompts}
+          suggestions={suggestions}
+          pending={create.isPending}
+          onSend={enqueue}
+          onAttach={() => importer.open()}
+        />
       ) : detail.isError ? (
         <div className={styles.center}>
           <p className={styles.note}>对话加载失败</p>
@@ -143,6 +152,7 @@ export function ChatPanel({ visible, prompts, suggestions, request, onLive, onCl
           <Spinner />
         </div>
       )}
+      {importer.dialog}
     </aside>
   );
 }
@@ -195,11 +205,13 @@ function PanelStart({
   suggestions,
   pending,
   onSend,
+  onAttach,
 }: {
   prompts: readonly string[];
   suggestions: readonly ResumeSuggestion[];
   pending: boolean;
   onSend: (text: string) => void;
+  onAttach: () => void;
 }) {
   const [draft, setDraft] = useState("");
   return (
@@ -217,6 +229,7 @@ function PanelStart({
           value={draft}
           onChange={setDraft}
           pending={pending}
+          onAttach={onAttach}
           onSubmit={() => {
             onSend(draft.trim());
             setDraft("");
@@ -235,6 +248,7 @@ function PanelSession({
   queued,
   onConsumed,
   onLive,
+  onAttach,
 }: {
   detail: ConversationDetail;
   visible: boolean;
@@ -243,6 +257,7 @@ function PanelSession({
   queued: PanelRequest | null;
   onConsumed: () => void;
   onLive: (live: LiveResume | null) => void;
+  onAttach: () => void;
 }) {
   const session = useChatSession(detail);
   const resume = usePolishedResume(session.resume);
@@ -305,6 +320,7 @@ function PanelSession({
           }}
           streaming={session.streaming}
           onStop={session.stop}
+          onAttach={onAttach}
         />
       </div>
     </>

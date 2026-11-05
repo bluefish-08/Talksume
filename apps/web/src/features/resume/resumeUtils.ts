@@ -67,6 +67,10 @@ export function factQuotes(
   const out: Record<string, FactQuote> = {};
   for (const f of facts ?? []) {
     if (f.status === "superseded" || !f.quote) continue;
+    if (f.source === "resume") {
+      out[f.id] = { quote: f.quote, fromResume: true };
+      continue;
+    }
     const round = f.sourceMessageId ? roundOf?.(f.sourceMessageId) : undefined;
     out[f.id] = round ? { quote: f.quote, round } : { quote: f.quote };
   }

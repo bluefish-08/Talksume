@@ -9,6 +9,7 @@ export interface FactQuote {
   quote: string;
   /** 这句原话是用户第几轮说的；无法确定时省略。 */
   round?: number;
+  fromResume?: boolean;
 }
 
 export interface ChangeNote {
@@ -111,7 +112,10 @@ function attachSources(target: HTMLElement, factIds: readonly string[], d: Decor
   const pop = el("span", "pop");
   pop.id = id;
   pop.setAttribute("role", "tooltip");
-  pop.append(el("span", "pop-head", `出自你的原话${round ? ` · 第 ${round} 轮` : ""}`));
+  const head = sources.every((s) => s.fromResume)
+    ? "出自你的简历原文"
+    : `出自你的原话${round ? ` · 第 ${round} 轮` : ""}`;
+  pop.append(el("span", "pop-head", head));
   for (const s of sources) pop.append(el("span", "", `「${s.quote}」`));
   target.classList.add("traceable");
   // 键盘聚焦也要能看到出处

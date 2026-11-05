@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, FileText } from "lucide-react";
 import { Fragment, useState } from "react";
 import { SECTION_LABELS } from "../../api/types.ts";
 import { Button, Chip } from "../../components/ui.tsx";
@@ -42,7 +42,9 @@ export function MessageList({
   return (
     <div className={styles.thread} aria-busy={streaming}>
       {messages.map((m) =>
-        m.role === "user" ? (
+        m.role === "user" && m.resumeImport ? (
+          <ImportedResume key={m.key} message={m} />
+        ) : m.role === "user" ? (
           <div key={m.key} className={styles.userWrap}>
             <div className={styles.user}>{m.text}</div>
             {m.state === "failed" && (
@@ -138,8 +140,30 @@ function inline(line: string) {
   );
 }
 
+function ImportedResume({ message }: { message: ChatMessage }) {
+  const note = message.resumeImport;
+  return (
+    <div className={styles.userWrap}>
+      <details className={styles.imported}>
+        <summary className={styles.importedHead}>
+          <FileText size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span>
+            已导入简历{note?.fileName ? `「${note.fileName}」` : ""} · {note?.facts ?? 0} 条
+          </span>
+          <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" className={styles.importedChev} />
+        </summary>
+        <pre className={styles.importedText}>
+          {message.text.replace(/^\[[^\]\n]*简历原文[^\]\n]*\]\n/, "")}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+const WRITTEN_OPEN_LIMIT = 6;
+
 function Written({ changes }: { changes: ProfileChange[] }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(changes.length <= WRITTEN_OPEN_LIMIT);
   return (
     <div className={styles.written}>
       <button

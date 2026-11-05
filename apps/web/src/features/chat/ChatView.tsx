@@ -7,6 +7,8 @@ import { SECTION_LABELS } from "../../api/types.ts";
 import { usePolishedResume } from "../resume/polishQueries.ts";
 import { useFacts } from "../resume/queries.ts";
 import { factQuotes } from "../resume/resumeUtils.ts";
+import { ImportPrompt } from "../resume-import/ImportPrompt.tsx";
+import { useResumeImport } from "../resume-import/useResumeImport.tsx";
 import { tailoringKey } from "../tailor/queries.ts";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer.tsx";
@@ -30,6 +32,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const client = useQueryClient();
   const input = useRef<HTMLTextAreaElement>(null);
   const initialSent = useRef(false);
+  const importer = useResumeImport(detail.id);
 
   useEffect(() => {
     const initial = (location.state as { initialMessage?: string } | null)?.initialMessage;
@@ -65,7 +68,10 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
 
   const scroller = useStickToBottom(messages, session.conflicts);
 
-  const userIds = useMemo(() => messages.filter((m) => m.role === "user").map((m) => m.serverId), [messages]);
+  const userIds = useMemo(
+    () => messages.filter((m) => m.role === "user" && !m.resumeImport).map((m) => m.serverId),
+    [messages],
+  );
   const roundOf = (messageId: string) => {
     const i = userIds.indexOf(messageId);
     return i >= 0 ? i + 1 : undefined;
@@ -113,6 +119,9 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
               setPaneOpen(true);
             }}
           />
+          {!session.streaming && !messages.some((m) => m.role === "user") && (
+            <ImportPrompt onImport={() => importer.open()} />
+          )}
         </div>
 
         <div className={styles.composer}>
@@ -128,6 +137,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
               streaming={session.streaming}
               onStop={session.stop}
               inputRef={input}
+              onAttach={() => importer.open()}
               tools={<span className={styles.hint}>Enter 发送 · Shift + Enter 换行</span>}
             />
           </div>
@@ -150,6 +160,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           onTailorDiscard={() => setTailor(null)}
         />
       </div>
+      {importer.dialog}
     </div>
   );
 }
