@@ -50,8 +50,9 @@ export const SECTION_LABELS: Record<ProfileSection, string> = {
 export interface SectionCompleteness {
   section: ProfileSection;
   weight: number;
-  /** 0–1 */
+  /** 0–1，这个分区写进简历的内容有多充实 */
   score: number;
+  /** 问完了：内容齐了，或用户跳过、说没有 */
   completed: boolean;
 }
 
@@ -64,12 +65,24 @@ export interface MissingField {
   label: string;
   weight: number;
   required: boolean;
-  kind?: "field" | "new_item" | "deepen" | "quantify";
+  kind?: "field" | "new_item" | "deepen" | "quantify" | "probe";
+}
+
+export interface QualityGap {
+  key: string;
+  /** 名词短语，拼成「还缺 X」 */
+  label: string;
+  prompt: string;
 }
 
 export interface Completeness {
-  /** 0–1 */
+  /** 0–1，简历充实度：只算简历里真有的内容，跳过的不算 */
   score: number;
+  /** 0–1，建档进度，只给助手判断还要不要追问 */
+  progress?: number;
   sections: SectionCompleteness[];
   missing: MissingField[];
+  gaps?: QualityGap[];
+  /** 经历太少时「投递前可以补的东西」，不进简历 */
+  tips?: string[];
 }

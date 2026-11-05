@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Completeness, MissingField, ResumeContent } from "../../api/types.ts";
+import type { Completeness, MissingField, QualityGap, ResumeContent } from "../../api/types.ts";
 import {
   missingPrompt,
   PAPER_HEIGHT_PX,
@@ -62,33 +62,36 @@ const miss = (extra: Partial<MissingField>): MissingField => ({
   ...extra,
 });
 
-const completeness = (missing: MissingField[]): Completeness => ({
+const completeness = (missing: MissingField[], gaps: QualityGap[] = []): Completeness => ({
   score: 0.8,
   sections: [{ section: "projects", weight: 1, score: 0.6, completed: false }],
   missing,
+  gaps,
 });
 
 describe("resumeSuggestions", () => {
-  it("先列必填缺项，再列要点少或没量化的经历", () => {
+  it("先列简历短板，再列没问到的必填字段，最后是要点少或没量化的经历", () => {
     const list = resumeSuggestions(
       resume,
-      completeness([
-        miss({ itemId: "p1", itemLabel: "社团记账", label: "角色" }),
-        miss({ itemId: "p1", itemLabel: "社团记账", field: "result", label: "结果（量化）" }),
-        miss({ section: "awards", field: "_", label: "获奖", kind: "new_item" }),
-        miss({ section: "skills", field: "_item", label: "新增技能", kind: "new_item" }),
-        miss({ field: "q", label: "量化", kind: "quantify" }),
-      ]),
+      completeness(
+        [
+          miss({ itemId: "p1", itemLabel: "社团记账", label: "角色" }),
+          miss({ itemId: "p1", itemLabel: "社团记账", field: "result", label: "结果（量化）" }),
+          miss({ section: "skills", field: "_item", label: "新增技能", kind: "new_item" }),
+          miss({ field: "probe_course", label: "课程设计", kind: "probe" }),
+          miss({ field: "q", label: "量化", kind: "quantify" }),
+        ],
+        [{ key: "thin:p1", label: "「社团记账」的具体做法", prompt: "帮我补充「社团记账」" }],
+      ),
       10,
     );
     expect(list.map((s) => s.title)).toEqual([
+      "还缺「社团记账」的具体做法",
       "「社团记账」还缺角色、结果",
-      "还没有获奖荣誉",
-      "专业技能还可以再多一些",
       "青柚科技实习只有 2 条要点，没有量化结果",
-      "社团记账项目还没有要点",
     ]);
-    expect(list[3]?.prompt).toContain("「青柚科技」这段实习经历");
+    expect(list[0]?.prompt).toBe("帮我补充「社团记账」");
+    expect(list[2]?.prompt).toContain("「青柚科技」这段实习经历");
   });
 
   it("要点充足且有数字的经历不提示，并按上限截断", () => {
@@ -121,11 +124,20 @@ describe("resumeSubtitle / missingPrompt", () => {
     expect(resumeSubtitle(0.42, null, now)).toBe("完整度 42%");
   });
 
-  it("完整度没满时给出可发送的补充请求", () => {
-    const prompt = missingPrompt(completeness([miss({ section: "basics", field: "phone", label: "电话" })]));
-    expect(prompt?.text).toBe("还差电话");
-    expect(prompt?.prompt).toContain("还差电话");
-    expect(missingPrompt(completeness([]))).toBeNull();
+  it("有短板时给出提示，点击按最要紧的短板去问", () => {
+    const prompt = missingPrompt(
+      completeness(
+        [miss({ section: "basics", field: "phone", label: "电话" })],
+        [
+          { key: "evidence", label: "能证明动手能力的经历", prompt: "帮我挖一挖经历" },
+          { key: "contact", label: "联系方式", prompt: "帮我补上联系方式" },
+        ],
+      ),
+    );
+    expect(prompt).toEqual({ text: "还缺能证明动手能力的经历、联系方式", prompt: "帮我挖一挖经历" });
+    expect(
+      missingPrompt(completeness([miss({ section: "basics", field: "phone", label: "电话" })])),
+    ).toBeNull();
   });
 });
 

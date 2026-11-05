@@ -1,6 +1,6 @@
 import { type Fact, Profile } from "@talksume/core";
 import { describe, expect, it } from "vitest";
-import { computeCompleteness } from "./completeness.ts";
+import { computeCompleteness, PROBES } from "./completeness.ts";
 import {
   type Ledger,
   MEMORY_PROMPT_BUDGET,
@@ -39,6 +39,7 @@ function gpaNextState(): IntakeState {
       ],
     }),
     completedSections: ["experiences", "projects", "skills", "awards", "intention"],
+    askCounts: Object.fromEntries(PROBES.map((p) => [`projects:_:${p.field}`, 2])),
   });
 }
 

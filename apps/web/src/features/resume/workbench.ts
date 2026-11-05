@@ -23,46 +23,26 @@ const ITEM_KIND = { experiences: "实习", projects: "项目" } as const;
 const THIN_BULLETS = 3;
 const HAS_NUMBER = /\d/;
 
-function missingSuggestions(
-  resume: ResumeContent,
-  completeness: Completeness | undefined,
-): ResumeSuggestion[] {
+/** 还没问到的必填字段；缺整段、缺条目的已经在短板里。 */
+function missingSuggestions(completeness: Completeness | undefined): ResumeSuggestion[] {
   if (!completeness) return [];
   const done = new Set(completeness.sections.filter((s) => s.completed).map((s) => s.section));
-  const groups = new Map<
-    string,
-    { section: ProfileSection; item?: string; labels: string[]; newItem: boolean }
-  >();
+  const groups = new Map<string, { section: ProfileSection; item?: string; labels: string[] }>();
   for (const m of completeness.missing) {
-    if (!m.required || m.kind === "quantify" || done.has(m.section)) continue;
+    if (!m.required || m.kind === "quantify" || m.kind === "new_item" || m.kind === "probe") continue;
+    if (done.has(m.section)) continue;
     const key = `${m.section}|${m.itemId ?? ""}`;
     const group = groups.get(key) ?? {
       section: m.section,
       ...(m.itemLabel && { item: m.itemLabel }),
       labels: [],
-      newItem: false,
     };
     groups.set(key, group);
-    if (m.kind === "new_item") group.newItem = true;
-    else {
-      const label = m.label.replace(/（.*?）/, "");
-      if (!group.labels.includes(label)) group.labels.push(label);
-    }
+    const label = m.label.replace(/（.*?）/, "");
+    if (!group.labels.includes(label)) group.labels.push(label);
   }
   return [...groups].map(([key, g]) => {
-    const name = SECTION_NAMES[g.section];
-    if (g.newItem && g.labels.length === 0) {
-      // 有条目时 new_item 表示数量还不够，不是完全没有
-      const some = resume.sections.some((s) => s.kind === g.section && s.items.length > 0);
-      return {
-        key: `missing:${key}`,
-        title: some ? `${name}还可以再多一些` : `还没有${name}`,
-        prompt: some
-          ? `帮我再补充一些${name}，请问我还有哪些可以写。`
-          : `我想补充${name}，请一步步问我需要的信息。`,
-      };
-    }
-    const target = g.item ? `「${g.item}」` : name;
+    const target = g.item ? `「${g.item}」` : SECTION_NAMES[g.section];
     const fields = g.labels.join("、");
     return {
       key: `missing:${key}`,
@@ -72,12 +52,22 @@ function missingSuggestions(
   });
 }
 
+function gapSuggestions(completeness: Completeness | undefined): ResumeSuggestion[] {
+  return (completeness?.gaps ?? []).map((g) => ({
+    key: `gap:${g.key}`,
+    title: `还缺${g.label}`,
+    prompt: g.prompt,
+  }));
+}
+
 function thinItemSuggestions(resume: ResumeContent): ResumeSuggestion[] {
   return resume.sections.flatMap((section) => {
     if (section.kind !== "experiences" && section.kind !== "projects") return [];
     const kind = ITEM_KIND[section.kind];
     return section.items.flatMap((item, i) => {
       const count = item.bullets.length;
+      // 一条要点都没有的已经在短板里
+      if (count === 0) return [];
       const quantified = item.bullets.some((b) => HAS_NUMBER.test(b.text));
       if (count >= THIN_BULLETS && quantified) return [];
       const problems = [
@@ -96,13 +86,17 @@ function thinItemSuggestions(resume: ResumeContent): ResumeSuggestion[] {
   });
 }
 
-/** 纸张下方的「还可以补充」：先列完整度缺的必填项，再列要点少或没量化的经历。 */
+/** 「还可以补充」：先列简历短板，再列还没问到的必填项，最后是要点少或没量化的经历。 */
 export function resumeSuggestions(
   resume: ResumeContent,
   completeness: Completeness | undefined,
   limit = 4,
 ): ResumeSuggestion[] {
-  return [...missingSuggestions(resume, completeness), ...thinItemSuggestions(resume)].slice(0, limit);
+  return [
+    ...gapSuggestions(completeness),
+    ...missingSuggestions(completeness),
+    ...thinItemSuggestions(resume),
+  ].slice(0, limit);
 }
 
 /** 对话面板为空时的快捷提示，尽量带上简历里的真实条目名。 */
@@ -135,12 +129,13 @@ export function resumeSubtitle(
   return parts.join(" · ");
 }
 
-/** 副标题里「还缺什么」的提示和点击后发给对话的消息；完整度满了就不提示。 */
+/** 副标题里「还缺什么」的提示，点击后按最要紧的那个短板去问；没有短板就不提示。 */
 export function missingPrompt(
   completeness: Completeness | undefined,
 ): { text: string; prompt: string } | null {
   const text = missingText(completeness);
-  return text ? { text, prompt: `我的简历${text}，请一项一项问我来补上。` } : null;
+  const first = completeness?.gaps?.[0];
+  return text && first ? { text, prompt: first.prompt } : null;
 }
 
 export function readFlag(key: string, fallback: boolean): boolean {

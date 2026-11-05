@@ -221,14 +221,14 @@ function anchorsOf(text: string): Set<string> {
   return new Set(text.toLowerCase().match(ANCHOR) ?? []);
 }
 
-function bigrams(text: string): Set<string> {
+export function bigrams(text: string): Set<string> {
   const plain = text.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
   const out = new Set<string>();
   for (let i = 0; i < plain.length - 1; i++) out.add(plain.slice(i, i + 2));
   return out;
 }
 
-function coverage(of: Set<string>, within: Set<string>): number {
+export function coverage(of: Set<string>, within: Set<string>): number {
   if (of.size === 0) return 1;
   let hit = 0;
   for (const g of of) if (within.has(g)) hit++;

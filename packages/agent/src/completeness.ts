@@ -46,7 +46,7 @@ const deepDive = (what: string): FieldSpec[] => [
     2,
     true,
     `这段${what}主要用了哪些技术栈或工具？`,
-    "techStack 一项一条，和已有的取并集。quickReplies 给 2～3 个贴合这段经历方向的组合（如「Java + MySQL」「Go」），再加一个「跳过」。",
+    "techStack 一项一条，和已有的取并集。quickReplies 给 2～3 个贴合这段经历方向的组合（如「Java + MySQL」「Go」），再加一个「跳过」。社团、志愿者这类不涉及技术的活动直接用 skip_field 跳过，不要硬问。",
     { depth: 1 },
   ),
   f(
@@ -210,10 +210,10 @@ export const SECTION_SPECS: readonly SectionSpec[] = [
     weight: 1,
     minItems: 1,
     kind: "list",
-    newItemQuestion: "有没有拿过奖或者荣誉？比如奖学金、竞赛。没有也没关系。",
-    newItemStrategy: "先问有没有；有就问名称和时间。",
+    newItemQuestion: "有没有拿过奖、荣誉或证书？比如奖学金、竞赛、计算机等级证书。没有也没关系。",
+    newItemStrategy: "先问有没有；有就问名称和时间。证书也写进 awards，外语成绩写 basics.languages。",
     fields: [
-      f("name", "奖项名称", 2, true, "拿过什么奖？"),
+      f("name", "奖项/证书名称", 2, true, "拿过什么奖或证书？"),
       f("date", "获奖时间", 1, false, "是什么时候拿的？"),
       f("description", "说明", 0.5, false, "可以补充一下这个奖的含金量吗？比如名次或评选范围。"),
     ],
@@ -235,21 +235,40 @@ export interface MissingField {
   label: string;
   weight: number;
   required: boolean;
-  kind: "field" | "new_item" | "deepen" | "quantify";
+  kind: "field" | "new_item" | "deepen" | "quantify" | "probe";
   depth?: number;
+  /** 挖掘角度按画像定制的问法。 */
+  question?: string;
 }
 
 export interface SectionCompleteness {
   section: ProfileSection;
   weight: number;
+  /** 这个分区写进画像的内容有多充实，跳过不加分。 */
   score: number;
+  /** 问完了：内容齐了，或用户跳过、说没有。 */
   completed: boolean;
 }
 
+/** 简历本身的短板，和问没问过无关。 */
+export interface QualityGap {
+  key: string;
+  /** 名词短语，界面拼成「还缺 X」。 */
+  label: string;
+  /** 点击后发给对话的消息。 */
+  prompt: string;
+}
+
 export interface Completeness {
+  /** 简历充实度：只看画像里真有的内容，用户跳过的不算完成。界面上显示的都是它。 */
   score: number;
+  /** 建档进度：跳过、说没有的都算问完，只用来决定还要不要追问。 */
+  progress: number;
   sections: SectionCompleteness[];
   missing: MissingField[];
+  gaps: QualityGap[];
+  /** 经历太少时「投递前可以补的东西」，是建议，不进简历。 */
+  tips: string[];
 }
 
 export interface CompletenessOptions {
@@ -363,55 +382,283 @@ function scoreRecord(
   return { score: total === 0 ? 1 : got / total, missing };
 }
 
+interface SectionScored extends Scored {
+  /** 实际条目各自的得分，不含按 minItems 补的空位。 */
+  itemScores: number[];
+}
+
+function scoreSection(spec: SectionSpec, profile: Profile): SectionScored {
+  if (spec.kind === "object") {
+    const record = profile[spec.section as "basics" | "intention"] as Record<string, unknown>;
+    return { ...scoreRecord(spec, record, undefined, undefined), itemScores: [] };
+  }
+  const items = profile[spec.section as "education"] as unknown as Array<
+    Record<string, unknown> & { id: string }
+  >;
+  const itemScores: number[] = [];
+  const missing: MissingField[] = [];
+  for (const item of items) {
+    const scored = scoreRecord(spec, item, item.id, itemLabelOf(spec.section, item));
+    itemScores.push(scored.score);
+    missing.push(...scored.missing);
+  }
+  const count = Math.max(spec.minItems, items.length);
+  const score = count === 0 ? 1 : itemScores.reduce((a, b) => a + b, 0) / count;
+  if (items.length < spec.minItems) {
+    missing.push({
+      key: `${spec.section}:_:_item`,
+      section: spec.section,
+      field: "_item",
+      label: `新增${spec.label}`,
+      weight: spec.fields.reduce((sum, field) => sum + field.weight, 0) / spec.fields.length,
+      required: spec.section !== "awards" && spec.section !== "experiences",
+      kind: "new_item",
+    });
+  }
+  return { score, missing, itemScores };
+}
+
+/**
+ * 简历充实度的权重：实习和项目合并成「经历」占一半，两段写充实的经历拿满；
+ * 没有任何经历时，其他分区全满也不到一半。
+ */
+const QUALITY_WEIGHTS = {
+  basics: 1.5,
+  education: 1.5,
+  evidence: 6,
+  skills: 1.25,
+  intention: 1.25,
+  awards: 0.5,
+};
+const EVIDENCE_TARGET = 2;
+
+function evidenceItems(profile: Profile): Array<Record<string, unknown> & { id: string }> {
+  return [...profile.experiences, ...profile.projects] as unknown as Array<
+    Record<string, unknown> & { id: string }
+  >;
+}
+
+function qualityScore(profile: Profile, scored: Map<ProfileSection, SectionScored>): number {
+  const top = [
+    ...(scored.get("experiences")?.itemScores ?? []),
+    ...(scored.get("projects")?.itemScores ?? []),
+  ]
+    .sort((a, b) => b - a)
+    .slice(0, EVIDENCE_TARGET);
+  const evidence = top.reduce((a, b) => a + b, 0) / EVIDENCE_TARGET;
+  const extras =
+    profile.awards.length > 0 ||
+    profile.education.some((e) => (e.honors?.length ?? 0) > 0) ||
+    (profile.basics.languages?.length ?? 0) > 0;
+  const parts: [number, number][] = [
+    [QUALITY_WEIGHTS.basics, scored.get("basics")?.score ?? 0],
+    [QUALITY_WEIGHTS.education, scored.get("education")?.score ?? 0],
+    [QUALITY_WEIGHTS.evidence, evidence],
+    [QUALITY_WEIGHTS.skills, scored.get("skills")?.score ?? 0],
+    [QUALITY_WEIGHTS.intention, scored.get("intention")?.score ?? 0],
+    [QUALITY_WEIGHTS.awards, extras ? 1 : 0],
+  ];
+  const total = parts.reduce((sum, [w]) => sum + w, 0);
+  return parts.reduce((sum, [w, s]) => sum + w * s, 0) / total;
+}
+
+export function qualityGaps(profile: Profile): QualityGap[] {
+  const gaps: QualityGap[] = [];
+  const items = evidenceItems(profile);
+  if (items.length === 0) {
+    gaps.push({
+      key: "evidence",
+      label: "能证明动手能力的经历",
+      prompt:
+        "我没有实习和正式项目，帮我从课程设计、比赛、社团、兼职这些里挖一挖能写进简历的经历，一次问我一个。",
+    });
+  } else if (items.length < EVIDENCE_TARGET) {
+    gaps.push({
+      key: "evidence_more",
+      label: "第二段项目或实践经历",
+      prompt: "帮我再找一段能写进简历的项目或实践经历，比如课程设计、比赛、社团或兼职，一次问我一个。",
+    });
+  }
+  for (const item of items) {
+    if (contentOf(item).duty.length > 0) continue;
+    const name = String(item.name ?? item.company ?? "");
+    gaps.push({
+      key: `thin:${item.id}`,
+      label: `「${name}」的具体做法`,
+      prompt: `帮我补充「${name}」里我具体做了什么、遇到什么问题、怎么解决的，请一项一项问我。`,
+    });
+  }
+  const { basics } = profile;
+  if (!basics.name?.trim()) gaps.push({ key: "name", label: "姓名", prompt: "帮我补上姓名。" });
+  if (!basics.phone?.trim() && !basics.email?.trim())
+    gaps.push({ key: "contact", label: "联系方式", prompt: "帮我补上手机号和邮箱。" });
+  if (profile.education.length === 0)
+    gaps.push({ key: "education", label: "教育经历", prompt: "帮我补上教育经历，请一项一项问我。" });
+  if (profile.skills.length < 3)
+    gaps.push({
+      key: "skills",
+      label: "至少 3 项技能",
+      prompt: "帮我整理专业技能，问问我会哪些技术和工具。",
+    });
+  if (profile.intention.roles.length === 0)
+    gaps.push({ key: "roles", label: "意向岗位", prompt: "帮我确定求职意向，先问我想投什么岗位。" });
+  return gaps;
+}
+
+const TIP_TRACKS: { match: RegExp; tips: string[] }[] = [
+  {
+    match: /前端|web|vue|react|javascript|typescript|html|css|小程序/i,
+    tips: [
+      "用 Vue 或 React 做一个 3～5 个页面的小应用（如记账本、待办清单），调用公开接口拿数据，部署成能在线访问的网址",
+      "把一门课的作业页面重做一遍，做到手机上也能正常显示，代码放到 GitHub 并写清 README",
+    ],
+  },
+  {
+    match: /测试|qa/i,
+    tips: [
+      "挑一个开源或自己做的小系统，写一份测试用例，用 Postman 或 JMeter 做接口测试，记录发现的问题",
+      "用 Python + Selenium 写几条自动化测试脚本，放到 GitHub",
+    ],
+  },
+  {
+    match: /运维|实施|devops|linux|网络/i,
+    tips: [
+      "在虚拟机或云服务器上搭一套 Linux + Nginx + MySQL 环境，把部署步骤写成文档",
+      "写几个 Shell 脚本做日志清理、定时备份，说清楚解决了什么问题",
+    ],
+  },
+  {
+    match: /数据|分析|算法|python|excel|bi\b/i,
+    tips: [
+      "找一份公开数据集（如城市空气质量、电影评分），用 Python 或 Excel 做清洗、分析和可视化，写一页结论",
+      "在 MySQL 里练一组业务查询（如销售统计、用户留存），整理成文档放到 GitHub",
+    ],
+  },
+  {
+    match: /java|spring|后端|服务端|开发|golang|\bgo\b|php|node|c\+\+|mysql/i,
+    tips: [
+      "用 Spring Boot + MySQL 做一个小型管理系统（如图书借阅、宿舍报修），实现登录、增删改查和分页查询，代码放到 GitHub 并写清 README",
+      "在这个系统上再做一处改进，比如加 Redis 缓存或部署到云服务器，记下遇到的问题和解决办法，面试时能讲清楚",
+    ],
+  },
+];
+
+const GENERIC_TIPS = [
+  "从做过的课程作业里挑一个，按「背景—我做了什么—遇到的问题—怎么解决」整理出来，回来跟我聊，就能写成项目经历",
+  "考一个和目标岗位相关的证书，或做一个线上实训项目，做完能写进简历",
+];
+
+/** 先看意向岗位，没有再看技能，决定建议往哪个方向做。 */
+export function prepTips(profile: Profile): string[] {
+  if (evidenceItems(profile).length >= EVIDENCE_TARGET) return [];
+  const sources = [profile.intention.roles.join(" "), profile.skills.map((s) => s.name).join(" ")];
+  for (const source of sources) {
+    const track = source && TIP_TRACKS.find((t) => t.match.test(source));
+    if (track) return track.tips;
+  }
+  return GENERIC_TIPS;
+}
+
+interface ProbeSpec {
+  field: string;
+  label: string;
+  question: string;
+  replies: string[];
+  /** 已有经历里出现这些字样，说明这个角度挖过了。 */
+  covered: RegExp;
+}
+
+export const PROBES: readonly ProbeSpec[] = [
+  {
+    field: "probe_course",
+    label: "课程设计/大作业/毕设",
+    question: "课程设计、大作业或者毕业设计做过吗？这些都能写成项目经历。",
+    replies: ["做过课程设计", "做过毕业设计", "都没做过"],
+    covered: /课程设计|课设|大作业|毕业设计|毕设|实训|课程项目/,
+  },
+  {
+    field: "probe_selfmade",
+    label: "自学作品/开源/博客",
+    question: "有没有自己学着做过的东西？比如跟着教程做的练手项目、放到 GitHub 上的代码或者写过的技术博客。",
+    replies: ["跟着教程做过", "写过博客", "没有"],
+    covered: /自学|教程|练手|开源|github|博客/i,
+  },
+  {
+    field: "probe_campus",
+    label: "比赛/社团/志愿者",
+    question: "参加过比赛、社团、学生会或者志愿者活动吗？",
+    replies: ["参加过比赛", "在社团或学生会", "做过志愿者", "都没有"],
+    covered: /比赛|竞赛|社团|协会|学生会|志愿|班委|团支部/,
+  },
+  {
+    field: "probe_work",
+    label: "兼职/勤工俭学/帮老师做事",
+    question: "做过兼职、勤工俭学，或者帮老师、同学做过什么东西吗？",
+    replies: ["做过兼职", "帮老师做过东西", "没有"],
+    covered: /兼职|勤工|家教|帮老师|助教|帮同学|parttime/,
+  },
+];
+
+export const PROBE_BY_FIELD = Object.fromEntries(PROBES.map((p) => [p.field, p])) as Record<
+  string,
+  ProbeSpec
+>;
+
+/** 用画像里已有的课程或技能提一个具体候选，比笼统地问更容易让人想起来。 */
+function courseQuestion(profile: Profile): string | undefined {
+  const course = profile.education.flatMap((e) => e.courses)[0];
+  if (course) return `你学过「${course}」，这门课有没有做过课程设计或者大作业？别的课的课设、毕业设计也算。`;
+  const skills = profile.skills.slice(0, 2).map((s) => s.name);
+  if (skills.length > 0)
+    return `课上学 ${skills.join("、")} 的时候，有没有做过课程设计或者大作业？毕业设计也算。`;
+  return undefined;
+}
+
+/** 经历不到两段时换角度挖；一段都没有时和各分区的必填项一起问，有一段时等深挖完再问。 */
+function probeMissing(profile: Profile): MissingField[] {
+  const items = evidenceItems(profile);
+  if (items.length >= EVIDENCE_TARGET) return [];
+  const text = JSON.stringify(items);
+  const course = courseQuestion(profile);
+  return PROBES.filter((p) => !p.covered.test(text)).map((p, i) => ({
+    key: `projects:_:${p.field}`,
+    section: "projects",
+    field: p.field,
+    label: p.label,
+    weight: 1 - i * 0.1,
+    required: items.length === 0,
+    kind: "probe",
+    ...(p.field === "probe_course" && course ? { question: course } : {}),
+  }));
+}
+
 export function computeCompleteness(profile: Profile, options: CompletenessOptions = {}): Completeness {
   const completed = new Set(options.completedSections ?? []);
   const sections: SectionCompleteness[] = [];
   const missing: MissingField[] = [];
+  const scored = new Map<ProfileSection, SectionScored>();
+  let progressSum = 0;
+  let weightSum = 0;
 
   for (const spec of SECTION_SPECS) {
-    if (completed.has(spec.section)) {
-      sections.push({ section: spec.section, weight: spec.weight, score: 1, completed: true });
-      continue;
-    }
-    let sectionScore: number;
-    const sectionMissing: MissingField[] = [];
-    if (spec.kind === "object") {
-      const record = profile[spec.section as "basics" | "intention"] as Record<string, unknown>;
-      const scored = scoreRecord(spec, record, undefined, undefined);
-      sectionScore = scored.score;
-      sectionMissing.push(...scored.missing);
-    } else {
-      const items = profile[spec.section as "education"] as unknown as Array<
-        Record<string, unknown> & { id: string }
-      >;
-      const scores: number[] = [];
-      for (const item of items) {
-        const scored = scoreRecord(spec, item, item.id, itemLabelOf(spec.section, item));
-        scores.push(scored.score);
-        sectionMissing.push(...scored.missing);
-      }
-      const count = Math.max(spec.minItems, items.length);
-      while (scores.length < count) scores.push(0);
-      sectionScore = count === 0 ? 1 : scores.reduce((a, b) => a + b, 0) / count;
-      if (items.length < spec.minItems) {
-        sectionMissing.push({
-          key: `${spec.section}:_:_item`,
-          section: spec.section,
-          field: "_item",
-          label: `新增${spec.label}`,
-          weight: spec.fields.reduce((sum, field) => sum + field.weight, 0) / spec.fields.length,
-          required: spec.section !== "awards" && spec.section !== "experiences",
-          kind: "new_item",
-        });
-      }
-    }
-    sections.push({ section: spec.section, weight: spec.weight, score: sectionScore, completed: false });
-    missing.push(...sectionMissing);
+    const result = scoreSection(spec, profile);
+    scored.set(spec.section, result);
+    const done = completed.has(spec.section);
+    sections.push({ section: spec.section, weight: spec.weight, score: result.score, completed: done });
+    progressSum += spec.weight * (done ? 1 : result.score);
+    weightSum += spec.weight;
+    if (!done) missing.push(...result.missing);
   }
+  missing.push(...probeMissing(profile));
 
-  const totalWeight = sections.reduce((sum, s) => sum + s.weight, 0);
-  const score = sections.reduce((sum, s) => sum + s.weight * s.score, 0) / totalWeight;
-  return { score, sections, missing };
+  return {
+    score: qualityScore(profile, scored),
+    progress: progressSum / weightSum,
+    sections,
+    missing,
+    gaps: qualityGaps(profile),
+    tips: prepTips(profile),
+  };
 }
 
 export interface PickOptions extends CompletenessOptions {
@@ -430,9 +677,26 @@ export interface Slot extends MissingField {
   replies?: string[];
 }
 
+const PROBE_STRATEGY =
+  "用户之前说没有项目或实习，多半是觉得课程作业、社团这些不算，这里换个角度只问这一个。附上 quickReplies。" +
+  "用户说有但没细讲，就追问做的是什么、自己负责哪块，不要转去问别的角度；讲清楚后照常写入：课程设计、练手作品、帮老师同学做的东西、比赛作品、组织过的活动写 projects，兼职和勤工俭学写 experiences（kind=parttime），奖项和证书写 awards。" +
+  "用户说没有，就用 skip_field 跳过这个角度。";
+
 export function toSlot(m: MissingField): Slot {
   const spec = SECTION_BY_NAME[m.section];
   if (m.kind === "new_item") return { ...m, question: spec.newItemQuestion, strategy: spec.newItemStrategy };
+  if (m.kind === "probe") {
+    const probe = PROBE_BY_FIELD[m.field];
+    const proposed = m.question && m.question !== probe?.question;
+    return {
+      ...m,
+      question: m.question ?? probe?.question ?? `请补充${m.label}`,
+      strategy: proposed
+        ? `${PROBE_STRATEGY}参考问法是按用户说过的课程或技能提的候选，用户确认之前不能写入。`
+        : PROBE_STRATEGY,
+      replies: proposed ? ["做过", "没做过"] : (probe?.replies ?? []),
+    };
+  }
   const field = spec.fields.find((x) => x.field === m.field);
   return {
     ...m,
@@ -460,8 +724,8 @@ function isBreadth(m: MissingField): boolean {
 }
 
 /**
- * 三个阶段：先按分区顺序把各分区铺开（每个分区取最重要的缺项），
- * 再按条目顺序逐段深挖（技术栈 → 负责什么 → 难点 → 量化结果），最后才问选填项。
+ * 四个阶段：先按分区顺序把各分区铺开（每个分区取最重要的缺项；一段经历都没有时挖掘角度也在这里），
+ * 再按条目顺序逐段深挖（技术栈 → 负责什么 → 难点 → 量化结果），然后换角度再挖一段经历，最后才问选填项。
  */
 export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot | null {
   const { missing } = computeCompleteness(profile, options);
@@ -496,6 +760,9 @@ export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot 
         (a.depth ?? 0) - (b.depth ?? 0),
     )[0];
   if (deep) return toSlot(deep);
+
+  const probe = askable.filter((m) => m.kind === "probe").sort((a, b) => b.weight - a.weight)[0];
+  if (probe) return toSlot(probe);
 
   const rest = firstOfSection(askable.filter((m) => !m.required && !isBreadth(m)));
   return rest ? toSlot(rest) : null;

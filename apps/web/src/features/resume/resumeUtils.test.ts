@@ -1,99 +1,43 @@
 import { describe, expect, it } from "vitest";
-import type { Completeness, MissingField, ProfileSection } from "../../api/types.ts";
+import type { Completeness, QualityGap } from "../../api/types.ts";
 import { isResumeComplete, matchesLabel, missingText } from "./resumeUtils.ts";
 
-const miss = (
-  section: ProfileSection,
-  field: string,
-  label: string,
-  extra: Partial<MissingField> = {},
-): MissingField => ({
-  key: `${section}:_:${field}`,
-  section,
-  field,
-  label,
-  weight: 1,
-  required: true,
-  kind: "field",
-  ...extra,
-});
+const gap = (key: string, label: string): QualityGap => ({ key, label, prompt: `帮我补${label}` });
 
-const completeness = (missing: MissingField[], completed: ProfileSection[] = []): Completeness => ({
-  score: 0.74,
-  sections: (["basics", "education", "experiences", "projects"] as const).map((section) => ({
-    section,
-    weight: 1,
-    score: missing.some((m) => m.section === section) ? 0.8 : 1,
-    completed: completed.includes(section),
-  })),
-  missing,
+const completeness = (gaps: QualityGap[], score = 0.5): Completeness => ({
+  score,
+  progress: 1,
+  sections: [],
+  missing: [],
+  gaps,
+  tips: [],
 });
 
 describe("missingText", () => {
-  it("没有数据或都齐了不提示", () => {
+  it("没有数据或没有短板不提示", () => {
     expect(missingText(undefined)).toBe("");
     expect(missingText(completeness([]))).toBe("");
   });
 
-  it("部分缺失的板块说具体缺什么，不再笼统列出板块", () => {
+  it("列出简历短板，用户跳过的也照样算缺", () => {
     const text = missingText(
-      completeness([
-        miss("basics", "email", "邮箱"),
-        miss("projects", "_item", "新增项目经历", { kind: "new_item" }),
-      ]),
+      completeness([gap("evidence", "能证明动手能力的经历"), gap("skills", "至少 3 项技能")]),
     );
-    expect(text).toBe("还差邮箱、项目经历");
-    expect(text).not.toContain("教育");
+    expect(text).toBe("还缺能证明动手能力的经历、至少 3 项技能");
   });
 
-  it("列表型分区的字段带上分区名，同名只列一次", () => {
-    const text = missingText(
-      completeness([
-        miss("education", "major", "专业", { itemId: "a" }),
-        miss("education", "major", "专业", { itemId: "b" }),
-      ]),
-    );
-    expect(text).toBe("还差教育经历的专业");
-  });
-
-  it("同一分区的多个字段合并，并去掉括号注释", () => {
-    const text = missingText(
-      completeness([
-        miss("projects", "role", "担任角色"),
-        miss("projects", "action", "行动（A）"),
-        miss("projects", "result", "结果（R）"),
-      ]),
-    );
-    expect(text).toBe("还差项目经历的担任角色、行动、结果");
-  });
-
-  it("忽略选填项、量化提示和已标记完成的分区", () => {
-    const text = missingText(
-      completeness(
-        [
-          miss("basics", "city", "所在城市", { required: false }),
-          miss("projects", "result_quantified", "结果的量化数据", { kind: "quantify" }),
-          miss("experiences", "bullets", "工作内容与成果"),
-        ],
-        ["experiences"],
-      ),
-    );
-    expect(text).toBe("");
-  });
-
-  it("超过 4 项时截断并加「等」", () => {
-    const many = ["a", "b", "c", "d", "e"].map((f) => miss("basics", f, `项${f}`));
-    expect(missingText(completeness(many))).toBe("还差项a、项b、项c、项d等");
+  it("超过 3 项时截断并加「等」", () => {
+    const many = ["a", "b", "c", "d"].map((k) => gap(k, `项${k}`));
+    expect(missingText(completeness(many))).toBe("还缺项a、项b、项c等");
   });
 });
 
 describe("isResumeComplete", () => {
-  const withScore = (score: number) => ({ score, sections: [], missing: [] }) as unknown as Completeness;
-
-  it("只有显示为 100% 才算完成", () => {
+  it("没有短板且充实度够高才算完成，问完了不算", () => {
     expect(isResumeComplete(undefined)).toBe(false);
-    expect(isResumeComplete(withScore(0.99))).toBe(false);
-    expect(isResumeComplete(withScore(1))).toBe(true);
+    expect(isResumeComplete(completeness([gap("evidence", "经历")], 0.95))).toBe(false);
+    expect(isResumeComplete(completeness([], 0.6))).toBe(false);
+    expect(isResumeComplete(completeness([], 0.9))).toBe(true);
   });
 });
 

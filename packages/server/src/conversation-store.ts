@@ -232,6 +232,7 @@ export async function persistState(
     if (profileChanged) {
       const scores = {
         total: completeness.score,
+        progress: completeness.progress,
         ...Object.fromEntries(completeness.sections.map((s) => [s.section, s.score])),
       };
       await tx

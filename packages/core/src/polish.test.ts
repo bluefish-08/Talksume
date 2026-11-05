@@ -110,6 +110,15 @@ describe("applyPolish", () => {
 describe("ungroundedTokens", () => {
   const source = "我用 Redis 和 spring boot 做了缓存，上线后有三百多人用，接口快了 40%，响应 1,200ms";
 
+  it("拔高职责的说法要有原话支撑", () => {
+    const helped = "帮老师做了个签到小程序，和两个同学一起写的";
+    expect(ungroundedTokens(helped, "为老师开发签到小程序")).toEqual([]);
+    expect(ungroundedTokens(helped, "独立开发签到小程序")).toEqual(["独立"]);
+    expect(ungroundedTokens(helped, "主导签到小程序开发")).toEqual(["主导"]);
+    expect(ungroundedTokens(helped, "作为项目负责人带领同学开发")).toEqual(["带领", "负责人"]);
+    expect(ungroundedTokens("签到小程序是我一个人写的", "独立开发签到小程序")).toEqual([]);
+  });
+
   it("原文出现过的数字、中文数字、技术词都放行", () => {
     expect(
       ungroundedTokens(

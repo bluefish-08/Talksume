@@ -1,6 +1,6 @@
 import { Profile } from "@talksume/core";
 import { describe, expect, it } from "vitest";
-import { computeCompleteness, isQuantified, pickNextSlot } from "./completeness.ts";
+import { computeCompleteness, isQuantified, pickNextSlot, prepTips } from "./completeness.ts";
 
 const empty = () => Profile.parse({});
 
@@ -52,12 +52,75 @@ describe("computeCompleteness", () => {
     expect(computeCompleteness(withName).score).toBeGreaterThan(computeCompleteness(withCity).score);
   });
 
-  it("treats completed sections as fully scored", () => {
+  it("counts completed sections as asked, not as written", () => {
     const p = empty();
     const c = computeCompleteness(p, { completedSections: ["awards", "experiences"] });
-    expect(c.sections.find((s) => s.section === "awards")?.score).toBe(1);
+    const awards = c.sections.find((s) => s.section === "awards");
+    expect(awards).toMatchObject({ completed: true, score: 0 });
     expect(c.missing.some((m) => m.section === "awards")).toBe(false);
-    expect(c.score).toBeGreaterThan(0);
+    expect(c.score).toBe(0);
+    expect(c.progress).toBeGreaterThan(0);
+  });
+
+  it("keeps a resume with only education and skills low even when everything else was skipped", () => {
+    const p = withEducation(empty());
+    p.skills.push(
+      ...["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, sourceFactIds: [], name })),
+    );
+    const skippedAll = ["basics", "experiences", "projects", "awards", "intention"] as const;
+    const c = computeCompleteness(p, { completedSections: skippedAll });
+    expect(c.progress).toBeGreaterThan(0.95);
+    expect(c.score).toBeLessThan(0.3);
+    expect(c.gaps[0]).toMatchObject({ key: "evidence", label: "能证明动手能力的经历" });
+  });
+
+  it("caps a complete-looking resume without any experience below half", () => {
+    const p = thinStudent();
+    const c = computeCompleteness(p, { completedSections: ["experiences", "projects", "awards"] });
+    expect(c.score).toBeLessThan(0.5);
+    expect(c.gaps.map((g) => g.key)).toEqual(["evidence"]);
+    expect(c.tips.length).toBeGreaterThan(0);
+  });
+
+  it("scores a resume with two well-told experiences high and stops suggesting", () => {
+    const p = thinStudent();
+    p.experiences.push({
+      id: "exp_1",
+      sourceFactIds: [],
+      kind: "internship",
+      company: "示例科技",
+      title: "后端实习",
+      techStack: ["Java", "MySQL"],
+      bullets: [],
+      highlights: [
+        { title: "订单接口", detail: "负责订单查询接口" },
+        { title: "慢查询优化", detail: "排查慢查询加了联合索引，响应从 800ms 降到 120ms" },
+      ],
+    });
+    p.projects.push({
+      id: "prj_1",
+      sourceFactIds: [],
+      name: "校园二手平台",
+      role: "后端",
+      situation: "课余和同学做的",
+      techStack: ["Spring Boot"],
+      highlights: [
+        { title: "商品发布", detail: "负责商品发布模块" },
+        { title: "超卖问题", detail: "用乐观锁解决了超卖，上线后 300 人注册" },
+      ],
+    });
+    p.awards.push({ id: "awd_1", sourceFactIds: [], name: "校二等奖学金" });
+    const c = computeCompleteness(p);
+    expect(c.score).toBeGreaterThan(0.9);
+    expect(c.gaps).toEqual([]);
+    expect(c.tips).toEqual([]);
+  });
+
+  it("asks for a second experience and the details of a bare one", () => {
+    const p = thinStudent();
+    p.projects.push({ id: "prj_1", sourceFactIds: [], name: "成绩管理系统", techStack: [] });
+    const keys = computeCompleteness(p).gaps.map((g) => g.key);
+    expect(keys).toEqual(["evidence_more", "thin:prj_1"]);
   });
 
   it("needs a quantified highlight for the impact item", () => {
@@ -160,6 +223,93 @@ describe("computeCompleteness", () => {
     expect(isQuantified("服务了很多用户")).toBe(false);
     expect(isQuantified("响应时间降低了2倍")).toBe(true);
     expect(isQuantified("做得不错")).toBe(false);
+  });
+});
+
+function thinStudent() {
+  const p = withEducation(withBasics());
+  p.skills.push(...["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, sourceFactIds: [], name })));
+  p.intention = { roles: ["Java 开发"], cities: ["江城"], jobType: "campus" };
+  return p;
+}
+
+describe("prepTips", () => {
+  it("suggests projects in the student's direction, and nothing once experience is enough", () => {
+    expect(prepTips(thinStudent()).join("")).toContain("Spring Boot");
+    const front = thinStudent();
+    front.intention.roles = ["前端开发"];
+    expect(prepTips(front).join("")).toContain("Vue");
+    expect(prepTips(empty()).length).toBeGreaterThan(0);
+  });
+});
+
+describe("probing for experience", () => {
+  const skippedProjects = { completedSections: ["experiences", "projects"] as const };
+
+  it("digs from another angle right after the student says there are no projects", () => {
+    const slot = pickNextSlot(thinStudent(), skippedProjects);
+    expect(slot).toMatchObject({ kind: "probe", field: "probe_course" });
+    expect(slot?.question).toContain("Java");
+    expect(slot?.replies).toEqual(["做过", "没做过"]);
+  });
+
+  it("proposes a course the student already mentioned", () => {
+    const p = thinStudent();
+    const edu = p.education[0];
+    if (!edu) throw new Error("no education");
+    edu.courses = ["数据库原理"];
+    expect(pickNextSlot(p, skippedProjects)?.question).toContain("「数据库原理」");
+  });
+
+  it("asks each angle once and gives up only after all were declined", () => {
+    const p = thinStudent();
+    const skipped = new Set<string>();
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const slot = pickNextSlot(p, { ...skippedProjects, skipped });
+      expect(slot?.kind).toBe("probe");
+      seen.push(slot?.field ?? "");
+      skipped.add(slot?.key ?? "");
+    }
+    expect(seen).toEqual(["probe_course", "probe_selfmade", "probe_campus", "probe_work"]);
+    expect(pickNextSlot(p, { ...skippedProjects, skipped })?.kind).not.toBe("probe");
+  });
+
+  it("skips angles an experience already covers and waits until the one experience is dug", () => {
+    const p = thinStudent();
+    p.projects.push({
+      id: "prj_1",
+      sourceFactIds: [],
+      name: "Java 课程设计：成绩管理系统",
+      role: "组员",
+      techStack: [],
+    });
+    const c = computeCompleteness(p);
+    expect(c.missing.filter((m) => m.kind === "probe").map((m) => m.field)).toEqual([
+      "probe_selfmade",
+      "probe_campus",
+      "probe_work",
+    ]);
+    expect(pickNextSlot(p, { completedSections: ["experiences", "awards"] })).toMatchObject({
+      itemId: "prj_1",
+      field: "techStack",
+    });
+    const dug = new Set(
+      ["prj_1:techStack", "prj_1:duty", "prj_1:challenge", "prj_1:impact"].map((k) => `projects:${k}`),
+    );
+    expect(pickNextSlot(p, { completedSections: ["experiences", "awards"], skipped: dug })).toMatchObject({
+      kind: "probe",
+      field: "probe_selfmade",
+    });
+  });
+
+  it("stops probing once there are two experiences", () => {
+    const p = thinStudent();
+    p.projects.push(
+      { id: "prj_1", sourceFactIds: [], name: "成绩管理系统", techStack: [] },
+      { id: "prj_2", sourceFactIds: [], name: "电脑义诊", techStack: [] },
+    );
+    expect(computeCompleteness(p).missing.some((m) => m.kind === "probe")).toBe(false);
   });
 });
 
@@ -276,6 +426,9 @@ describe("pickNextSlot", () => {
 
   it("returns null when everything has been asked or completed", () => {
     const all = ["basics", "education", "experiences", "projects", "skills", "awards", "intention"] as const;
-    expect(pickNextSlot(empty(), { completedSections: all })).toBeNull();
+    const probes = computeCompleteness(empty()).missing.filter((m) => m.kind === "probe");
+    const skipped = new Set(probes.map((m) => m.key));
+    expect(pickNextSlot(empty(), { completedSections: all })?.kind).toBe("probe");
+    expect(pickNextSlot(empty(), { completedSections: all, skipped })).toBeNull();
   });
 });

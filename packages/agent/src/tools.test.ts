@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildUserCorpus, createIntakeTools, quoteInCorpus, type RunContext } from "./tools.ts";
+import {
+  buildUserCorpus,
+  createIntakeTools,
+  quoteInCorpus,
+  type RunContext,
+  skipDeclined,
+  unconfirmedValues,
+} from "./tools.ts";
 import { createIntakeState } from "./types.ts";
 
 const corpus = buildUserCorpus(["我在示例大学读计算机，2021年9月入学，预计2025年6月毕业。", "我叫李明"]);
@@ -110,5 +117,67 @@ describe("skip_field", () => {
     expect(out).toContain("可用的 key：");
     expect(out).toContain("basics:_:name");
     expect(state.skipped).toEqual([]);
+  });
+});
+
+describe("confirming a proposal", () => {
+  const question = "课上学 Java、MySQL 的时候，有没有做过课程设计或者大作业？";
+
+  it("only lets a bare yes confirm what the question proposed or the user said", () => {
+    const corpus = buildUserCorpus(["我学过 Java 和 MySQL", "做过"]);
+    expect(unconfirmedValues({ name: "MySQL" }, "做过", corpus, question)).toEqual([]);
+    expect(unconfirmedValues({ name: "Java 课程设计" }, "做过", corpus, question)).toEqual([]);
+    expect(
+      unconfirmedValues(
+        { name: "Java 课程设计", role: "组长", techStack: ["Redis"] },
+        "做过",
+        corpus,
+        question,
+      ),
+    ).toEqual(["组长", "Redis"]);
+  });
+
+  it("leaves facts quoted from the user's own words alone", () => {
+    const corpus = buildUserCorpus(["做过课程设计，学生成绩管理系统，我是组长"]);
+    expect(
+      unconfirmedValues({ name: "学生成绩管理系统", role: "组长" }, "我是组长", corpus, question),
+    ).toEqual([]);
+  });
+
+  it("rejects an upsert that slips unasked details in behind a yes", async () => {
+    const { state, run } = upsertWith(["我学过 Java 和 MySQL", "用过"]);
+    state.history.push({ id: "a1", role: "assistant", content: "课上用过 MySQL 吗？" });
+    const text = await run([
+      { section: "skills", payload: { name: "MySQL" }, quote: "用过" },
+      { section: "skills", payload: { name: "Redis" }, quote: "用过" },
+    ]);
+    expect(state.profile.skills.map((s) => s.name)).toEqual(["MySQL"]);
+    expect(text).toContain("「Redis」用户没说过");
+  });
+});
+
+describe("probing for experience", () => {
+  it("marks the probe answered when it turns up a new experience", async () => {
+    const { state, run } = upsertWith(["做过课程设计，学生成绩管理系统"]);
+    state.history.push({
+      id: "a1",
+      role: "assistant",
+      content: "课程设计做过吗？",
+      meta: { slot: "projects:_:probe_course" },
+    });
+    await run([{ section: "projects", payload: { name: "学生成绩管理系统" }, quote: "学生成绩管理系统" }]);
+    expect(state.askCounts["projects:_:probe_course"]).toBeGreaterThanOrEqual(2);
+  });
+
+  it("records a short no to a probe as skipped", () => {
+    const state = createIntakeState();
+    state.history.push({
+      id: "a1",
+      role: "assistant",
+      content: "参加过比赛、社团吗？",
+      meta: { slot: "projects:_:probe_campus" },
+    });
+    expect(skipDeclined(state, "都没参加过")?.key).toBe("projects:_:probe_campus");
+    expect(skipDeclined(state, "参加过计算机协会，组织过义诊")).toBeNull();
   });
 });

@@ -565,6 +565,10 @@ describe("跨会话记忆", () => {
           end: "2025-06",
         },
       ],
+      projects: [
+        { id: "prj_1", sourceFactIds: [], name: "江城闲置", techStack: [] },
+        { id: "prj_2", sourceFactIds: [], name: "江城图书馆", techStack: [] },
+      ],
     });
     await handle.db
       .update(schema.intakeLedgers)

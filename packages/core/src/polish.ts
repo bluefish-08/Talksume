@@ -151,14 +151,29 @@ function numbersIn(text: string): Set<string> {
 const LATIN_TOKEN = /[A-Za-z][A-Za-z0-9]*(?:[.+#-][A-Za-z0-9+#]+)*[+#]*/g;
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** 拔高职责的说法和原文里能支撑它的字样；「独立」要原文说过一个人做的。 */
+const ROLE_CLAIMS: [RegExp, RegExp][] = [
+  [/独立|独自|单独|一人|一个人/, /独立|独自|单独|一人|一个人|自己(?:一个人)?(?:做|写|开发|完成|搭)/],
+  [/主导/, /主导/],
+  [/牵头/, /牵头/],
+  [/带领|带队|带团队/, /带领|带队|带团队|带着/],
+  [/负责人|组长|队长|项目经理/, /负责人|组长|队长|项目经理/],
+  [/从零|从0/, /从零|从0|从头/],
+  [/全栈/, /全栈/],
+];
+
 /**
- * 润色结果里出现、原文里没有的数字和英文词，非空即判不合格。
+ * 润色结果里出现、原文里没有的数字、英文词和拔高职责的说法，非空即判不合格。
  * 中文专有名词无法程序化识别，只能靠提示词约束。
  */
 export function ungroundedTokens(source: string, polished: string): string[] {
   const sourceNumbers = numbersIn(source);
   const lowerSource = source.toLowerCase();
   const problems = new Set<string>();
+  for (const [claim, support] of ROLE_CLAIMS) {
+    const hit = polished.match(claim);
+    if (hit && !support.test(source)) problems.add(hit[0]);
+  }
   for (const m of polished.matchAll(NUMBER)) {
     if (!sourceNumbers.has(normalizeNumber(m[0]))) problems.add(m[0]);
   }

@@ -14,7 +14,9 @@ import {
 } from "./completeness.ts";
 import {
   applyFacts,
+  bigrams,
   type Conflict,
+  coverage,
   describeDrafted,
   draftLabel,
   draftMissing,
@@ -138,7 +140,7 @@ export function nextSlotOf(state: IntakeState): Slot | null {
 const NO_NUMBERS =
   /没(?:有)?(?:什么|啥)?(?:具体|准确|明确)?的?(?:数字|数据|量化|统计)|没(?:有)?(?:统计|量化)过?|记不(?:清|得|太清)|不记得|忘了|说不上来/;
 const NOTHING_TO_SAY =
-  /没(?:有)?遇到|没(?:有)?(?:什么|啥)?(?:特别|太|很)?(?:难|挑战|问题|可说|好说)|没有|记不(?:清|得|太清)|不记得|忘了|想不起来|说不上来|跳过|不想说/;
+  /没(?:有)?遇到|没(?:有)?(?:什么|啥)?(?:特别|太|很)?(?:难|挑战|问题|可说|好说)|没有|没(?:有)?(?:做|参加|干|弄|写|学|用)过|记不(?:清|得|太清)|不记得|忘了|想不起来|说不上来|跳过|不想说/;
 /** 超过这个长度或带了英文、数字的回答多半含有内容，交给模型去写。 */
 const SHORT_DECLINE = 12;
 
@@ -149,7 +151,7 @@ export function lastAskedKey(state: IntakeState): string | undefined {
 
 function declineOf(m: MissingField, text: string): string | undefined {
   if (m.kind === "quantify") return isQuantified(text) ? undefined : text.match(NO_NUMBERS)?.[0];
-  if (!m.depth) return undefined;
+  if (!m.depth && m.kind !== "probe") return undefined;
   const plain = normalizeQuote(text);
   if (plain.length > SHORT_DECLINE || /[a-z0-9]/.test(plain)) return undefined;
   return NOTHING_TO_SAY.test(text) ? text.trim() : undefined;
@@ -204,6 +206,62 @@ function skippableKeys(state: IntakeState): string[] {
       .filter((m) => m.kind !== "new_item" && !isSkipped(m, skipped))
       .map((m) => `${m.key}（${m.itemLabel ? `${m.itemLabel}-` : ""}${m.label}）`),
   ].slice(0, 10);
+}
+
+const PROBE_ANSWERED = 99;
+
+/** 上一轮问的挖掘角度挖出了新经历，这个角度就算问完，不再重复问。 */
+function settleProbe(state: IntakeState, before: number): void {
+  const key = lastAskedKey(state);
+  if (!key?.startsWith("projects:_:probe_")) return;
+  if (state.profile.experiences.length + state.profile.projects.length > before)
+    state.askCounts[key] = PROBE_ANSWERED;
+}
+
+const BARE_CONFIRM =
+  /^(?:是的?|对的?|嗯+|有的?|做过|用过|学过|会的?|参加过|没错|当然|好的?)+(?:啊|呀|吧|呢)?$/;
+const UNCHECKED_KEYS = new Set([
+  "kind",
+  "degree",
+  "category",
+  "level",
+  "jobType",
+  "start",
+  "end",
+  "date",
+  "links",
+]);
+
+function textLeaves(payload: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const [key, value] of Object.entries(payload)) {
+    if (UNCHECKED_KEYS.has(key)) continue;
+    if (key === "highlights" && Array.isArray(value)) {
+      for (const h of value) if (typeof h?.detail === "string") out.push(h.detail);
+    } else if (typeof value === "string") out.push(value);
+    else if (Array.isArray(value)) out.push(...value.filter((v): v is string => typeof v === "string"));
+  }
+  return out;
+}
+
+/**
+ * 用户只回了「做过」「用过」这类确认时，能写的只有上一句问到的候选和用户自己说过的内容；
+ * 返回两边都找不到出处的值。
+ */
+export function unconfirmedValues(
+  payload: Record<string, unknown>,
+  quote: string,
+  userCorpus: string,
+  question: string,
+): string[] {
+  if (!BARE_CONFIRM.test(normalizeQuote(quote))) return [];
+  const grounds = bigrams(`${userCorpus}|${question}`);
+  const plainGrounds = `${userCorpus}|${normalizeQuote(question)}`;
+  return textLeaves(payload).filter((value) => {
+    const plain = normalizeQuote(value);
+    if (plain.length < 2 || plainGrounds.includes(plain)) return false;
+    return coverage(bigrams(value), grounds) < 0.8;
+  });
 }
 
 export function noteAsked(state: IntakeState, slot: Slot | null): void {
@@ -287,13 +345,24 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     (args: z.infer<typeof UpsertFactsArgs>) => {
       const rejected: string[] = [];
       const accepted: { input: FactInput; index: number }[] = [];
+      const question = state.history.findLast((t) => t.role === "assistant")?.content ?? "";
       args.facts.forEach((input, index) => {
         if (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, input.quote)) {
           rejected.push(
             `第 ${index + 1} 条：quote「${input.quote}」不是用户说过的原话，请逐字摘抄；不相邻的片段用 … 分隔，每段至少 ${MIN_QUOTE_SEGMENT} 个字`,
           );
+          return;
+        }
+        const unconfirmed = ctx.verifyQuote
+          ? unconfirmedValues(input.payload as Record<string, unknown>, input.quote, ctx.userCorpus, question)
+          : [];
+        if (unconfirmed.length > 0) {
+          rejected.push(
+            `第 ${index + 1} 条：「${input.quote}」只是确认你上一句问的内容，「${unconfirmed.join("」「")}」用户没说过、你也没问过，不能写；只写用户确认的那件事，其余先问清楚`,
+          );
         } else accepted.push({ input, index });
       });
+      const evidenceBefore = state.profile.experiences.length + state.profile.projects.length;
 
       const result = applyFacts(
         state.profile,
@@ -308,6 +377,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       state.drafts = result.drafts;
       state.facts.push(...result.facts);
       liftSkips(state, result.changes);
+      settleProbe(state, evidenceBefore);
       if (result.drafted.length > 0) ctx.flags.changed = true;
       if (result.changes.length > 0 || result.facts.length > 0) {
         ctx.flags.changed = true;

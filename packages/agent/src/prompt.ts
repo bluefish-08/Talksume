@@ -61,12 +61,20 @@ const TAILOR_LINES = [
   "- 用户想加的内容简历里本来没有（如岗位要的某项技能），定制补不上：先如实说明，再问用户有没有相关经历，有就照常用 upsert_facts 记下，之后再定制。",
 ];
 
+const DIG_LINES = [
+  "",
+  "## 经历少的同学怎么挖",
+  "- 用户没有实习、没有项目时，系统会依次给出挖掘角度（课程设计/大作业/毕设、自学作品、比赛/社团/志愿者、兼职/帮老师做事）。一次只问一个角度，附 quickReplies；用户都说没有才算真的没有。",
+  "- 可以根据画像里已有的课程、技能提出具体候选来问（如「你学过数据库原理，课上做过完整的数据库项目吗？」「课上用过 MySQL 吗？」），但只能以问句加「做过」「没做过」这类快捷回答出现，用户确认之前什么都不写。",
+  "- 用户确认后才写成事实，quote 摘抄用户确认的原话（如「做过」）；payload 只能是你问句里提到的或用户说过的内容，不能顺带补名称、职责、技术栈，缺的接着问。",
+  "- 挖出来的经历照常深挖、照常带 quote：项目名称用用户的说法（如「Java 课程设计：学生成绩管理系统」），角色照实写（和同学一起做的不能写成独立完成，参与不能写成负责），没有数字就不写数字。",
+  "- 所有角度都问完仍然很少时，不要安慰式地夸大，如实告诉用户简历页有「投递前可以补的东西」，做完回来再聊。",
+];
+
 export function describeSlot(slot: Slot): string {
   const where = slot.itemLabel ? `「${slot.itemLabel}」的` : "";
-  const lines = [
-    `目标：${SECTION_BY_NAME[slot.section].label} → ${where}${slot.label}（key=${slot.key}）`,
-    `参考问法：${slot.question}`,
-  ];
+  const area = slot.kind === "probe" ? "挖掘经历" : SECTION_BY_NAME[slot.section].label;
+  const lines = [`目标：${area} → ${where}${slot.label}（key=${slot.key}）`, `参考问法：${slot.question}`];
   if (slot.strategy) lines.push(`追问策略：${slot.strategy}`);
   if (slot.replies) lines.push(`快捷回答参考：${slot.replies.map((r) => `「${r}」`).join("")}`);
   return lines.join("\n");
@@ -74,6 +82,8 @@ export function describeSlot(slot: Slot): string {
 
 export function buildSystemPrompt(input: PromptInput): string {
   const percent = Math.round(input.completeness.score * 100);
+  const progress = Math.round(input.completeness.progress * 100);
+  const gaps = input.completeness.gaps.map((g) => g.label);
   const profileJson = JSON.stringify(stripIds(input.profile));
   const lines = [
     input.jobTools
@@ -108,6 +118,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 给已有要点补细节（比如补上结果数字）时，沿用原来的 title，detail 写合并后的完整文本；说的是另一件事就新开一条。",
     "- 条目里已有 bullets、action、result 或没有 title 的要点，说明用户之前讲过职责或结果，不要再问一遍，接着问还缺的新信息（比如难点）。用户复述已有内容时照常写成带 title 的要点，系统会并进原来那条，不会重复。",
     "- 实习和项目不要再写 bullets、task、action、result，统一写 highlights；项目背景可以写 situation。",
+    "- 整理成简历用语交给「润色」：它逐条给出专业化的写法，由用户决定采不采用。你这里 detail 保持原话，最后提醒用户可以点「润色」。",
     "- 技术栈写进对应条目的 techStack，一项一条，和已有的取并集；技能区只记用户聊技能时说的，不要把技术栈复制过去。",
     "- 一轮只问「当前目标字段」这一项，不要顺带问背景或别的。深挖顺序由系统给出：技术栈 → 你具体负责什么 → 遇到的难点和你的做法 → 量化结果。用户一次说了好几件，全部写入后直接问下一个还缺的。",
     "- 用户说「没有数字」「记不清」「没统计过」，用 skip_field 跳过量化结果，不要再追问；用户说没遇到难点，也用 skip_field 跳过。skip_field 的 key 照抄「当前目标字段」里的 key，不确定就不传。",
@@ -118,11 +129,14 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- basics.links：用户给了 GitHub、博客、作品集链接时写入，每项 {label, url}。basics.headline 由系统根据求职意向生成，不要写。",
     "- intention.showSalary：只有用户明确要求把期望薪资写上简历时才设为 true。",
     "- ask_user 的 quickReplies 要贴合当前问题：问技术栈时给这类方向常见的组合（如「Java + MySQL」「Go」）再加「跳过」；问量化结果时给「没有具体数字」「记不清了」。",
+    ...DIG_LINES,
     "",
     "## 当前画像（已记录的内容）",
     profileJson,
     "",
-    `## 完整度：${percent}%`,
+    `## 简历充实度：${percent}%（建档进度 ${progress}%）`,
+    "充实度只看简历里真有的内容，跳过的不算；建档进度只说明问到了哪里。和用户说简历情况时用充实度，不要说「简历已经很完整」来安慰。",
+    ...(gaps.length > 0 ? [`简历短板：${gaps.join("、")}`] : []),
   ];
   if (input.jobTools) {
     const jobLines = input.tailorTool ? [...JOB_LINES, ...TAILOR_LINES] : JOB_LINES;
@@ -160,7 +174,11 @@ export function buildSystemPrompt(input: PromptInput): string {
         : `用户这条消息很可能正是在回答这个目标：先写入，再根据 upsert_facts 返回的「下一个目标」继续追问${input.jobTools ? "；问的是岗位就先回答岗位问题" : ""}。`,
     );
   } else {
-    lines.push(`信息已基本收集完整。可以简短总结，并告诉用户：${RESUME_HINT}`);
+    lines.push(
+      input.completeness.tips.length > 0
+        ? `该问的都问过了，但简历还比较单薄。简短总结后如实说明还缺什么，告诉用户简历页有「投递前可以补的东西」，并告诉用户：${RESUME_HINT}`
+        : `信息已基本收集完整。可以简短总结，并告诉用户：${RESUME_HINT}`,
+    );
   }
   if (input.conflicts.length > 0) {
     lines.push("", "## 待用户确认的矛盾（系统已发出确认问句和按钮）");

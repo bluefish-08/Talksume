@@ -7,7 +7,7 @@ export function CompletenessBar({ completeness }: { completeness: Completeness |
   const score = completeness?.score ?? 0;
   const missing = missingText(completeness);
   return (
-    <div className={styles.bar}>
+    <div className={styles.bar} title="只算简历里真有的内容，跳过、说没有的不算">
       <span className={styles.label}>完整度</span>
       <div className={styles.track}>
         <ProgressBar value={score} label="简历完整度" />

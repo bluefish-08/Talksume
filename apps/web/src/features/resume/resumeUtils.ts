@@ -1,4 +1,4 @@
-import type { Completeness, MissingField, ProfileSection, ResumeContent } from "../../api/types.ts";
+import type { Completeness, ProfileSection, ResumeContent } from "../../api/types.ts";
 import type { FactItem } from "./queries.ts";
 import type { FactQuote } from "./ResumePreview.tsx";
 
@@ -25,7 +25,7 @@ export function placeholderTitles(resume: ResumeContent, completeness: Completen
   return completeness.sections.flatMap((s) => {
     const title = PLACEHOLDER_TITLES[s.section];
     const kind = KIND_OF[s.section];
-    return title && kind && !present.has(kind) && s.score < 1 ? [title] : [];
+    return title && kind && !present.has(kind) && !s.completed && s.score < 1 ? [title] : [];
   });
 }
 
@@ -51,43 +51,13 @@ export function diffAdded(before: ResumeContent, after: ResumeContent): Set<stri
   return added;
 }
 
-const SECTION_TITLES: Record<ProfileSection, string> = {
-  basics: "基本信息",
-  education: "教育经历",
-  experiences: "实习经历",
-  projects: "项目经历",
-  skills: "技能",
-  awards: "获奖荣誉",
-  intention: "求职意向",
-};
+const MISSING_LIMIT = 3;
 
-const MISSING_LIMIT = 4;
-
-/** 基本信息、求职意向的字段名自带语境，直接列；列表型分区合并成「项目经历的角色、结果」。 */
+/** 简历本身的短板，用户跳过、说没有的照样算缺。 */
 export function missingText(completeness: Completeness | undefined): string {
-  if (!completeness) return "";
-  const done = new Set(completeness.sections.filter((s) => s.completed).map((s) => s.section));
-  const labels: string[] = [];
-  const nested = new Map<ProfileSection, string[]>();
-  const push = (list: string[], label: string) => {
-    if (!list.includes(label)) list.push(label);
-  };
-  for (const m of completeness.missing) {
-    if (!m.required || m.kind === "quantify" || done.has(m.section)) continue;
-    if (m.kind === "new_item") push(labels, SECTION_TITLES[m.section]);
-    else if (m.section === "basics" || m.section === "intention") push(labels, m.label);
-    else {
-      const fields = nested.get(m.section) ?? [];
-      nested.set(m.section, fields);
-      push(fields, m.label.replace(/（.*?）/, ""));
-    }
-  }
-  for (const [section, fields] of nested) {
-    if (!labels.includes(SECTION_TITLES[section]))
-      labels.push(`${SECTION_TITLES[section]}的${fields.join("、")}`);
-  }
+  const labels = (completeness?.gaps ?? []).map((g) => g.label);
   if (labels.length === 0) return "";
-  return `还差${labels.slice(0, MISSING_LIMIT).join("、")}${labels.length > MISSING_LIMIT ? "等" : ""}`;
+  return `还缺${labels.slice(0, MISSING_LIMIT).join("、")}${labels.length > MISSING_LIMIT ? "等" : ""}`;
 }
 
 export function factQuotes(
@@ -103,8 +73,11 @@ export function factQuotes(
   return out;
 }
 
+const READY_SCORE = 0.85;
+
+/** 没有短板、充实度够高才算完成；问完了但内容单薄的简历不算。 */
 export function isResumeComplete(completeness: Completeness | undefined): boolean {
-  return !!completeness && Math.round(completeness.score * 100) >= 100;
+  return !!completeness && (completeness.gaps?.length ?? 0) === 0 && completeness.score >= READY_SCORE;
 }
 
 export function matchesLabel(total: number | undefined): string {

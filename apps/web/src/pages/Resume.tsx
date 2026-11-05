@@ -133,7 +133,7 @@ export function ResumePage() {
                     </>
                   )}
                 </p>
-                <SuggestionsMenu suggestions={suggestions} onPick={ask} />
+                <SuggestionsMenu suggestions={suggestions} tips={completeness.tips} onPick={ask} />
               </div>
             )}
           </div>
