@@ -11,3 +11,4 @@ docs/assets/mermaid.min.js
 .claude/worktrees/
 data/jobs/
 deploy/backups/
+eval-out/
