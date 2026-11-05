@@ -172,7 +172,12 @@ export function resolveIdentity(
     const hits = pool.filter((c) =>
       names(c).some((n) => isGenericName(s, n) && [...categoriesOf(n)].some((x) => wanted.has(x))),
     );
-    return hits.length === 1 ? hits[0] : undefined;
+    const hit = hits.length === 1 ? hits[0] : undefined;
+    const current = plain(hit?.item[field]);
+    // 「机械原理课程设计」仍是泛称，但比占位的「课程设计」多了信息，改用更具体的名字
+    return hit && plain(name).length > current.length && plain(name).includes(current)
+      ? { ...hit, rename: name }
+      : hit;
   }
 
   const p = plain(name);

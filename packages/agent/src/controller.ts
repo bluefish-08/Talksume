@@ -179,6 +179,14 @@ function resultText(result: unknown): string {
   return content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("");
 }
 
+/** 回复里第一个问句起算作「下一个问题」，它之前是对用户的回应。 */
+export function splitAtQuestion(content: string): { lead: string; tail: string } {
+  const sentences = content.match(/[^。！!？?\n]*(?:[。！!？?]+|\n+|$)/g)?.filter(Boolean) ?? [];
+  const at = sentences.findIndex((s) => /[？?]\s*$/.test(s.trim()));
+  if (at < 0) return { lead: content, tail: "" };
+  return { lead: sentences.slice(0, at).join("").trim(), tail: sentences.slice(at).join("").trim() };
+}
+
 function historyToMessages(state: IntakeState, model: Model<Api>, limit: number): AgentMessage[] {
   const now = Date.now();
   const assistant = (content: AssistantMessage["content"], toolUse = false): AssistantMessage => ({
@@ -227,12 +235,18 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
     .filter((turn) => turn.content.trim())
     .flatMap((turn, index): AgentMessage[] => {
       if (turn.role === "user") return [{ role: "user", content: turn.content, timestamp: now }];
-      // 建档调用挂在正文之后：模型照历史学成先说话再写入，首字不被写入拖慢；岗位工具的正文依赖结果，仍放在前面
+      // 回应挂在建档调用之前，首字不被写入拖慢；下一个问题要等「下一个目标」，放在结果之后。岗位工具的正文依赖结果，仍放在前面
       const records = turn.meta?.tools ?? [];
-      const text = [{ type: "text" as const, text: turn.content }];
       const intake = records.filter((r) => REPLAYED_INTAKE_TOOLS.has(r.name));
       const jobs = records.filter((r) => !REPLAYED_INTAKE_TOOLS.has(r.name));
-      return [...replayTools(jobs, `hist_${index}`), ...replayTools(intake, `hist_${index}_w`, text)];
+      const { lead, tail } =
+        intake.length > 0 ? splitAtQuestion(turn.content) : { lead: turn.content, tail: "" };
+      const text = lead ? [{ type: "text" as const, text: lead }] : [];
+      return [
+        ...replayTools(jobs, `hist_${index}`),
+        ...replayTools(intake, `hist_${index}_w`, text),
+        ...(tail ? [assistant([{ type: "text", text: tail }])] : []),
+      ];
     });
 }
 

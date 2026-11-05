@@ -80,6 +80,21 @@ describe("item identity", () => {
     expect(r.profile.projects[0]?.sourceFactIds).toHaveLength(4);
   });
 
+  it("renames the placeholder when the name is still generic but says more", () => {
+    const r = converse([
+      [project({ name: "课程设计" }, "做过课程设计")],
+      [
+        project(
+          { name: "机械原理课程设计", situation: "简单的机构分析" },
+          "机械原理课程设计，做的是个简单的机构分析",
+        ),
+      ],
+      [project({ name: "机械原理课程设计", role: "独立完成" }, "我一个人做的")],
+    ]);
+    expect(r.drafts).toEqual([]);
+    expect(r.profile.projects.map((p) => p.name)).toEqual(["机械原理课程设计"]);
+  });
+
   it("adopts a legacy empty placeholder already in the profile", () => {
     const legacy = Profile.parse({
       projects: [{ id: "prj_old", sourceFactIds: [], name: "课程设计（待补充名称）" }],

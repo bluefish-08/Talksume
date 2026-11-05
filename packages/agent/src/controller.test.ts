@@ -9,7 +9,7 @@ import {
 import { Profile } from "@talksume/core";
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
-import { createIntakeController, replayRecord, type TurnMetrics } from "./controller.ts";
+import { createIntakeController, replayRecord, splitAtQuestion, type TurnMetrics } from "./controller.ts";
 import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
 import type { IntakeEvent } from "./types.ts";
 import { createIntakeState } from "./types.ts";
@@ -1332,7 +1332,7 @@ describe("intake controller: declining a deep-dive question", () => {
 });
 
 describe("intake controller: replaying intake tool calls", () => {
-  it("records effective intake calls on the reply and replays them after its text next turn", async () => {
+  it("records effective intake calls and replays them between the acknowledgement and the next question", async () => {
     let seen: unknown[] = [];
     const { controller } = fake([
       toolTurn(
@@ -1342,7 +1342,7 @@ describe("intake controller: replaying intake tool calls", () => {
         ]),
         fauxToolCall("skip_field", { quote: "没说过这句" }),
       ),
-      toolTurn(ask("手机号方便留一个吗？")),
+      toolTurn(ask("记下了。手机号方便留一个吗？")),
       (context) => {
         seen = context.messages.filter((m) => m.role !== "system");
         return fauxAssistantMessage([fauxText("好的。")]);
@@ -1362,11 +1362,13 @@ describe("intake controller: replaying intake tool calls", () => {
 
     await collect(controller.handleUserMessage(state, { id: "m2", text: "不方便" }));
     const roles = seen.map((m) => (m as { role: string }).role);
-    expect(roles).toEqual(["user", "assistant", "toolResult", "user"]);
+    expect(roles).toEqual(["user", "assistant", "toolResult", "assistant", "user"]);
     const replayed = JSON.stringify(seen[1]);
-    expect(replayed.indexOf("手机号方便留一个吗")).toBeLessThan(replayed.indexOf('"name":"upsert_facts"'));
+    expect(replayed.indexOf("记下了")).toBeLessThan(replayed.indexOf('"name":"upsert_facts"'));
+    expect(replayed).not.toContain("手机号方便留一个吗");
     expect(replayed).not.toContain("13900002222");
     expect(JSON.stringify(seen[2])).toContain("已写入 1 条事实。");
+    expect(JSON.stringify(seen[3])).toContain("手机号方便留一个吗");
     expect(JSON.stringify(seen)).not.toContain("ask_user");
   });
 
@@ -1455,5 +1457,22 @@ describe("replayRecord", () => {
     expect(
       replayRecord("upsert_facts", { facts: facts.slice(0, 1) }, long, false)?.result.length,
     ).toBeLessThanOrEqual(401);
+  });
+});
+
+describe("splitAtQuestion", () => {
+  it("cuts before the first question so the acknowledgement can precede the writes", () => {
+    expect(splitAtQuestion("好，Swing 加 MySQL。这个系统里你负责哪部分？\n比如界面或数据库。")).toEqual({
+      lead: "好，Swing 加 MySQL。",
+      tail: "这个系统里你负责哪部分？\n比如界面或数据库。",
+    });
+  });
+
+  it("keeps a reply without a question whole, and a bare question as the tail", () => {
+    expect(splitAtQuestion("信息基本齐了，右侧可以导出。")).toEqual({
+      lead: "信息基本齐了，右侧可以导出。",
+      tail: "",
+    });
+    expect(splitAtQuestion("你的邮箱是哪个？")).toEqual({ lead: "", tail: "你的邮箱是哪个？" });
   });
 });

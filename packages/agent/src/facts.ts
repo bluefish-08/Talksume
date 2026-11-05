@@ -105,6 +105,13 @@ export const LEVEL_WORDS = {
   expert: ["精通"],
 } as const satisfies Record<NonNullable<Skill["level"]>, readonly string[]>;
 
+const JOB_TYPE_WORDS: Record<string, RegExp> = {
+  internship: /实习/,
+  campus: /校招|应届|校园|毕业生|秋招|春招/,
+  experienced: /社招|跳槽|工作经验|在职|有经验/,
+};
+const STILL_ON = /至今|现在|目前|仍在|还在|正在|一直/;
+
 const DATE_LIKE = /\d{2,4}\s*[年.\-/]|\d{4}|[〇零一二三四五六七八九]{2,4}年|[去今前]年|\d{1,2}\s*月/;
 
 const plainText = (text: string) => text.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
@@ -142,6 +149,35 @@ export function negatedIn(quote: string, name: string): boolean {
   });
 }
 
+/** 城市名只出现在学校、公司的名字里（「江城商贸职业学院」）不算用户说过城市。 */
+const ORG_WORDS =
+  "(?:学院|大学|学校|公司|集团|工厂|晨报|日报|电商|信息|科技|传媒|重工|机械|银行|医院|工作室|有限|职业|技术|理工|师范|商贸)";
+
+function cityStated(payload: Rec, quote: string, userText: string): boolean {
+  const city = plainText(String(payload.city));
+  let said = plainText(`${quote}|${userText}`);
+  for (const key of ["school", "company", "name"]) {
+    const own = typeof payload[key] === "string" ? plainText(payload[key]) : "";
+    if (own.includes(city)) said = said.split(own).join("");
+  }
+  said = said.replace(new RegExp(`${city}[^，。]{0,4}?${ORG_WORDS}`, "g"), "");
+  return said.includes(city);
+}
+
+const COLLAB_PARTNER = /(?:与|和|跟|同)[^，,；;]{0,8}?(?:同学|室友|队友|同事|他人|别人|伙伴|老师|师兄|师姐)/g;
+const MEMBERSHIP_WORDS =
+  /小组|项目|团队|普通|社员|会员|一员|成员|组员|参与者?|共同|一起|合作|协作|组队|分工|完成|开发|[一二三两几多\d]+(?:人|名|位)|[的了，,、；;\s]/g;
+
+/** 角色只写了「成员」「与同学合作」这类参与方式，没说自己做什么。 */
+function bareParticipation(role: string): boolean {
+  return (
+    role
+      .replace(/[（(][^）)]*[）)]/g, "")
+      .replace(COLLAB_PARTNER, "")
+      .replace(MEMBERSHIP_WORDS, "") === ""
+  );
+}
+
 /** 熟练度和获奖日期最常被推测，只在原话里有对应字样时保留。 */
 function dropUngrounded(
   section: ProfileSection,
@@ -157,6 +193,16 @@ function dropUngrounded(
       delete payload.level;
     }
   }
+  if (section === "intention" && typeof payload.jobType === "string") {
+    const words = JOB_TYPE_WORDS[payload.jobType];
+    if (words && !words.test(quote)) {
+      dropped.push({
+        field: "jobType",
+        reason: "原话里没有说是实习、校招还是社招，不要按「全职」「正式工作」推断，接着问",
+      });
+      delete payload.jobType;
+    }
+  }
   if (section === "awards" && payload.date !== undefined && !DATE_LIKE.test(quote)) {
     dropped.push({ field: "date", reason: "原话里没有年份或日期" });
     delete payload.date;
@@ -170,17 +216,31 @@ function dropUngrounded(
     dropped.push({ field, reason: `原话里没有写明 ${value} 这个年月，不要推算` });
     delete payload[field];
   }
-  if (
-    typeof payload.city === "string" &&
-    !plainText(`${quote}|${userText}`).includes(plainText(payload.city))
-  ) {
+  if (typeof payload.city === "string" && !cityStated(payload, quote, userText)) {
     dropped.push({ field: "city", reason: `用户没说过「${payload.city}」，不要按学校或公司推断城市` });
     delete payload.city;
+  }
+  if (
+    section === "projects" &&
+    typeof payload.role === "string" &&
+    bareParticipation(payload.role) &&
+    !plainText(`${quote}|${userText}`).includes(plainText(payload.role))
+  ) {
+    dropped.push({
+      field: "role",
+      reason: "只说了和谁一起做，没说自己担任什么、负责什么；用户没说就留空，接着问他负责哪部分",
+    });
+    delete payload.role;
   }
   const checkMonth = DATED_SECTIONS[section];
   if (checkMonth !== undefined) {
     for (const field of ["start", "end"]) {
       const value = payload[field];
+      if (value === "present" && !STILL_ON.test(quote)) {
+        dropped.push({ field, reason: "原话里没有说「至今」「现在还在」，不要写成仍在进行" });
+        delete payload[field];
+        continue;
+      }
       if (typeof value !== "string" || value === "present" || dateGrounded(value, quote, checkMonth))
         continue;
       dropped.push({ field, reason: `原话里没有写明 ${value} 这个年月，不要推算` });
@@ -718,6 +778,7 @@ export function applyFacts(
       continue;
     }
     const payload = { ...parsed.data };
+    if (section === "projects" && payload.kind === "project") delete payload.kind;
     if (section === "skills" && negatedIn(input.quote, String(payload.name ?? ""))) {
       reject(`原话「${input.quote}」说的是没用过/不会「${String(payload.name)}」，不能记成技能`);
       continue;

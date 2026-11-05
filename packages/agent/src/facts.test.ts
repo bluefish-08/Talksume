@@ -688,3 +688,99 @@ describe("applyFacts duplicates", () => {
     expect(again.profile).toEqual(first.profile);
   });
 });
+
+describe("applyFacts: role, kind and city grounding", () => {
+  const proj = (payload: Record<string, unknown>, quote: string) => fact("projects", payload, quote);
+
+  it("drops a role that only says who it was done with, keeps what the user did", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        proj({ name: "成绩管理系统", role: "与两名同学共同参与" }, "和两个同学一起做了个成绩管理系统"),
+        proj({ name: "义诊", role: "小组成员（与他人共同参与）" }, "和其他人一起做的"),
+        proj({ name: "食堂数据分析", role: "独立完成" }, "我一个人做的"),
+        proj({ name: "迎新宣传", role: "负责海报，与同学合作" }, "我负责海报，和同学一起弄"),
+        proj({ name: "社团活动", role: "小组成员" }, "我是小组成员"),
+      ],
+      ctx,
+    );
+    expect(result.dropped.filter((d) => d.field === "role").map((d) => d.index)).toEqual([0, 1]);
+    const roles = [...result.profile.projects, ...result.drafts.map((d) => d.item)].map((p) => [
+      p.name,
+      p.role,
+    ]);
+    expect(roles).toContainEqual(["食堂数据分析", "独立完成"]);
+    expect(roles).toContainEqual(["迎新宣传", "负责海报，与同学合作"]);
+    expect(roles).toContainEqual(["社团活动", "小组成员"]);
+  });
+
+  it("treats kind=project as unset but keeps campus", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        proj(
+          { name: "淘宝店", kind: "project", role: "独立完成", situation: "实训课开的店" },
+          "实训课上开了淘宝店，我一个人做的",
+        ),
+        proj(
+          { name: "宣传部", kind: "campus", role: "负责宣传", situation: "学生会宣传部" },
+          "我在宣传部负责宣传",
+        ),
+      ],
+      ctx,
+    );
+    expect(result.profile.projects.map((p) => [p.name, p.kind])).toEqual([
+      ["淘宝店", undefined],
+      ["宣传部", "campus"],
+    ]);
+  });
+
+  it("does not take a city from the school or company name", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        fact("education", { school: "江城商贸职业学院", city: "江城" }, "我在江城商贸职业学院读电子商务"),
+        fact("education", { school: "江城理工大学", city: "江城" }, "江城理工大学，我家就在江城"),
+      ],
+      ctx,
+    );
+    expect(result.facts.map((f) => f.payload.city)).toEqual([undefined, "江城"]);
+    expect(result.dropped).toEqual([expect.objectContaining({ index: 0, field: "city" })]);
+  });
+});
+
+describe("applyFacts: job type and ongoing dates", () => {
+  it("keeps a job type only when the quote names it", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        fact("intention", { roles: ["数据分析"], jobType: "campus" }, "找数据分析的，全职"),
+        fact("intention", { jobType: "campus" }, "校招吧"),
+      ],
+      ctx,
+    );
+    expect(result.dropped).toEqual([expect.objectContaining({ index: 0, field: "jobType" })]);
+    expect(result.profile.intention.jobType).toBe("campus");
+  });
+
+  it("drops end=present unless the quote says it is still going", () => {
+    const result = applyFacts(
+      Profile.parse({}),
+      [
+        fact(
+          "projects",
+          { name: "宣传部", end: "present", role: "负责宣传", situation: "学生会宣传部" },
+          "我在学生会宣传部负责宣传",
+        ),
+        fact(
+          "projects",
+          { name: "志愿队", end: "present", role: "队员", situation: "社区志愿" },
+          "社区志愿队的队员，现在还在",
+        ),
+      ],
+      ctx,
+    );
+    expect(result.dropped.filter((d) => d.field === "end").map((d) => d.index)).toEqual([0]);
+    expect(result.profile.projects.map((p) => p.end)).toEqual([undefined, "present"]);
+  });
+});
