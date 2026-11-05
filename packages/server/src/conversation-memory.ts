@@ -62,6 +62,7 @@ export function gatewaySummarizer(gateway: Pick<Gateway, "completeStructured">):
   return async (transcript, signal) => {
     const { value } = await gateway.completeStructured({
       purpose: "memory",
+      background: true,
       system: SYSTEM,
       prompt: transcriptPrompt(transcript),
       schema: SCHEMA,

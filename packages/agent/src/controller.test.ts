@@ -9,7 +9,7 @@ import {
 import { Profile } from "@talksume/core";
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
-import { createIntakeController } from "./controller.ts";
+import { createIntakeController, type TurnMetrics } from "./controller.ts";
 import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
 import type { IntakeEvent } from "./types.ts";
 import { createIntakeState } from "./types.ts";
@@ -44,6 +44,8 @@ const upsert = (facts: JsonObject[]) => fauxToolCall("upsert_facts", { facts });
 const ask = (question: string) => fauxToolCall("ask_user", { question });
 
 const types = (events: IntakeEvent[]) => events.map((e) => e.type);
+const tokens = (events: IntakeEvent[]) =>
+  events.flatMap((e) => (e.type === "token" ? [e.text] : [])).join("");
 const asks = (events: IntakeEvent[]) => events.flatMap((e) => (e.type === "ask" ? [e] : []));
 const completenessOf = (events: IntakeEvent[]) => {
   const last = events.at(-1);
@@ -363,6 +365,59 @@ describe("intake controller: contradictions, fallbacks and errors", () => {
     expect(events.find((e) => e.type === "error")).toBeUndefined();
     expect(state.history.at(-1)?.content).toBe("记下了。先认识一下，怎么称呼你？");
     expect(state.profile.intention.roles).toEqual(["全栈工程师"]);
+  });
+
+  it("正文说到一半断流时，扣下的半句丢掉，让模型接着往下说并补上写入", async () => {
+    const quote = "和两个同学一起做了个学生成绩管理系统";
+    const { controller } = fake([
+      fauxAssistantMessage([fauxText("这个项目挺实在的。我把这些")], {
+        stopReason: "error",
+        errorMessage: "[llm:timeout] 响应中断（20000ms 无数据）",
+      }),
+      (context) => {
+        const note = JSON.stringify(context.messages.at(-1));
+        expect(note).toContain("用户只看到了「这个项目挺实在的。」");
+        expect(note).not.toContain("我把这些");
+        return fauxAssistantMessage(
+          [
+            fauxText("做的时候遇到过什么难点？"),
+            upsert([{ section: "projects", payload: { name: "学生成绩管理系统" }, quote }]),
+            ask("做的时候遇到过什么难点？"),
+          ],
+          { stopReason: "toolUse" },
+        );
+      },
+    ]);
+    const state = createIntakeState();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m1", text: `Java 课设，${quote}，我负责成绩录入` }),
+    );
+    expect(events.find((e) => e.type === "error")).toBeUndefined();
+    expect(state.profile.projects.map((p) => p.name)).toEqual(["学生成绩管理系统"]);
+    expect(state.history.at(-1)?.content).toBe("这个项目挺实在的。做的时候遇到过什么难点？");
+    expect(tokens(events)).toBe("这个项目挺实在的。做的时候遇到过什么难点？");
+  });
+
+  it("接着说也断了时报错，存下的回复去掉末尾半句", async () => {
+    const broken = (text: string) =>
+      fauxAssistantMessage(text ? [fauxText(text)] : [], {
+        stopReason: "error",
+        errorMessage: "[llm:timeout] 响应中断（20000ms 无数据）",
+      });
+    const { core, controller } = fake([
+      toolTurn(
+        upsert([{ section: "intention", payload: { roles: ["Java 开发"] }, quote: "想找 Java 开发" }]),
+      ),
+      broken("目标很清晰。回到那个项目：做的过程中有遇到什么卡"),
+      broken(""),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "想找 Java 开发" }));
+    expect(core.state.callCount).toBe(3);
+    expect(events.find((e) => e.type === "error")).toMatchObject({ code: "timeout", recoverable: true });
+    expect(state.profile.intention.roles).toEqual(["Java 开发"]);
+    expect(state.history.at(-1)?.content).toBe("目标很清晰。");
+    expect(tokens(events)).toBe("目标很清晰。");
   });
 
   it("reports an unrecoverable quota error from the gateway without touching history", async () => {
@@ -801,6 +856,95 @@ describe("intake controller: digging into one experience", () => {
     expect(prompts[6]).toContain("项目经历-校园二手平台-量化结果");
   });
 
+  it("写入和追问在同一次回复里发出时，一轮只调一次模型", async () => {
+    const core = createFauxCore({ models: [{ id: "fake-model" }] });
+    core.setResponses([
+      fauxAssistantMessage(
+        [
+          fauxText("Java 加 MySQL 挺扎实。这个项目里你具体负责哪一块？"),
+          upsert([
+            {
+              section: "projects",
+              payload: { name: "校园二手平台", techStack: ["Java", "MySQL"] },
+              quote: "Java 和 MySQL",
+            },
+          ]),
+          ask("这个项目里你具体负责哪一块？"),
+        ],
+        { stopReason: "toolUse" },
+      ),
+    ]);
+    const prompts: string[] = [];
+    const metrics: TurnMetrics[] = [];
+    const controller = createIntakeController({
+      streamFn: (model, context, options) => {
+        const first = context.messages[0];
+        if (first?.role === "system") prompts.push(JSON.stringify(first.content));
+        return core.streamSimple(model, context, options);
+      },
+      model: core.getModel(),
+      genId,
+      onMetrics: (m) => metrics.push(m),
+    });
+    const state = seeded();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m1", text: "用的 Java 和 MySQL" }),
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(state.profile.projects[0]?.techStack).toEqual(["Java", "MySQL"]);
+    expect(asks(events)).toEqual([expect.objectContaining({ inText: true })]);
+    expect(state.history.at(-1)?.content).toBe("Java 加 MySQL 挺扎实。这个项目里你具体负责哪一块？");
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]?.modelCalls.map((c) => c.toolCalls)).toEqual([["upsert_facts", "ask_user"]]);
+    expect(metrics[0]?.tools.map((t) => t.name)).toEqual(["upsert_facts", "ask_user"]);
+    expect(metrics[0]?.firstTokenMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("同一次发出的写入被拒时，问题已送出，再给一次只改写入的机会", async () => {
+    const prompts: string[] = [];
+    const { controller } = fake(
+      [
+        fauxAssistantMessage(
+          [
+            fauxText("这个项目里你具体负责哪一块？"),
+            upsert([
+              {
+                section: "projects",
+                payload: { name: "校园二手平台", techStack: ["Java", "MySQL"] },
+                quote: "Java 和 MySQL 还有 Redis",
+              },
+            ]),
+            ask("这个项目里你具体负责哪一块？"),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        (context) => {
+          expect(JSON.stringify(context.messages.at(-1))).toContain("不要再输出文字");
+          return toolTurn(
+            upsert([
+              {
+                section: "projects",
+                payload: { name: "校园二手平台", techStack: ["Java", "MySQL"] },
+                quote: "Java 和 MySQL",
+              },
+            ]),
+          );
+        },
+      ],
+      prompts,
+    );
+    const state = seeded();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m1", text: "用的 Java 和 MySQL" }),
+    );
+
+    expect(prompts).toHaveLength(2);
+    expect(state.profile.projects[0]?.techStack).toEqual(["Java", "MySQL"]);
+    expect(asks(events)).toHaveLength(1);
+    expect(state.history.at(-1)?.content).toBe("这个项目里你具体负责哪一块？");
+  });
+
   it("does not treat 记不清 as a skip when a different question is pending", async () => {
     const { controller } = fake([toolTurn(ask("你具体负责哪一块？"))]);
     const state = seeded();
@@ -823,6 +967,27 @@ describe("intake controller: claimed but not written", () => {
     expect(state.profile.skills.map((s) => s.name)).toEqual(["Python"]);
     expect(asks(events).map((a) => a.question)).toEqual(["还会别的吗？"]);
     expect(state.history.filter((t) => t.role === "user").map((t) => t.content)).toEqual(["我会 Python"]);
+  });
+
+  it("同一次回复里还调了别的工具时，提醒也能送到模型", async () => {
+    const { core, controller } = fake([
+      fauxAssistantMessage(
+        [
+          fauxText("Python 记下了。还会别的吗？"),
+          upsert([{ section: "skills", payload: { name: "Python" }, quote: "我会 Python 和 Go" }]),
+          ask("还会别的吗？"),
+        ],
+        { stopReason: "toolUse" },
+      ),
+      (context) => {
+        expect(JSON.stringify(context.messages.at(-1))).toContain("你在回复里说已经记下");
+        return toolTurn(upsert([{ section: "skills", payload: { name: "Python" }, quote: "我会 Python" }]));
+      },
+    ]);
+    const state = createIntakeState();
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "我会 Python" }));
+    expect(state.profile.skills.map((s) => s.name)).toEqual(["Python"]);
+    expect(core.state.callCount).toBe(2);
   });
 
   it("does not nudge a plain answer that claims nothing", async () => {

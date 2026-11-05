@@ -47,7 +47,8 @@ export interface RunContext {
   verifyQuote: boolean;
   genId: (prefix: string) => string;
   emit(event: IntakeEvent): void;
-  flags: { asked: boolean; changed: boolean; jobs?: boolean };
+  /** rejected：本轮有 upsert_facts 条目被拒，等待模型修正。 */
+  flags: { asked: boolean; changed: boolean; jobs?: boolean; rejected?: boolean };
 }
 
 export function normalizeQuote(text: string): string {
@@ -409,7 +410,10 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
         );
         lines.push(`已忽略这些推测字段（事实其余部分照常写入），用户没说就留空：\n${dropped.join("\n")}`);
       }
-      if (rejected.length > 0) lines.push(`被拒绝：\n${rejected.join("\n")}`);
+      if (rejected.length > 0) {
+        ctx.flags.rejected = true;
+        lines.push(`被拒绝：\n${rejected.join("\n")}`);
+      }
       const next = nextSlotOf(state);
       lines.push(next ? `下一个目标：\n${describeSlot(next)}` : "下一个目标：无，信息已基本完整。");
       return text(lines.join("\n"), confirmed === 0 && result.conflicts.length === 0 && rejected.length > 0);

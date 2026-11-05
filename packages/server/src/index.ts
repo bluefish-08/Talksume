@@ -5,6 +5,7 @@ export {
   type LlmDeps,
   type LlmModelOption,
   type RouteModule,
+  type TurnReport,
 } from "./app.ts";
 export { type ConversationSummarizer, gatewaySummarizer } from "./conversation-memory.ts";
 export { type ConversationTitler, gatewayTitler } from "./conversation-title.ts";

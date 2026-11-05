@@ -1,6 +1,6 @@
 import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Model, ToolResultMessage } from "@earendil-works/pi-ai";
-import { errorKindOf } from "@talksume/llm-gateway";
+import { errorKindOf, isRetryableKind } from "@talksume/llm-gateway";
 import { computeCompleteness, SECTION_SPECS } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { createJobTools, withoutCards } from "./job-tools.ts";
@@ -45,6 +45,38 @@ export interface IntakeDeps {
   jobs?: JobTools;
   /** 按岗位定制简历；需同时提供 jobs。 */
   tailor?: ResumeTailor;
+  /** 每轮结束时回报耗时，时间都相对本轮开始，单位毫秒。 */
+  onMetrics?: (metrics: TurnMetrics) => void;
+}
+
+export interface ModelCallMetric {
+  startMs: number;
+  firstTokenMs?: number;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  stopReason: string;
+  toolCalls: string[];
+}
+
+export interface ToolMetric {
+  name: string;
+  startMs: number;
+  durationMs: number;
+  isError: boolean;
+}
+
+export interface TurnMetrics {
+  totalMs: number;
+  /** 第一段非空白正文送出的时间。 */
+  firstTokenMs?: number;
+  /** 第一条事件（正文、卡片、追问等）送出的时间。 */
+  firstEventMs?: number;
+  modelCalls: ModelCallMetric[];
+  tools: ToolMetric[];
+  nudged: boolean;
+  error?: string;
 }
 
 export interface UserMessage {
@@ -201,6 +233,21 @@ function nudgeText(subjects: string[], asked: boolean): string {
   return `[系统提示，不是用户发言] 你在回复里说已经记下${what}，但画像里没有${what ? "这些内容" : "新写入的内容"}（没有调用 upsert_facts 或调用失败）。请现在用 upsert_facts 写入用户上一条消息里对应的信息（quote 逐字摘抄原话）。${asked ? "问题已经发给用户，写完不要再输出文字，也不要再调用 ask_user。" : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
 }
 
+const REPAIR_TEXT =
+  "[系统提示，不是用户发言] 上面 upsert_facts 有条目被拒绝。问题已经发给用户，请按拒绝原因修正后只重新调用 upsert_facts，quote 逐字摘抄用户原话；改不了的就不写。不要再输出文字，也不要再调用 ask_user。";
+
+function resumeText(shown: string): string {
+  const seen = shown
+    ? `用户只看到了「${shown.slice(-60)}」，后面的内容没有送达。接着往下说，不要重复用户已经看到的话`
+    : "用户还没看到你的任何回复，请重新回复";
+  return `[系统提示，不是用户发言] 网络中断，你刚才的回复没发完。${seen}；然后照常做完这一轮没做完的事（用 upsert_facts 写入用户刚才说的信息、再问下一个问题），问题已经问出口就不要再问。`;
+}
+
+/** 最终还是断了时，存下来的回复只留到最后一个完整句子。 */
+function withoutFragment(text: string): string {
+  return text.match(/^[\s\S]*[。！？!?…\n]/)?.[0] ?? "";
+}
+
 function clarifyQuestion(quote: string | undefined): string {
   return quote
     ? `我没能准确记下你说的「${quote.slice(0, 40)}」，可以再具体说一下吗？`
@@ -256,6 +303,15 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     options: { signal?: AbortSignal } = {},
   ): AsyncGenerator<IntakeEvent, void> {
     const { user } = turn;
+    const startedAt = performance.now();
+    const since = () => Math.round(performance.now() - startedAt);
+    const modelCalls: ModelCallMetric[] = [];
+    const toolMetrics: ToolMetric[] = [];
+    const toolStarts = new Map<string, number>();
+    let callStart: number | undefined;
+    let callFirstToken: number | undefined;
+    let firstTokenMs: number | undefined;
+    let firstEventMs: number | undefined;
     const queue = new EventQueue();
     const asks: string[] = [];
     const changes: ProfileChange[] = [...(turn.seedChanges ?? [])];
@@ -336,6 +392,19 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let modelTurns = 0;
     let wrote = false;
     let nudged = false;
+    let repaired = false;
+    let resumed = false;
+    // 正文按整句送出：断流时没说完的半句扣下，不让用户看到
+    let unsent = "";
+    const sendText = (all: boolean) => {
+      const at = all ? unsent.length : Math.max(...[..."。！？!?…\n"].map((c) => unsent.lastIndexOf(c))) + 1;
+      if (at <= 0) return;
+      const text = unsent.slice(0, at);
+      unsent = unsent.slice(at);
+      if (/\S/.test(text)) firstTokenMs ??= since();
+      queue.push({ type: "token", text });
+    };
+    let broken: { afterText: boolean; inTools: boolean } | undefined;
     let skipFailed = false;
     let skipDone = false;
     const toolArgs = new Map<string, unknown>();
@@ -361,7 +430,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         ],
         messages: historyToMessages(state, deps.model, historyLimit),
       },
-      streamFn: deps.streamFn,
+      streamFn: (model, context, opts) => {
+        callStart = since();
+        callFirstToken = undefined;
+        return deps.streamFn(model, context, opts);
+      },
       toolExecution: "sequential",
       finishTurn: (turn) => {
         if (turn.message.role === "assistant" && turn.message.stopReason === "error") return;
@@ -369,13 +442,21 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         const calledTool =
           turn.message.role === "assistant" && turn.message.content.some((c) => c.type === "toolCall");
         const stopping = flags.asked || !calledTool;
+        const rejected = flags.rejected;
+        flags.rejected = false;
         if (user && stopping && !nudged && failures < 2 && modelTurns < maxModelTurns) {
           const missed = unrecorded();
           if (missed.length > 0) {
             nudged = true;
-            agent.followUp({ role: "user", content: nudgeText(missed, flags.asked), timestamp: Date.now() });
+            agent.steer({ role: "user", content: nudgeText(missed, flags.asked), timestamp: Date.now() });
             return { action: "continue" };
           }
+        }
+        // 写入和追问同一次发出时，被拒的条目没有机会改；问题已送出，再给一次只改写入的机会
+        if (rejected && flags.asked && !repaired && failures < 2 && modelTurns < maxModelTurns) {
+          repaired = true;
+          agent.steer({ role: "user", content: REPAIR_TEXT, timestamp: Date.now() });
+          return { action: "continue" };
         }
         if (flags.asked || failures >= 2 || modelTurns >= maxModelTurns) return { action: "end" };
       },
@@ -385,20 +466,50 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       switch (event.type) {
         case "message_update":
           if (event.assistantMessageEvent.type === "text_delta") {
+            if (/\S/.test(event.assistantMessageEvent.delta)) callFirstToken ??= since();
             assistantText += event.assistantMessageEvent.delta;
-            queue.push({ type: "token", text: event.assistantMessageEvent.delta });
+            unsent += event.assistantMessageEvent.delta;
+            sendText(false);
           }
           break;
         case "message_end":
+          if (event.message.role === "assistant" && event.message.stopReason !== "error") sendText(true);
+          if (event.message.role === "assistant") {
+            const { usage, content, stopReason } = event.message;
+            const start = callStart ?? since();
+            modelCalls.push({
+              startMs: start,
+              ...(callFirstToken !== undefined && { firstTokenMs: callFirstToken }),
+              durationMs: since() - start,
+              inputTokens: usage.input,
+              outputTokens: usage.output,
+              cacheReadTokens: usage.cacheRead,
+              stopReason,
+              toolCalls: content.flatMap((c) => (c.type === "toolCall" ? [c.name] : [])),
+            });
+            callStart = undefined;
+          }
           if (event.message.role === "assistant" && event.message.stopReason === "error") {
             llmError = event.message.errorMessage ?? "unknown error";
+            broken = {
+              afterText: callFirstToken !== undefined,
+              inTools: event.message.content.some((c) => c.type === "toolCall"),
+            };
           }
           break;
         case "tool_execution_start":
+          toolStarts.set(event.toolCallId, since());
           toolArgs.set(event.toolCallId, event.args);
           if (event.toolName === "upsert_facts") beforeWrite.set(event.toolCallId, snapshot());
           break;
-        case "tool_execution_end":
+        case "tool_execution_end": {
+          const start = toolStarts.get(event.toolCallId) ?? since();
+          toolMetrics.push({
+            name: event.toolName,
+            startMs: start,
+            durationMs: since() - start,
+            isError: event.isError,
+          });
           if (event.toolName === "skip_field") {
             if (event.isError) skipFailed = true;
             else skipDone = true;
@@ -415,22 +526,55 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
             if (typeof quote === "string") lastFailedQuote = quote;
           }
           break;
+        }
       }
     });
 
     options.signal?.addEventListener("abort", () => agent.abort(), { once: true });
 
-    const run = agent
-      .prompt(turn.prompt)
+    // 正文已经送到用户面前后才断流，网关没法整段重试；扣下的半句丢掉，让模型接着已送达的整句往下说并补上写入
+    const resumable = () => {
+      const kind = llmError && errorKindOf(llmError);
+      if (resumed || !broken?.afterText || !kind || !isRetryableKind(kind)) return false;
+      if (options.signal?.aborted || modelTurns >= maxModelTurns) return false;
+      return broken.inTools || !(flags.asked || /[?？]/.test(assistantText));
+    };
+    const run = (async () => {
+      await agent.prompt(turn.prompt);
+      if (!resumable()) return;
+      resumed = true;
+      assistantText = assistantText.slice(0, assistantText.length - unsent.length);
+      unsent = "";
+      llmError = undefined;
+      broken = undefined;
+      agent.steer({ role: "user", content: resumeText(assistantText.trim()), timestamp: Date.now() });
+      await agent.continue();
+    })()
       .catch((error: unknown) => {
         llmError = error instanceof Error ? error.message : String(error);
       })
       .finally(() => queue.close());
 
-    for await (const event of queue) yield event;
+    for await (const event of queue) {
+      firstEventMs ??= since();
+      yield event;
+    }
     await run;
+    const report = () =>
+      deps.onMetrics?.({
+        totalMs: since(),
+        ...(firstTokenMs !== undefined && { firstTokenMs }),
+        firstEventMs: firstEventMs ?? since(),
+        modelCalls,
+        tools: toolMetrics,
+        nudged,
+        ...(llmError && { error: llmError }),
+      });
 
-    if (options.signal?.aborted) return;
+    if (options.signal?.aborted) {
+      report();
+      return;
+    }
     if (!about && cards.length > 0) yield { type: "jobs", source: cardSource, jobs: cards };
 
     // 模型想跳过却没跳成：按上一轮问的（或本轮目标）字段替它跳过，免得下一轮又卡在同一处
@@ -502,7 +646,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       }
     }
 
-    const reply = [assistantText.trim(), ...asks].filter(Boolean).join("\n");
+    const shown = llmError ? withoutFragment(assistantText) : assistantText;
+    const reply = [shown.trim(), ...asks].filter(Boolean).join("\n");
     const meta: TurnMeta = {
       ...(changes.length > 0 ? { changes } : {}),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
@@ -523,6 +668,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         });
       }
     }
+    report();
     yield completenessEvent(state);
   }
 

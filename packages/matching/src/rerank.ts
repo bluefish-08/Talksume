@@ -77,6 +77,8 @@ export interface RerankOptions {
   attempts?: number;
   retryDelayMs?: number;
   maxTokens?: number;
+  /** 批量预生成时为 true，给正在进行的对话让路。 */
+  background?: boolean;
   /** 每个报告生成后立刻回调，不必等整批结束。 */
   onReport?: (report: JobReport) => void | Promise<void>;
   onError?: (error: unknown, jobId: string) => void | Promise<void>;
@@ -113,6 +115,7 @@ export async function generateReport(
         maxTokens: opts.maxTokens ?? REPORT_MAX_TOKENS,
         maxRetries: GATEWAY_RETRIES,
         temperature: 0.2,
+        ...(opts.background && { background: true }),
       });
       return { jobId: scored.job.id, report: res.value, model: res.model };
     } catch (error) {

@@ -284,7 +284,11 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     const llm = options.llm;
     if (!llm) return;
     try {
-      await generateReports(llm, profile, ranked, { ...rerankOptions(userId), topN: topN() });
+      await generateReports(llm, profile, ranked, {
+        ...rerankOptions(userId),
+        topN: topN(),
+        background: true,
+      });
     } catch (error) {
       log("匹配报告生成失败", error);
     }

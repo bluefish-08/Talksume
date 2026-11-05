@@ -1,4 +1,4 @@
-import type { IntakeDeps } from "@talksume/agent";
+import type { IntakeDeps, TurnMetrics } from "@talksume/agent";
 import type { Edition } from "@talksume/core";
 import type { Db } from "@talksume/db";
 import type { MatchingServiceOptions } from "@talksume/matching";
@@ -35,6 +35,8 @@ export interface LlmDeps {
   resolve(choice: LlmChoice): Pick<IntakeDeps, "streamFn" | "model">;
 }
 
+export type TurnReport = TurnMetrics & { conversationId: string; model?: string };
+
 export interface AppDeps {
   edition: Edition;
   version: string;
@@ -50,6 +52,8 @@ export interface AppDeps {
   matching?: MatchingServiceOptions;
   /** 按岗位定制简历用的结构化输出模型；null 显式关闭，不传按环境变量。 */
   resumeLlm?: StructuredLlm | null;
+  /** 每轮对话的耗时，同时写进请求日志。 */
+  onTurnMetrics?: (metrics: TurnReport) => void;
   flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
 }
 

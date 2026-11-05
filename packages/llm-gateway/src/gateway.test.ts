@@ -1,12 +1,17 @@
 import {
+  type Api,
   type AssistantMessage,
+  type AssistantMessageEventStream,
   createAssistantMessageEventStream,
   createFauxCore,
   type FauxResponseFactory,
   fauxAssistantMessage,
   fauxText,
   fauxToolCall,
+  type Model,
   normalizeContext,
+  type SimpleStreamOptions,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { loadGatewayConfig } from "./config.ts";
@@ -275,32 +280,36 @@ describe("gateway retry and fallback", () => {
     expect(logs.every((l) => l.errorKind === "timeout")).toBe(true);
   });
 
-  it("gives up on a silent stream long before the total timeout and retries", async () => {
-    const logs: LlmCallLog[] = [];
+  const silentThenOk = (prefix: (stream: AssistantMessageEventStream) => void) => {
     const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }, { id: "glm-5.3" }] });
     core.setResponses([fauxAssistantMessage("好的")]);
     let calls = 0;
+    return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
+      if (++calls > 1) return core.streamSimple(model, context, options);
+      const stream = createAssistantMessageEventStream();
+      prefix(stream);
+      options?.signal?.addEventListener("abort", () => {
+        const message: AssistantMessage = {
+          ...fauxAssistantMessage([], { stopReason: "aborted" }),
+          model: model.id,
+        };
+        stream.push({ type: "error", reason: "aborted", error: message });
+      });
+      return stream;
+    };
+  };
+
+  it("一直没有数据时按空闲时限断开，立刻重试不退避", async () => {
+    const logs: LlmCallLog[] = [];
+    const sleeps: number[] = [];
     const gateway = createGateway(
-      loadGatewayConfig(baseEnv, {
-        timeoutMs: 60_000,
-        idleTimeoutMs: 20,
-        maxRetries: 1,
-        retryBaseDelayMs: 1,
-      }),
+      loadGatewayConfig(baseEnv, { timeoutMs: 60_000, idleTimeoutMs: 20, maxRetries: 1 }),
       {
-        baseStream: (model, context, options) => {
-          if (++calls > 1) return core.streamSimple(model, context, options);
-          const stream = createAssistantMessageEventStream();
-          options?.signal?.addEventListener("abort", () => {
-            const message: AssistantMessage = {
-              ...fauxAssistantMessage([], { stopReason: "aborted" }),
-              model: model.id,
-            };
-            stream.push({ type: "error", reason: "aborted", error: message });
-          });
-          return stream;
-        },
+        baseStream: silentThenOk(() => {}),
         onLog: (l) => logs.push(l),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
       },
     );
     const started = Date.now();
@@ -309,6 +318,65 @@ describe("gateway retry and fallback", () => {
     expect(result.text).toBe("好的");
     expect(logs.map((l) => l.errorKind ?? "ok")).toEqual(["timeout", "ok"]);
     expect(logs[0]?.errorMessage).toContain("无数据");
+    expect(sleeps).toEqual([]);
+  });
+
+  it("只出了空行就卡住仍按未送出处理，空闲超时后整段重试", async () => {
+    const logs: LlmCallLog[] = [];
+    const partial = fauxAssistantMessage([]);
+    const gateway = createGateway(
+      loadGatewayConfig(baseEnv, { timeoutMs: 60_000, idleTimeoutMs: 20, maxRetries: 1 }),
+      {
+        baseStream: silentThenOk((stream) => {
+          stream.push({ type: "start", partial });
+          stream.push({ type: "text_start", contentIndex: 0, partial });
+          stream.push({ type: "text_delta", contentIndex: 0, delta: "\n\n", partial });
+        }),
+        onLog: (l) => logs.push(l),
+      },
+    );
+    const deltas: string[] = [];
+    const stream = gateway.streamFn("p")(
+      gateway.primaryModel,
+      normalizeContext({ messages: [{ role: "user", content: "x", timestamp: 0 }] }),
+    );
+    for await (const event of stream) if (event.type === "text_delta") deltas.push(event.delta);
+    const message = await stream.result();
+    expect(message.stopReason).toBe("stop");
+    expect(deltas.join("")).toBe("好的");
+    expect(logs.map((l) => l.errorKind ?? "ok")).toEqual(["timeout", "ok"]);
+    expect(logs[0]?.errorMessage).toContain("无数据");
+  });
+
+  it("后台调用等前台调用结束才发出", async () => {
+    const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }] });
+    core.setResponses([fauxAssistantMessage("前台"), fauxAssistantMessage("后台")]);
+    const started: string[] = [];
+    let release = () => {};
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const gateway = createGateway(loadGatewayConfig(baseEnv), {
+      priority: { graceMs: 0, maxWaitMs: 5_000, pollMs: 5 },
+      baseStream: (model, context, options) => {
+        const label = JSON.stringify(context.messages).includes("前台") ? "fg" : "bg";
+        started.push(label);
+        if (label !== "fg") return core.streamSimple(model, context, options);
+        const out = createAssistantMessageEventStream();
+        void hold.then(async () => {
+          for await (const event of core.streamSimple(model, context, options)) out.push(event);
+        });
+        return out;
+      },
+    });
+    const foreground = gateway.complete({ purpose: "intake", prompt: "前台" });
+    const background = gateway.complete({ purpose: "title", prompt: "后台", background: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(started).toEqual(["fg"]);
+    release();
+    expect((await foreground).text).toBe("前台");
+    expect((await background).text).toBe("后台");
+    expect(started).toEqual(["fg", "bg"]);
   });
 
   it("propagates caller aborts without retrying", async () => {

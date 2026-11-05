@@ -70,6 +70,7 @@ export function gatewayTitler(gateway: Pick<Gateway, "complete">): ConversationT
         : "";
       const { text } = await gateway.complete({
         purpose: "title",
+        background: true,
         system: SYSTEM,
         prompt: `对话：\n${titleTranscript(turns)}${keep}`,
         thinking: false,

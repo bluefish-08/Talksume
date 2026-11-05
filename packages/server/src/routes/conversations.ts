@@ -12,7 +12,7 @@ import {
 import { profileToResume } from "@talksume/core";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { LlmDeps, RouteModule } from "../app.ts";
+import type { LlmDeps, RouteModule, TurnReport } from "../app.ts";
 import { summarizePrevious } from "../conversation-memory.ts";
 import {
   createConversation,
@@ -57,6 +57,10 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   const { db } = deps;
   const busy = new Set<string>();
   const titles = createTitleScheduler(db, deps.titler, app.log);
+  const reportTurn = (req: FastifyRequest, metrics: TurnReport) => {
+    req.log.info({ turn: metrics }, "chat turn");
+    deps.onTurnMetrics?.(metrics);
+  };
   app.addHook("onClose", () => titles.drain());
   const jobService = matchingServiceFor(db, deps.matching ?? {}, app.log);
   const chatTools = (userId: string) => ({
@@ -213,6 +217,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
       ...llm.resolve({ model, thinking }),
       genId,
       ...chatTools(req.userId),
+      onMetrics: (metrics) => reportTurn(req, { conversationId: id, model, ...metrics }),
     });
     const messageId = randomUUID();
     await streamTurn(req, reply, id, loaded, `${messageId}:reply`, (signal) =>
@@ -234,6 +239,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const controller = createIntakeController({
       ...resolveDefault(),
       ...chatTools(req.userId),
+      onMetrics: (metrics) => reportTurn(req, { conversationId: id, ...metrics }),
     });
     await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>
       controller.resolveConflict(loaded.state, conflictId, body.data.choice === "proposed", {

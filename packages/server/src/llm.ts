@@ -15,7 +15,8 @@ export function gatewayLlm(gateway: Gateway, purpose = "intake"): LlmDeps {
   return {
     models: ids.map(optionOf),
     resolve: ({ model, thinking }) => ({
-      streamFn: gateway.streamFn(purpose, { thinking }),
+      // 用户在等：主模型重试一次还不行就换备用，不在一个卡住的上游上耗满重试
+      streamFn: gateway.streamFn(purpose, { thinking, maxRetries: 1 }),
       model: model === fallbackModel.id ? fallbackModel : primaryModel,
     }),
   };

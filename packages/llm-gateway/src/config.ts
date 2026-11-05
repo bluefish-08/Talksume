@@ -34,6 +34,7 @@ export function loadGatewayConfig(
     model: env.LLM_MODEL || DEFAULT_MODEL,
     fallbackModel: env.LLM_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL,
     timeoutMs: 60_000,
+    // 压到 10 秒试过：上游拥塞时慢但能成功的请求被掐掉，整轮失败反而更多
     idleTimeoutMs: 20_000,
     maxRetries: 3,
     retryBaseDelayMs: 500,

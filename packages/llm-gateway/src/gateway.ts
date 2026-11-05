@@ -55,6 +55,53 @@ export interface GatewayDeps {
   /** 测试注入点，默认走 pi-ai 的 openai-completions 实现。 */
   baseStream?: BaseStream;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** 后台调用的排队参数，测试注入。 */
+  priority?: Partial<PriorityOptions>;
+}
+
+export interface PriorityOptions {
+  /** 前台调用结束后多久内仍算忙：同一轮对话的两次模型调用之间只隔着工具执行。 */
+  graceMs: number;
+  /** 后台调用最多等这么久，之后照常发出，免得持续有人聊天时永远轮不到。 */
+  maxWaitMs: number;
+  /** 同时在途的后台调用上限。 */
+  concurrency: number;
+  pollMs: number;
+}
+
+const DEFAULT_PRIORITY: PriorityOptions = { graceMs: 2_000, maxWaitMs: 15_000, concurrency: 2, pollMs: 200 };
+
+/** 同一个 key 并发一多上游首包就变慢，后台调用等前台空闲再发。 */
+function createPriorityGate(options: PriorityOptions) {
+  let foreground = 0;
+  let lastForegroundAt = 0;
+  let background = 0;
+  const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  return {
+    async enter(isBackground: boolean, signal?: AbortSignal): Promise<() => void> {
+      if (!isBackground) {
+        foreground++;
+        return () => {
+          foreground--;
+          lastForegroundAt = Date.now();
+        };
+      }
+      const deadline = Date.now() + options.maxWaitMs;
+      while (
+        !signal?.aborted &&
+        Date.now() < deadline &&
+        (foreground > 0 ||
+          Date.now() - lastForegroundAt < options.graceMs ||
+          background >= options.concurrency)
+      ) {
+        await pause(options.pollMs);
+      }
+      background++;
+      return () => {
+        background--;
+      };
+    },
+  };
 }
 
 export interface CompleteRequest {
@@ -70,12 +117,15 @@ export interface CompleteRequest {
   maxRetries?: number;
   /** 不传则按 config.disableThinking。 */
   thinking?: boolean;
+  /** 标题、摘要、批量报告这类用户没在等的调用，给正在进行的对话让路。 */
+  background?: boolean;
 }
 
 export interface StreamTuning {
   maxRetries?: number;
   /** 不传则按 config.disableThinking。 */
   thinking?: boolean;
+  background?: boolean;
 }
 
 export interface CompleteResult {
@@ -136,9 +186,9 @@ const defaultSleep = (ms: number, signal?: AbortSignal) =>
     );
   });
 
-/** 只有用户看得见的正文才算已送出；工具调用先攒着，中途卡住仍可整段重试。 */
+/** 只有用户看得见的正文才算已送出；工具调用和调用前的空行先攒着，中途卡住仍可整段重试。 */
 function isContentEvent(event: AssistantMessageEvent): boolean {
-  return event.type === "text_start" || event.type === "thinking_start" || event.type === "text_delta";
+  return event.type === "thinking_start" || (event.type === "text_delta" && /\S/.test(event.delta));
 }
 
 function emptyAssistantMessage(
@@ -181,12 +231,16 @@ function withThinkingOff(payload: unknown): unknown {
   };
 }
 
+// 匹配报告、简历导入等各自建网关，但打的是同一个上游 key，排队要在进程内共享
+const sharedGate = createPriorityGate(DEFAULT_PRIORITY);
+
 export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Gateway {
   const primaryModel = buildModel(config.model, config);
   const fallbackModel = buildModel(config.fallbackModel, config);
   const streams = openAICompletionsApi();
   const baseStream: BaseStream = deps.baseStream ?? ((m, c, o) => streams.streamSimple(m, c, o));
   const sleep = deps.sleep ?? defaultSleep;
+  const gate = deps.priority ? createPriorityGate({ ...DEFAULT_PRIORITY, ...deps.priority }) : sharedGate;
 
   const scrub = (text: string) =>
     (config.apiKey ? text.split(config.apiKey).join("***") : text).slice(0, 500);
@@ -256,6 +310,24 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
   }
 
   async function run(
+    purpose: string,
+    requested: Model<Api>,
+    context: TranscriptContext,
+    options: SimpleStreamOptions | undefined,
+    out: AssistantMessageEventStream,
+    maxRetries: number,
+    thinkingOff: boolean,
+    background: boolean,
+  ): Promise<void> {
+    const leave = await gate.enter(background, options?.signal);
+    try {
+      await attempts(purpose, requested, context, options, out, maxRetries, thinkingOff);
+    } finally {
+      leave();
+    }
+  }
+
+  async function attempts(
     purpose: string,
     requested: Model<Api>,
     context: TranscriptContext,
@@ -414,7 +486,10 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
           return;
         }
         if (isRetryableKind(kind) && retry < maxRetries) {
-          await sleep(config.retryBaseDelayMs * 2 ** retry, callerSignal);
+          // 超时和断连换一条连接立刻重来就行，退避只对限流和 5xx 有意义
+          if (kind !== "timeout" && kind !== "network") {
+            await sleep(config.retryBaseDelayMs * 2 ** retry, callerSignal);
+          }
           continue;
         }
         break;
@@ -431,19 +506,26 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     const thinkingOff = tuning.thinking === undefined ? config.disableThinking : !tuning.thinking;
     return (model, context, options) => {
       const out = createAssistantMessageEventStream();
-      run(purpose, model, context, options, out, tuning.maxRetries ?? config.maxRetries, thinkingOff).catch(
-        (error) => {
-          const text = error instanceof Error ? error.message : String(error);
-          out.push({
-            type: "error",
-            reason: "error",
-            error: {
-              ...emptyAssistantMessage(model, "error", ""),
-              errorMessage: tagErrorMessage("unknown", scrub(text)),
-            },
-          });
-        },
-      );
+      run(
+        purpose,
+        model,
+        context,
+        options,
+        out,
+        tuning.maxRetries ?? config.maxRetries,
+        thinkingOff,
+        tuning.background ?? false,
+      ).catch((error) => {
+        const text = error instanceof Error ? error.message : String(error);
+        out.push({
+          type: "error",
+          reason: "error",
+          error: {
+            ...emptyAssistantMessage(model, "error", ""),
+            errorMessage: tagErrorMessage("unknown", scrub(text)),
+          },
+        });
+      });
       return out;
     };
   }
@@ -465,6 +547,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     const tuning: StreamTuning = {
       ...(request.maxRetries !== undefined && { maxRetries: request.maxRetries }),
       ...(request.thinking !== undefined && { thinking: request.thinking }),
+      ...(request.background && { background: true }),
     };
     const message = await streamFn(request.purpose, tuning)(primaryModel, context, options).result();
     if (message.stopReason === "error" || message.stopReason === "aborted") {
@@ -496,6 +579,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         ...(request.maxTokens !== undefined ? { maxTokens: request.maxTokens } : {}),
         ...(request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {}),
         ...(request.thinking !== undefined ? { thinking: request.thinking } : {}),
+        ...(request.background && { background: true }),
         temperature: request.temperature ?? 0,
       });
       try {
