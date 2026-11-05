@@ -26,8 +26,15 @@ export interface Script {
   countAsks?: boolean;
 }
 
-/** main：历史里只有岗位工具（现状）；intake：建档工具调用也回放（S1a）。 */
+/** main：历史里只有岗位工具（S1a 之前）；intake：建档工具调用也回放（S1a）。 */
 export type Replay = "main" | "intake";
+
+/** 被测代码导出了 replayRecord 就说明它线上会回放建档调用，默认跟着它走。 */
+export function defaultReplay(target: Target): Replay {
+  return (target.agent as Partial<Target["agent"]>).replayRecord ? "intake" : "main";
+}
+
+type RawRecord = ToolRecord & { isError: boolean };
 
 export interface BuiltState {
   state: IntakeState;
@@ -38,11 +45,15 @@ export interface BuiltState {
 type AnyTool = {
   name: string;
   prepareArguments?: (args: unknown) => unknown;
-  execute: (id: string, params: unknown) => Promise<{ content: { type: string; text?: string }[] }>;
+  execute: (
+    id: string,
+    params: unknown,
+  ) => Promise<{ content: { type: string; text?: string }[]; isError?: boolean }>;
 };
 
 export async function buildState(target: Target, script: Script, replay: Replay): Promise<BuiltState> {
   const A = target.agent;
+  const replayRecord = (A as Partial<typeof A>).replayRecord;
   const state = A.createIntakeState({ profile: target.core.Profile.parse({}) });
   const genId = A.createIdGenerator();
   const log: BuiltState["log"] = [];
@@ -66,7 +77,7 @@ export async function buildState(target: Target, script: Script, replay: Replay)
       flags,
       spoken: () => "",
     }) as unknown as AnyTool[];
-    const records: ToolRecord[] = [];
+    const records: RawRecord[] = [];
     const call = async (name: string, args: Record<string, unknown>) => {
       const tool = tools.find((t) => t.name === name);
       if (!tool) throw new Error(`被测代码里没有工具 ${name}，探针台词需要改写`);
@@ -76,16 +87,22 @@ export async function buildState(target: Target, script: Script, replay: Replay)
         const params = tool.prepareArguments ? tool.prepareArguments(args) : args;
         const out = await tool.execute(`${id}_${records.length}`, params);
         result = out.content.map((c) => c.text ?? "").join("");
+        isError = out.isError === true;
       } catch (error) {
         result = error instanceof Error ? error.message : String(error);
         isError = true;
       }
-      if (/被拒绝|不合法|找不到|不是用户说过/.test(result)) isError = true;
-      log.push({ turn: round, tool: name, result, isError });
-      records.push({ name, args, result });
+      records.push({ name, args, result, isError });
+      log.push({
+        turn: round,
+        tool: name,
+        result,
+        isError: isError || /被拒绝|不合法|找不到|不是用户说过/.test(result),
+      });
     };
 
-    if (turn.skip) {
+    // 深挖项的简短拒答线上由 skipDeclined 在代码里跳过，不经模型，历史里也就没有 skip_field
+    if (turn.skip && !A.skipDeclined(state, turn.user)) {
       const asked = A.lastAskedKey(state);
       const slot = asked ? A.skippableSlot(state, asked) : null;
       if (!slot) throw new Error(`第 ${round} 轮要跳过的字段 ${asked ?? "（无）"} 不存在`);
@@ -94,6 +111,7 @@ export async function buildState(target: Target, script: Script, replay: Replay)
         name: "skip_field",
         args: { key: slot.key, quote: turn.user },
         result: `已记下用户不提供「${slot.label}」，以后不会再问。`,
+        isError: false,
       });
     }
     if (turn.choose) {
@@ -120,7 +138,11 @@ export async function buildState(target: Target, script: Script, replay: Replay)
         slotKey = slot.key;
       }
     }
-    const kept = replay === "intake" ? [...records, ...(turn.jobs ?? [])] : (turn.jobs ?? []);
+    const intake = records.flatMap(({ name, args, result, isError }) => {
+      if (!replayRecord) return [{ name, args, result }];
+      return replayRecord(name, args, result, isError) ?? [];
+    });
+    const kept = replay === "intake" ? [...intake, ...(turn.jobs ?? [])] : (turn.jobs ?? []);
     state.history.push({ id, role: "user", content: turn.user });
     state.history.push({
       id: `${id}:reply`,

@@ -23,7 +23,6 @@ import {
   wrapsUp,
 } from "./tools.ts";
 import type {
-  ChatTurn,
   IntakeEvent,
   IntakeState,
   JobCard,
@@ -126,6 +125,60 @@ class EventQueue {
   }
 }
 
+/** ask_user 的问题已经在回复正文里，不回放。 */
+const REPLAYED_INTAKE_TOOLS = new Set(["upsert_facts", "skip_field", "complete_section", "resolve_conflict"]);
+const REPLAY_RESULT_LIMIT = 400;
+/** 「下一个目标」和本轮提问的指引到了之后的轮次已经过时。 */
+const TURN_GUIDANCE = /\n?(?:下一个目标：|这一轮的回复|所有分区均已完成)[\s\S]*$/;
+
+function renumberFacts(text: string, kept: number[]): string {
+  return text.replace(/第 ([\d、]+) 条/g, (all, list: string) => {
+    const mapped = list
+      .split("、")
+      .map((n) => kept.indexOf(Number(n) - 1))
+      .filter((i) => i >= 0)
+      .map((i) => i + 1);
+    return mapped.length > 0 ? `第 ${mapped.join("、")} 条` : all;
+  });
+}
+
+/**
+ * 建档工具调用落库成历史回放用的记录；没生效的调用（报错、整批被拒）返回 undefined。
+ * 被拒的事实从参数里删掉，免得之后的轮次把没写进去的内容当成已记录。
+ */
+export function replayRecord(
+  name: string,
+  args: unknown,
+  result: string,
+  isError: boolean,
+): ToolRecord | undefined {
+  if (!REPLAYED_INTAKE_TOOLS.has(name)) return undefined;
+  const params = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  let text = result.replace(TURN_GUIDANCE, "");
+  let kept = params;
+  if (name === "upsert_facts") {
+    if (!text.startsWith("已写入")) return undefined;
+    const [head = "", refused] = text.split(/\n?被拒绝：\n/);
+    text = head;
+    if (refused !== undefined) {
+      const bad = new Set([...refused.matchAll(/^第 (\d+) 条/gm)].map((m) => Number(m[1]) - 1));
+      const facts = Array.isArray(params.facts) ? params.facts : [];
+      const keep = facts.flatMap((_, i) => (bad.has(i) ? [] : [i]));
+      if (keep.length === 0) return undefined;
+      kept = { ...params, facts: keep.map((i) => facts[i]) };
+      text = renumberFacts(text, keep);
+    }
+  } else if (isError || (name === "skip_field" && !text.includes("已记下"))) return undefined;
+  text = text.trim();
+  if (text.length > REPLAY_RESULT_LIMIT) text = `${text.slice(0, REPLAY_RESULT_LIMIT)}…`;
+  return { name, args: JSON.parse(JSON.stringify(kept)), result: text };
+}
+
+function resultText(result: unknown): string {
+  const content = (result as { content?: { type: string; text?: string }[] } | undefined)?.content ?? [];
+  return content.map((c) => (c.type === "text" ? (c.text ?? "") : "")).join("");
+}
+
 function historyToMessages(state: IntakeState, model: Model<Api>, limit: number): AgentMessage[] {
   const now = Date.now();
   const assistant = (content: AssistantMessage["content"], toolUse = false): AssistantMessage => ({
@@ -138,17 +191,23 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
     stopReason: toolUse ? "toolUse" : "stop",
     timestamp: now,
   });
-  const replayTools = (turn: ChatTurn, index: number): AgentMessage[] => {
-    const records = turn.meta?.tools ?? [];
-    if (records.length === 0) return [];
-    const ids = records.map((_, i) => `hist_${index}_${i}`);
+  const replayTools = (
+    records: ToolRecord[],
+    prefix: string,
+    lead: AssistantMessage["content"] = [],
+  ): AgentMessage[] => {
+    if (records.length === 0) return lead.length > 0 ? [assistant(lead)] : [];
+    const ids = records.map((_, i) => `${prefix}_${i}`);
     const calls = assistant(
-      records.map((r, i) => ({
-        type: "toolCall" as const,
-        id: ids[i] ?? "",
-        name: r.name,
-        arguments: r.args as never,
-      })),
+      [
+        ...lead,
+        ...records.map((r, i) => ({
+          type: "toolCall" as const,
+          id: ids[i] ?? "",
+          name: r.name,
+          arguments: r.args as never,
+        })),
+      ],
       true,
     );
     const results = records.map(
@@ -168,7 +227,12 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
     .filter((turn) => turn.content.trim())
     .flatMap((turn, index): AgentMessage[] => {
       if (turn.role === "user") return [{ role: "user", content: turn.content, timestamp: now }];
-      return [...replayTools(turn, index), assistant([{ type: "text", text: turn.content }])];
+      // 建档调用挂在正文之后：模型照历史学成先说话再写入，首字不被写入拖慢；岗位工具的正文依赖结果，仍放在前面
+      const records = turn.meta?.tools ?? [];
+      const text = [{ type: "text" as const, text: turn.content }];
+      const intake = records.filter((r) => REPLAYED_INTAKE_TOOLS.has(r.name));
+      const jobs = records.filter((r) => !REPLAYED_INTAKE_TOOLS.has(r.name));
+      return [...replayTools(jobs, `hist_${index}`), ...replayTools(intake, `hist_${index}_w`, text)];
     });
 }
 
@@ -539,6 +603,13 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           if (event.toolName === "upsert_facts" && !event.isError) {
             if (beforeWrite.get(event.toolCallId) !== snapshot()) wrote = true;
           }
+          const record = replayRecord(
+            event.toolName,
+            toolArgs.get(event.toolCallId),
+            resultText(event.result),
+            event.isError,
+          );
+          if (record) toolLog.push(record);
           if (event.isError) {
             failures++;
             if (event.toolName !== "upsert_facts") break;

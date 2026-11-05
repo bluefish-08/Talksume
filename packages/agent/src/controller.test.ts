@@ -9,7 +9,7 @@ import {
 import { Profile } from "@talksume/core";
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
-import { createIntakeController, type TurnMetrics } from "./controller.ts";
+import { createIntakeController, replayRecord, type TurnMetrics } from "./controller.ts";
 import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
 import type { IntakeEvent } from "./types.ts";
 import { createIntakeState } from "./types.ts";
@@ -1326,5 +1326,132 @@ describe("intake controller: declining a deep-dive question", () => {
     const e2 = await collect(controller.handleUserMessage(state, { id: "m2", text: "就是清华大学本科" }));
     expect(asks(e2).map((a) => a.kind)).toEqual(["followup"]);
     expect(state.history.at(-1)?.content).toBeTruthy();
+  });
+});
+
+describe("intake controller: replaying intake tool calls", () => {
+  it("records effective intake calls on the reply and replays them after its text next turn", async () => {
+    let seen: unknown[] = [];
+    const { controller } = fake([
+      toolTurn(
+        upsert([
+          { section: "basics", payload: { name: "王小明" }, quote: "我叫王小明" },
+          { section: "basics", payload: { phone: "13900002222" }, quote: "电话 13900002222" },
+        ]),
+        fauxToolCall("skip_field", { quote: "没说过这句" }),
+      ),
+      toolTurn(ask("手机号方便留一个吗？")),
+      (context) => {
+        seen = context.messages.filter((m) => m.role !== "system");
+        return fauxAssistantMessage([fauxText("好的。")]);
+      },
+    ]);
+    const state = createIntakeState();
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "我叫王小明" }));
+
+    const tools = state.history.at(-1)?.meta?.tools;
+    expect(tools).toEqual([
+      {
+        name: "upsert_facts",
+        args: { facts: [{ section: "basics", payload: { name: "王小明" }, quote: "我叫王小明" }] },
+        result: "已写入 1 条事实。",
+      },
+    ]);
+
+    await collect(controller.handleUserMessage(state, { id: "m2", text: "不方便" }));
+    const roles = seen.map((m) => (m as { role: string }).role);
+    expect(roles).toEqual(["user", "assistant", "toolResult", "user"]);
+    const replayed = JSON.stringify(seen[1]);
+    expect(replayed.indexOf("手机号方便留一个吗")).toBeLessThan(replayed.indexOf('"name":"upsert_facts"'));
+    expect(replayed).not.toContain("13900002222");
+    expect(JSON.stringify(seen[2])).toContain("已写入 1 条事实。");
+    expect(JSON.stringify(seen)).not.toContain("ask_user");
+  });
+
+  it("replays old histories that carry no intake records", async () => {
+    let seen: unknown[] = [];
+    const { controller } = fake([
+      (context) => {
+        seen = context.messages.filter((m) => m.role !== "system");
+        return toolTurn(ask("学校是哪所？"));
+      },
+    ]);
+    const state = createIntakeState({
+      history: [
+        { id: "o1", role: "user", content: "我叫王小明" },
+        {
+          id: "o1:reply",
+          role: "assistant",
+          content: "你好小明，手机号是多少？",
+          meta: { slot: "basics:_:phone" },
+        },
+      ],
+    });
+    await collect(controller.handleUserMessage(state, { id: "m1", text: "13900002222" }));
+    expect(seen.map((m) => (m as { role: string }).role)).toEqual(["user", "assistant", "user"]);
+  });
+});
+
+describe("replayRecord", () => {
+  const facts = [
+    { section: "skills", payload: { name: "Rust" }, quote: "会 Rust" },
+    { section: "skills", payload: { name: "Go" }, quote: "会 Go" },
+    { section: "skills", payload: { name: "Java" }, quote: "会 Java" },
+  ];
+
+  it("drops rejected facts, renumbers the rest and strips per-turn guidance", () => {
+    const result = [
+      "已写入 1 条事实。",
+      "第 3 条和已记录的内容一样，不用重复写入。",
+      "被拒绝：",
+      "第 1 条：quote「会 Rust」不是用户说过的原话",
+      "下一个目标：",
+      "- 技能",
+    ].join("\n");
+    expect(replayRecord("upsert_facts", { facts }, result, false)).toEqual({
+      name: "upsert_facts",
+      args: { facts: facts.slice(1) },
+      result: "已写入 1 条事实。\n第 2 条和已记录的内容一样，不用重复写入。",
+    });
+  });
+
+  it("skips calls that changed nothing", () => {
+    const allRejected = "已写入 0 条事实。\n被拒绝：\n第 1 条：x\n第 2 条：y\n第 3 条：z";
+    expect(replayRecord("upsert_facts", { facts }, allRejected, true)).toBeUndefined();
+    expect(replayRecord("upsert_facts", {}, "参数校验失败：facts 必填", true)).toBeUndefined();
+    expect(
+      replayRecord("complete_section", { section: "skills" }, "「技能」还缺必填信息", true),
+    ).toBeUndefined();
+    expect(
+      replayRecord(
+        "skip_field",
+        { key: "basics:_:name", quote: "不说" },
+        "key=basics:_:name 已有内容",
+        false,
+      ),
+    ).toBeUndefined();
+    expect(
+      replayRecord("ask_user", { question: "学校？" }, "问题已发送给用户，等待回答。", false),
+    ).toBeUndefined();
+    expect(replayRecord("recommend_jobs", {}, "推荐列表", false)).toBeUndefined();
+  });
+
+  it("keeps successful skips and completions without the next target, capped in length", () => {
+    expect(
+      replayRecord(
+        "complete_section",
+        { section: "awards", reason: "done" },
+        "已完成「奖项」。\n所有分区均已完成。",
+        false,
+      ),
+    ).toEqual({
+      name: "complete_section",
+      args: { section: "awards", reason: "done" },
+      result: "已完成「奖项」。",
+    });
+    const long = `已写入 1 条事实。\n${"暂存说明".repeat(200)}`;
+    expect(
+      replayRecord("upsert_facts", { facts: facts.slice(0, 1) }, long, false)?.result.length,
+    ).toBeLessThanOrEqual(401);
   });
 });

@@ -117,7 +117,9 @@ describe("对话里推荐和解读岗位", () => {
       fauxAssistantMessage([fauxText("挑了几个上海的后端实习，星河科技最对口。")]),
       (context) => {
         replayed = JSON.stringify(context.messages);
-        const result = context.messages.filter((m) => m.role === "toolResult").at(-1);
+        const result = context.messages
+          .filter((m) => m.role === "toolResult" && m.toolName === "recommend_jobs")
+          .at(-1);
         const second = /2\. jobId=([^｜]+)/.exec(JSON.stringify(result?.content))?.[1] ?? "missing";
         return toolTurn(fauxToolCall("explain_job", { jobId: second }));
       },

@@ -7,7 +7,7 @@ import { agentGateway, MODEL, Usage } from "../lib/llm.ts";
 import { pool, quantile } from "../lib/stats.ts";
 import { loadEnv, loadTarget, type Target } from "../lib/target.ts";
 import { runTurn, type TurnOutcome } from "../lib/turn.ts";
-import { buildState, type Replay } from "./builder.ts";
+import { buildState, defaultReplay, type Replay } from "./builder.ts";
 import { type Observation, snapshot } from "./checks.ts";
 import { PROBES, type Probe } from "./probes.ts";
 
@@ -232,7 +232,7 @@ if (import.meta.main) {
     options: {
       n: { type: "string", default: "8" },
       only: { type: "string" },
-      replay: { type: "string", default: "main" },
+      replay: { type: "string" },
       target: { type: "string", default: "." },
       concurrency: { type: "string", default: "6" },
       out: { type: "string" },
@@ -242,8 +242,8 @@ if (import.meta.main) {
   });
   const only = values.only?.split(",");
   const probes = only ? PROBES.filter((p) => only.includes(p.id)) : PROBES;
-  const replay = values.replay as Replay;
   const target = await loadTarget(values.target);
+  const replay = (values.replay as Replay | undefined) ?? defaultReplay(target);
   if (values.show) {
     await show(target, probes, replay);
   } else {

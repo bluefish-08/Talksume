@@ -42,7 +42,7 @@ node eval/gate.ts --base eval-out/probes-base.json --cand eval-out/probes-new.js
 node eval/personas/calibrate.ts
 ```
 
-- `probes/run.ts`：`--only id1,id2` 只跑部分探针；`--replay main|intake` 切换历史形态（`main`：`meta.tools` 只有岗位工具，等于现状；`intake`：建档工具调用也写进历史回放，S1a 用）；`--show` 不调模型，只打印每个探针重建出的状态（每轮的 slot、工具报错、规划器下一个目标），改台词后先看一眼。
+- `probes/run.ts`：`--only id1,id2` 只跑部分探针；`--replay main|intake` 切换历史形态（`main`：`meta.tools` 只有岗位工具，S1a 之前的线上形态；`intake`：建档工具调用也写进历史回放，记录经被测代码的 `replayRecord` 处理，和线上一致）。不给时按被测代码定：导出了 `replayRecord` 就用 `intake`，否则 `main`；`--show` 不调模型，只打印每个探针重建出的状态（每轮的 slot、工具报错、规划器下一个目标），改台词后先看一眼。
 - `personas/run.ts`：给了 `--b` 就两个版本交替跑（同一人设同一轮次 A、B 相邻，奇偶轮次换先后），抵消上游随时间的漂移；`--personas thin,intern` 只跑部分人设；`--no-judge` 不跑假称判定；`--from x.runs.jsonl` 不调模型，只从已存的运行记录重算报告，加 `--rejudge` 则用当前判定器重新判定假称（改了判定器后用）。每跑完一次就追加到 `.runs.jsonl`，中途断了也不丢。
 - 输出：`<out>.json`（完整数据）和 `<out>.md`（汇总表）。`eval-out/` 已加进 `.gitignore`。
 
