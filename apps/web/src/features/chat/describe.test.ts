@@ -28,3 +28,23 @@ describe("校园经历归类", () => {
     );
   });
 });
+
+describe("简历要点展示", () => {
+  it("要点显示中文名和新增的那条标题", () => {
+    const text = describeChange({
+      section: "projects",
+      itemId: "p1",
+      field: "highlights",
+      previous: [{ title: "成绩统计", detail: "实现按班级统计成绩" }],
+      value: [
+        { title: "成绩统计", detail: "实现按班级统计成绩" },
+        { title: "导入前数据校验", detail: "针对 Excel 格式混乱，导入前标出错误行" },
+      ],
+    });
+    expect(text).toBe("要点：导入前数据校验");
+  });
+
+  it("没有标题时退回显示细节", () => {
+    expect(formatValue({ detail: "导入前标出错误行" })).toBe("导入前标出错误行");
+  });
+});

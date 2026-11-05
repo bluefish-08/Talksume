@@ -19,6 +19,7 @@ const FIELD_LABELS: Record<ProfileSection, Record<string, string>> = {
     start: "开始时间",
     end: "结束时间",
     bullets: "成果",
+    highlights: "要点",
   },
   projects: {
     name: "项目名称",
@@ -28,6 +29,7 @@ const FIELD_LABELS: Record<ProfileSection, Record<string, string>> = {
     task: "任务",
     action: "行动",
     result: "成果",
+    highlights: "要点",
     start: "开始时间",
     end: "结束时间",
   },
@@ -66,6 +68,10 @@ export function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return value.map(formatValue).filter(Boolean).join("、");
   if (typeof value === "number") return `${value} 元`;
+  if (typeof value === "object") {
+    const { title, detail } = value as { title?: unknown; detail?: unknown };
+    return formatValue(typeof title === "string" && title ? title : detail);
+  }
   if (typeof value !== "string") return "";
   const text = /^\d{4}-\d{2}$/.test(value) ? value.replace("-", ".") : (ENUMS[value] ?? value);
   return text.length > MAX_LEN ? `${text.slice(0, MAX_LEN)}…` : text;
@@ -107,6 +113,11 @@ export function describeChange(change: ProfileChange): string {
     return change.value === "campus" ? "归入校园经历" : "归入项目经历";
   }
   const label = FIELD_LABELS[change.section][change.field] ?? change.field;
+  if (Array.isArray(change.value) && Array.isArray(change.previous)) {
+    const seen = new Set(change.previous.map((v) => JSON.stringify(v)));
+    const added = change.value.filter((v) => !seen.has(JSON.stringify(v)));
+    if (added.length > 0) return `${label}：${formatValue(added)}`;
+  }
   const next = formatValue(change.value);
   const prev = formatValue(change.previous);
   return prev && prev !== next && !Array.isArray(change.value)
