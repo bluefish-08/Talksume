@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 680 596" role="img">
+<title>现状：一次模型调用同时负责回应、抽取、追问和改写，靠事后规则补救</title>
+<desc>用户消息拼进 49 条规则的提示词，交给不开思考的 Flash 模型一次完成回应、抽取写入、决定追问、改写措辞四件事，再由约 20 条程序规则检查和补救</desc>
+<style>
+svg{color:#2c2c2a}
+.t,.th,.ts{font-family:system-ui,-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;fill:currentColor}
+.t,.th{font-size:14px}.th{font-weight:500}.ts{font-size:12px}
+.arr{stroke:currentColor;stroke-width:1.5;fill:none}
+.box{fill:none;stroke:currentColor;stroke-width:.5;stroke-dasharray:4 3}
+.c-purple>rect,.c-purple>ellipse{fill:#EEEDFE;stroke:#534AB7}.c-purple .th{fill:#3C3489}.c-purple .ts{fill:#534AB7}
+.c-teal>rect,.c-teal>ellipse{fill:#E1F5EE;stroke:#0F6E56}.c-teal .th{fill:#085041}.c-teal .ts{fill:#0F6E56}
+.c-coral>rect,.c-coral>ellipse{fill:#FAECE7;stroke:#993C1D}.c-coral .th{fill:#712B13}.c-coral .ts{fill:#993C1D}
+.c-gray>rect,.c-gray>ellipse{fill:#F1EFE8;stroke:#5F5E5A}.c-gray .th{fill:#444441}.c-gray .ts{fill:#5F5E5A}
+.c-blue>rect,.c-blue>ellipse{fill:#E6F1FB;stroke:#185FA5}.c-blue .th{fill:#0C447C}.c-blue .ts{fill:#185FA5}
+.c-amber>rect,.c-amber>ellipse{fill:#FAEEDA;stroke:#854F0B}.c-amber .th{fill:#633806}.c-amber .ts{fill:#854F0B}
+.c-green>rect,.c-green>ellipse{fill:#EAF3DE;stroke:#3B6D11}.c-green .th{fill:#27500A}.c-green .ts{fill:#3B6D11}
+.c-red>rect,.c-red>ellipse{fill:#FCEBEB;stroke:#A32D2D}.c-red .th{fill:#791F1F}.c-red .ts{fill:#A32D2D}
+@media (prefers-color-scheme:dark){svg{color:#c2c0b6}
+.c-purple>rect,.c-purple>ellipse{fill:#3C3489;stroke:#AFA9EC}.c-purple .th{fill:#CECBF6}.c-purple .ts{fill:#AFA9EC}
+.c-teal>rect,.c-teal>ellipse{fill:#085041;stroke:#5DCAA5}.c-teal .th{fill:#9FE1CB}.c-teal .ts{fill:#5DCAA5}
+.c-coral>rect,.c-coral>ellipse{fill:#712B13;stroke:#F0997B}.c-coral .th{fill:#F5C4B3}.c-coral .ts{fill:#F0997B}
+.c-gray>rect,.c-gray>ellipse{fill:#444441;stroke:#B4B2A9}.c-gray .th{fill:#D3D1C7}.c-gray .ts{fill:#B4B2A9}
+.c-blue>rect,.c-blue>ellipse{fill:#0C447C;stroke:#85B7EB}.c-blue .th{fill:#B5D4F4}.c-blue .ts{fill:#85B7EB}
+.c-amber>rect,.c-amber>ellipse{fill:#633806;stroke:#EF9F27}.c-amber .th{fill:#FAC775}.c-amber .ts{fill:#EF9F27}
+.c-green>rect,.c-green>ellipse{fill:#27500A;stroke:#97C459}.c-green .th{fill:#C0DD97}.c-green .ts{fill:#97C459}
+.c-red>rect,.c-red>ellipse{fill:#791F1F;stroke:#F09595}.c-red .th{fill:#F7C1C1}.c-red .ts{fill:#F09595}
+}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="th" x="340" y="40" text-anchor="middle" dominant-baseline="central">用户消息</text>
+<line class="arr" x1="340" y1="52" x2="340" y2="78" marker-end="url(#arrow)"/>
+<g class="c-gray"><rect x="200" y="80" width="280" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="98" text-anchor="middle" dominant-baseline="central">拼系统提示词</text>
+<text class="ts" x="340" y="118" text-anchor="middle" dominant-baseline="central">49 条规则 · 画像 JSON · 目标字段</text></g>
+<line class="arr" x1="340" y1="136" x2="340" y2="194" marker-end="url(#arrow)"/>
+<text class="ts" x="350" y="165" text-anchor="start" dominant-baseline="central">一次请求</text>
+<rect class="box" x="50" y="196" width="580" height="124" rx="12"/>
+<text class="th" x="66" y="218" text-anchor="start" dominant-baseline="central">一次模型调用（Flash，不开思考）同时要做四件事</text>
+<g class="c-coral"><rect x="70" y="244" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="130" y="262" text-anchor="middle" dominant-baseline="central">回应用户</text>
+<text class="ts" x="130" y="282" text-anchor="middle" dominant-baseline="central">写正文</text></g>
+<g class="c-coral"><rect x="210" y="244" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="270" y="262" text-anchor="middle" dominant-baseline="central">抽取写入</text>
+<text class="ts" x="270" y="282" text-anchor="middle" dominant-baseline="central">upsert_facts</text></g>
+<g class="c-coral"><rect x="350" y="244" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="410" y="262" text-anchor="middle" dominant-baseline="central">决定追问</text>
+<text class="ts" x="410" y="282" text-anchor="middle" dominant-baseline="central">ask_user</text></g>
+<g class="c-coral"><rect x="490" y="244" width="120" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="550" y="262" text-anchor="middle" dominant-baseline="central">改写措辞</text>
+<text class="ts" x="550" y="282" text-anchor="middle" dominant-baseline="central">简历用语</text></g>
+<line class="arr" x1="340" y1="320" x2="340" y2="384" marker-end="url(#arrow)"/>
+<text class="ts" x="350" y="352" text-anchor="start" dominant-baseline="central">工具调用 + 正文</text>
+<g class="c-amber"><rect x="200" y="386" width="280" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="404" text-anchor="middle" dominant-baseline="central">事后检查与补救</text>
+<text class="ts" x="340" y="424" text-anchor="middle" dominant-baseline="central">约 20 条程序规则</text></g>
+<path class="arr" d="M482 414 L580 414 L580 324" marker-end="url(#arrow)"/>
+<text class="ts" x="586" y="370" text-anchor="start" dominant-baseline="central">提醒补写</text>
+<line class="arr" x1="340" y1="442" x2="340" y2="498" marker-end="url(#arrow)"/>
+<g class="c-gray"><rect x="200" y="500" width="280" height="56" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="518" text-anchor="middle" dominant-baseline="central">回复 + 画像</text>
+<text class="ts" x="340" y="538" text-anchor="middle" dominant-baseline="central">存库，推给前端</text></g>
+</svg>
