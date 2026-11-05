@@ -1,4 +1,5 @@
 import type { Profile, ProfileSection } from "@talksume/core";
+import { isPlaceholder } from "./identity.ts";
 
 export interface FieldSpec {
   field: string;
@@ -279,8 +280,11 @@ export interface CompletenessOptions {
 const QUANTIFIED =
   /[0-9０-９]|百分之|[一二三四五六七八九十百千万两]+\s*(?:倍|人|次|个|条|万|千|%|％|天|小时|分钟|秒)/;
 
+/** 「UTF-8」「Vue3」「MD5」里的数字是名字的一部分，不算量化。 */
+const IDENTIFIER_DIGITS = /[a-z]+[-_]?\d[\da-z.]*/gi;
+
 export function isQuantified(text: string | undefined): boolean {
-  return !!text && QUANTIFIED.test(text);
+  return !!text && QUANTIFIED.test(text.replace(IDENTIFIER_DIGITS, ""));
 }
 
 function present(value: unknown): boolean {
@@ -320,6 +324,23 @@ function fieldOk(section: ProfileSection, field: string, record: Record<string, 
   }
   if (section === "education" && field === "gpa") return present(record.gpa) || present(record.rank);
   return present(record[field]);
+}
+
+/** 条目的必填项（铺开阶段要问到的字段）：暂存的缺项和完整度共用这一份。 */
+export function requiredFields(section: ProfileSection): string[] {
+  return SECTION_BY_NAME[section].fields.filter((f) => f.required && !f.depth).map((f) => f.field);
+}
+
+export function requiredMissing(section: ProfileSection, item: Record<string, unknown>): string[] {
+  return requiredFields(section).filter((field) => !fieldOk(section, field, item));
+}
+
+/** 画像里的实际条目；老数据里只有泛称的占位条目不算。 */
+export function realItems<T extends Record<string, unknown>>(
+  section: ProfileSection,
+  items: readonly T[],
+): T[] {
+  return items.filter((item) => !isPlaceholder(section, item));
 }
 
 function itemLabelOf(section: ProfileSection, item: Record<string, unknown>): string | undefined {
@@ -394,9 +415,10 @@ function scoreSection(spec: SectionSpec, profile: Profile): SectionScored {
     const record = profile[spec.section as "basics" | "intention"] as Record<string, unknown>;
     return { ...scoreRecord(spec, record, undefined, undefined), itemScores: [] };
   }
-  const items = profile[spec.section as "education"] as unknown as Array<
-    Record<string, unknown> & { id: string }
-  >;
+  const items = realItems(
+    spec.section,
+    profile[spec.section as "education"] as unknown as Array<Record<string, unknown> & { id: string }>,
+  );
   const itemScores: number[] = [];
   const missing: MissingField[] = [];
   for (const item of items) {
@@ -435,9 +457,11 @@ const QUALITY_WEIGHTS = {
 const EVIDENCE_TARGET = 2;
 
 function evidenceItems(profile: Profile): Array<Record<string, unknown> & { id: string }> {
-  return [...profile.experiences, ...profile.projects] as unknown as Array<
-    Record<string, unknown> & { id: string }
-  >;
+  type Item = Record<string, unknown> & { id: string };
+  return [
+    ...realItems("experiences", profile.experiences as unknown as Item[]),
+    ...realItems("projects", profile.projects as unknown as Item[]),
+  ];
 }
 
 function qualityScore(profile: Profile, scored: Map<ProfileSection, SectionScored>): number {
@@ -620,7 +644,7 @@ function courseQuestion(profile: Profile): string | undefined {
 function probeMissing(profile: Profile): MissingField[] {
   const items = evidenceItems(profile);
   if (items.length >= EVIDENCE_TARGET) return [];
-  const text = JSON.stringify(items);
+  const text = JSON.stringify([...profile.experiences, ...profile.projects]);
   const course = courseQuestion(profile);
   return PROBES.filter((p) => !p.covered.test(text)).map((p, i) => ({
     key: `projects:_:${p.field}`,

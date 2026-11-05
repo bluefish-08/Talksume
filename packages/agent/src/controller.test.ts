@@ -368,7 +368,7 @@ describe("intake controller: contradictions, fallbacks and errors", () => {
   });
 
   it("正文说到一半断流时，扣下的半句丢掉，让模型接着往下说并补上写入", async () => {
-    const quote = "和两个同学一起做了个学生成绩管理系统";
+    const quote = "和两个同学一起做了个学生成绩管理系统，我负责成绩录入";
     const { controller } = fake([
       fauxAssistantMessage([fauxText("这个项目挺实在的。我把这些")], {
         stopReason: "error",
@@ -381,7 +381,9 @@ describe("intake controller: contradictions, fallbacks and errors", () => {
         return fauxAssistantMessage(
           [
             fauxText("做的时候遇到过什么难点？"),
-            upsert([{ section: "projects", payload: { name: "学生成绩管理系统" }, quote }]),
+            upsert([
+              { section: "projects", payload: { name: "学生成绩管理系统", role: "负责成绩录入" }, quote },
+            ]),
             ask("做的时候遇到过什么难点？"),
           ],
           { stopReason: "toolUse" },
@@ -390,7 +392,7 @@ describe("intake controller: contradictions, fallbacks and errors", () => {
     ]);
     const state = createIntakeState();
     const events = await collect(
-      controller.handleUserMessage(state, { id: "m1", text: `Java 课设，${quote}，我负责成绩录入` }),
+      controller.handleUserMessage(state, { id: "m1", text: `Java 课设，${quote}` }),
     );
     expect(events.find((e) => e.type === "error")).toBeUndefined();
     expect(state.profile.projects.map((p) => p.name)).toEqual(["学生成绩管理系统"]);

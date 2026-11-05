@@ -1,6 +1,6 @@
 import type { Profile, ProfileSection } from "@talksume/core";
 import { type Completeness, SECTION_BY_NAME, type Slot } from "./completeness.ts";
-import { type Conflict, type Draft, draftMissing, LEVEL_WORDS } from "./facts.ts";
+import { type Conflict, type Draft, draftMissing, isPlaceholderDraft, LEVEL_WORDS } from "./facts.ts";
 import { memoryPromptLines, type SkipEntry, type SummaryNote } from "./memory.ts";
 
 export interface PromptInput {
@@ -68,6 +68,7 @@ const DIG_LINES = [
   "- 用户没有实习、没有项目时，系统会依次给出挖掘角度（课程设计/大作业/毕设、自学作品、比赛/社团/志愿者、兼职/帮老师做事）。一次只问一个角度，附 quickReplies；用户都说没有才算真的没有。",
   "- 可以根据画像里已有的课程、技能提出具体候选来问（如「你学过数据库原理，课上做过完整的数据库项目吗？」「课上用过 MySQL 吗？」），但只能以问句加「做过」「没做过」这类快捷回答出现，用户确认之前什么都不写。",
   "- 用户确认后才写成事实，quote 摘抄用户确认的原话（如「做过」）；payload 只能是你问句里提到的或用户说过的内容，不能顺带补名称、职责、技术栈，缺的接着问。",
+  "- 只说了「做过课程设计」这类泛称时，name 就照用户的说法写（如「课程设计」），系统会暂存为占位、不进简历。之后用户说出具体名称或做的是什么，直接用新名称写入，系统会并进那条占位；不要另起一条，也不要再用泛称写。",
   "- 挖出来的经历照常深挖、照常带 quote：项目名称用用户的说法（如「Java 课程设计：学生成绩管理系统」），角色照实写（和同学一起做的不能写成独立完成，参与不能写成负责），没有数字就不写数字。",
   "- 社团、学生会、志愿者、学生活动写 projects 并带 kind=campus，简历上单列「校园经历」，不问技术栈；课程设计、比赛作品、练手项目不带 kind。",
   "- 所有角度都问完仍然很少时，不要安慰式地夸大，如实告诉用户简历页有「投递前可以补的东西」，做完回来再聊。",
@@ -147,9 +148,12 @@ export function buildSystemPrompt(input: PromptInput): string {
     lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...jobLines);
   }
   if (input.drafts && input.drafts.length > 0) {
-    lines.push("", "## 暂存中（必填项没齐，还没写进画像）");
+    lines.push("", "## 暂存中（还没写进画像）");
     for (const d of input.drafts) {
-      lines.push(`- ${d.section}：${JSON.stringify(stripIds(d.item))}，还缺 ${draftMissing(d).join("、")}`);
+      const need = isPlaceholderDraft(d)
+        ? "只有泛称；用户说出具体名称或做的是什么时，要用 upsert_facts 以新名称写入，系统会并进这一条"
+        : `还缺 ${draftMissing(d).join("、")}`;
+      lines.push(`- ${d.section}：${JSON.stringify(stripIds(d.item))}，${need}`);
     }
   }
   if (input.completedSections.length > 0) {

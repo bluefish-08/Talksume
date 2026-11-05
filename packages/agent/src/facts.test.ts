@@ -74,7 +74,9 @@ describe("applyFacts", () => {
     const first = applyFacts(Profile.parse({}), [fact("education", { school: "清华大学" })], ctx);
     expect(first.profile.education).toHaveLength(0);
     expect(first.rejected).toEqual([]);
-    expect(first.drafted).toEqual([{ section: "education", label: "清华大学", missing: ["degree"] }]);
+    expect(first.drafted).toEqual([
+      { section: "education", label: "清华大学", missing: ["degree", "major"] },
+    ]);
     expect(first.drafts).toHaveLength(1);
 
     const second = applyFacts(

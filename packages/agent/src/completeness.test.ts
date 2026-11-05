@@ -224,6 +224,13 @@ describe("computeCompleteness", () => {
     expect(isQuantified("响应时间降低了2倍")).toBe(true);
     expect(isQuantified("做得不错")).toBe(false);
   });
+
+  it("ignores digits that are part of a name like UTF-8 or Vue3", () => {
+    expect(isQuantified("把数据库和连接的编码都改成 UTF-8")).toBe(false);
+    expect(isQuantified("用 Vue3 和 Python3.10 重写，密码 MD5 加密")).toBe(false);
+    expect(isQuantified("改成 UTF-8 后乱码从 20 条降到 0")).toBe(true);
+    expect(isQuantified("QPS 提升到 3000")).toBe(true);
+  });
 });
 
 function thinStudent() {

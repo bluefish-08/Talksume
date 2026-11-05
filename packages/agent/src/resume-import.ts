@@ -222,6 +222,7 @@ export function applyImport(
     messageId: input.messageId,
     genId: input.genId,
     drafts: state.drafts,
+    facts: state.facts,
     userText: input.text,
   });
   state.profile = result.profile;

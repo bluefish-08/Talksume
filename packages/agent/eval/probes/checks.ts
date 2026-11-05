@@ -8,6 +8,8 @@ export interface Snapshot {
   skipped: string[];
   conflicts: IntakeState["conflicts"];
   drafts: number;
+  /** 暂存条目的分区和名字。 */
+  draftItems: { section: string; name: string }[];
   completed: string[];
 }
 
@@ -18,6 +20,10 @@ export function snapshot(state: IntakeState): Snapshot {
     skipped: state.skipped.map((s) => s.key),
     conflicts: state.conflicts,
     drafts: state.drafts.length,
+    draftItems: state.drafts.map((d) => ({
+      section: d.section,
+      name: String(d.item.name ?? d.item.company ?? d.item.school ?? ""),
+    })),
     completed: [...state.completedSections],
   });
 }
@@ -77,6 +83,14 @@ export const C = {
       (o) => list(o.after.profile, section).length - list(o.before.profile, section).length === delta,
       gate,
     ),
+  /** 画像加暂存里的条目数：暂存转正不算新建。 */
+  entities: (section: "projects" | "experiences", delta: number, gate = true) =>
+    check(
+      `entities:${section}${delta >= 0 ? "+" : ""}${delta}`,
+      `${section} 条目数（含暂存）变化 ${delta}`,
+      (o) => entityNames(o.after, section).length - entityNames(o.before, section).length === delta,
+      gate,
+    ),
   noWrite: (gate = true) =>
     check(
       "noWrite",
@@ -123,3 +137,8 @@ export const C = {
 export const has = (values: readonly { name?: string }[], re: RegExp) =>
   values.some((v) => re.test(v.name ?? ""));
 export const projectWith = (p: Profile, re: RegExp) => p.projects.find((x) => re.test(JSON.stringify(x)));
+
+export const entityNames = (s: Snapshot, section: "projects" | "experiences") => [
+  ...list(s.profile, section).map((x) => String(x.name ?? x.company ?? "")),
+  ...(s.draftItems ?? []).filter((d) => d.section === section).map((d) => d.name),
+];

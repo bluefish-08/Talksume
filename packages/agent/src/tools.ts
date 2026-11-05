@@ -20,6 +20,7 @@ import {
   describeDrafted,
   draftLabel,
   draftMissing,
+  draftQuestion,
   resolveConflict,
 } from "./facts.ts";
 import { liftSkips, type SkipEntry, sectionSkipEntry, skipEntryOf, skippedKeys } from "./memory.ts";
@@ -88,11 +89,12 @@ function slotRef(slot: Slot): SlotRef {
   };
 }
 
-/** 暂存的条目优先补齐，问过两次仍不答就放过，回到正常顺序。 */
+/** 暂存的条目优先补齐，问过两次仍不答就放过，回到正常顺序。占位条目只问它是什么，不算必填。 */
 function draftSlot(state: IntakeState, skipped: ReadonlySet<string>): Slot | null {
   for (const draft of state.drafts) {
     const spec = SECTION_BY_NAME[draft.section];
     const id = String(draft.item.id);
+    const placeholder = draftQuestion(draft);
     for (const field of draftMissing(draft)) {
       const key = `${draft.section}:${id}:${field}`;
       if ((state.askCounts[key] ?? 0) >= 2 || skipped.has(key)) continue;
@@ -105,15 +107,18 @@ function draftSlot(state: IntakeState, skipped: ReadonlySet<string>): Slot | nul
         field,
         label: f?.label ?? field,
         weight: f?.weight ?? 1,
-        required: true,
+        required: !placeholder,
         kind: "field",
-        question: f?.question ?? `请补充${f?.label ?? field}`,
-        strategy: f?.strategy ?? "",
+        question: placeholder ?? f?.question ?? `请补充${f?.label ?? field}`,
+        strategy: placeholder ? PLACEHOLDER_STRATEGY : (f?.strategy ?? ""),
       };
     }
   }
   return null;
 }
+
+const PLACEHOLDER_STRATEGY =
+  "用户只说了做过、没说做的是什么。只问这一件事，不要问角色、技术栈。用户一说出名称或做的是什么，这一轮必须调用 upsert_facts，用用户的说法写 name（连同他说的其他内容），系统会并进这条占位；不写的话名字不会记下，也不要再用泛称写。";
 
 /** 最近写入的事实落在哪段实习或项目上。 */
 function focusItemOf(state: IntakeState): string | undefined {
@@ -227,12 +232,17 @@ function skippableKeys(state: IntakeState): string[] {
 
 const PROBE_ANSWERED = 99;
 
-/** 上一轮问的挖掘角度挖出了新经历，这个角度就算问完，不再重复问。 */
+/** 实习和项目条目数，含暂存的。 */
+function evidenceCount(state: IntakeState): number {
+  const drafted = state.drafts.filter((d) => d.section === "experiences" || d.section === "projects").length;
+  return state.profile.experiences.length + state.profile.projects.length + drafted;
+}
+
+/** 上一轮问的挖掘角度挖出了新经历（哪怕只是占位），这个角度就算问完，不再重复问。 */
 function settleProbe(state: IntakeState, before: number): void {
   const key = lastAskedKey(state);
   if (!key?.startsWith("projects:_:probe_")) return;
-  if (state.profile.experiences.length + state.profile.projects.length > before)
-    state.askCounts[key] = PROBE_ANSWERED;
+  if (evidenceCount(state) > before) state.askCounts[key] = PROBE_ANSWERED;
 }
 
 const BARE_CONFIRM =
@@ -404,12 +414,18 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
           );
         } else accepted.push({ input, index });
       });
-      const evidenceBefore = state.profile.experiences.length + state.profile.projects.length;
+      const evidenceBefore = evidenceCount(state);
 
       const result = applyFacts(
         state.profile,
         accepted.map((a) => a.input),
-        { messageId: ctx.messageId, genId: ctx.genId, drafts: state.drafts, userText: ctx.userCorpus },
+        {
+          messageId: ctx.messageId,
+          genId: ctx.genId,
+          drafts: state.drafts,
+          facts: state.facts,
+          userText: ctx.userCorpus,
+        },
       );
       for (const r of result.rejected) {
         rejected.push(`第 ${(accepted[r.index]?.index ?? r.index) + 1} 条：${r.reason}`);

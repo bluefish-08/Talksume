@@ -1,5 +1,5 @@
 import { exhaustPlanner, type Script, type ScriptTurn } from "./builder.ts";
-import { C, type Check, has, projectWith } from "./checks.ts";
+import { C, type Check, entityNames, has, projectWith } from "./checks.ts";
 
 export interface Probe {
   id: string;
@@ -203,12 +203,14 @@ export const PROBES: Probe[] = [
   {
     id: "confirm-then-name",
     title: "确认后说出名字",
-    note: "上一轮已建了空条目「Java 课程设计」（现状会这样），这轮说出名字，应改名或合并，不应新建。",
+    note: "上一轮已建了空条目或占位「Java 课程设计」，这轮说出名字，应改名或合并，不应新建（暂存转正不算新建）。",
     script: { turns: SMOKE2.slice(0, 8), countAsks: false },
     message: `${PROJECT}，跟两个同学一起做的`,
     checks: [
-      C.items("projects", 0),
-      C.profile("project:named", "画像里出现「成绩管理」", (p) => Boolean(projectWith(p, /成绩管理/))),
+      C.entities("projects", 0),
+      C.custom("project:named", "画像或暂存里的项目名出现「成绩管理」", (o) =>
+        entityNames(o.after, "projects").some((n) => /成绩管理/.test(n)),
+      ),
       C.maxQuestions(1),
     ],
   },

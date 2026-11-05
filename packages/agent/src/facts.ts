@@ -10,7 +10,14 @@ import {
   Skill,
 } from "@talksume/core";
 import type { z } from "zod";
-import { SECTION_BY_NAME } from "./completeness.ts";
+import { requiredMissing, SECTION_BY_NAME } from "./completeness.ts";
+import {
+  type Candidate,
+  hasContent,
+  isPlaceholder,
+  placeholderQuestion,
+  resolveIdentity,
+} from "./identity.ts";
 import { type FactInput, formatZodIssues, SectionPayload } from "./schemas.ts";
 import { resumeWording, wordingProblems } from "./wording.ts";
 
@@ -56,9 +63,11 @@ export interface ApplyContext {
   userText?: string;
   genId?: (prefix: string) => string;
   drafts?: readonly Draft[];
+  /** 已有的事实，用来认出条目改名前的叫法。 */
+  facts?: readonly Fact[];
 }
 
-/** 必填项还没问齐的新条目，先暂存，补齐后再写进画像。 */
+/** 还不能进简历的新条目：只有泛称（占位），或者除了名字什么都没有。 */
 export interface Draft {
   section: ListSection;
   item: Rec;
@@ -68,6 +77,8 @@ export interface Drafted {
   section: ListSection;
   label: string;
   missing: string[];
+  /** 只有泛称，等用户说出具体名称。 */
+  placeholder?: boolean;
 }
 
 export interface ApplyResult {
@@ -630,18 +641,47 @@ function missingFields(error: z.ZodError): string[] {
   );
 }
 
+interface Admission {
+  parsed?: Rec;
+  /** 占位时只有名称一项；否则是 completeness 的必填缺项加上 schema 的缺项。 */
+  missing: string[];
+  placeholder: boolean;
+}
+
+/** 进画像的门槛：schema 合法、不是只有泛称、不是除了名字什么都没有。 */
+function admission(section: ListSection, item: Rec): Admission {
+  const key = ITEM_KEY[section];
+  if (isPlaceholder(section, item)) return { missing: [key], placeholder: true };
+  const checked = ITEM_SCHEMA[section].safeParse(item);
+  const required = requiredMissing(section, item);
+  const missing = [...new Set([...(checked.success ? [] : missingFields(checked.error)), ...required])];
+  const ok = checked.success && (required.length === 0 || hasContent(item, key));
+  return { ...(ok ? { parsed: checked.data as Rec } : {}), missing, placeholder: false };
+}
+
 export function draftMissing(draft: Draft): string[] {
-  const checked = ITEM_SCHEMA[draft.section].safeParse(draft.item);
-  return checked.success ? [] : missingFields(checked.error);
+  return admission(draft.section, draft.item).missing;
+}
+
+export function isPlaceholderDraft(draft: Draft): boolean {
+  return isPlaceholder(draft.section, draft.item);
 }
 
 export function draftLabel(draft: Draft): string {
   return String(draft.item[ITEM_KEY[draft.section]] ?? "");
 }
 
+export function draftQuestion(draft: Draft): string | undefined {
+  return isPlaceholderDraft(draft) ? placeholderQuestion(draft.section, draftLabel(draft)) : undefined;
+}
+
 export function describeDrafted(d: Drafted): string {
+  const key = ITEM_KEY[d.section];
+  if (d.placeholder) {
+    return `「${d.label}」只是泛称，已暂存为占位，不进简历；先问清具体做的是什么、叫什么，不要问角色、技术栈等细节。用户说出名称后，用具体名称写 ${key}，系统会并进这一条，不要另起一条，也不要再用泛称写`;
+  }
   const fields = d.missing.map((f) => `${f}（${fieldLabel(d.section, f)}）`).join("、");
-  return `「${d.label}」已暂存，还缺 ${fields}；问到后带上 ${ITEM_KEY[d.section]} 再写入即可补齐`;
+  return `「${d.label}」已暂存，还缺 ${fields}；问到后带上 ${key} 再写入即可补齐`;
 }
 
 export function applyFacts(
@@ -703,20 +743,49 @@ export function applyFacts(
         reject(`${section} 缺少 ${keyField}`);
         continue;
       }
-      const existing = list.find((item) => normKey(item[keyField]) === keyValue);
-      if (existing) {
+      const known = new Map(
+        [...(context.facts ?? []), ...result.facts].map((f) => [f.id, f.payload[keyField]]),
+      );
+      const aliases = (item: Rec) =>
+        ((item.sourceFactIds as string[] | undefined) ?? []).flatMap((id) => {
+          const name = known.get(id);
+          return typeof name === "string" ? [name] : [];
+        });
+      const pool: Candidate[] = [
+        ...list.map((item) => ({ item, draft: false })),
+        ...drafts.filter((d) => d.section === section).map((d) => ({ item: d.item, draft: true })),
+      ];
+      const hit = resolveIdentity(
+        section,
+        String(payload[keyField]).trim(),
+        payload,
+        input.quote,
+        pool,
+        aliases,
+      );
+      const { [keyField]: _key, ...rest } = payload;
+      const rename = (target: Rec, id: string) => {
+        if (!hit?.rename || sameValue(target[keyField], hit.rename)) return;
+        const previous = target[keyField];
+        target[keyField] = hit.rename;
+        outcome.applied[keyField] = hit.rename;
+        outcome.changes.push({ section, itemId: id, field: keyField, value: hit.rename, previous });
+      };
+      if (hit && !hit.draft) {
+        const existing = hit.item;
         itemId = String(existing.id);
-        const { [keyField]: _key, ...rest } = payload;
         outcome = mergeInto(existing, rest, section, itemId);
+        rename(existing, itemId);
         if (Object.keys(outcome.applied).length > 0) {
           existing.sourceFactIds = union(existing.sourceFactIds as unknown[], [factId]);
         }
       } else {
-        const draft = drafts.find((d) => d.section === section && normKey(d.item[keyField]) === keyValue);
+        const draft = hit ? drafts.find((d) => d.item === hit.item) : undefined;
         const candidate: Rec = draft?.item ?? { id: genId(ID_PREFIX[section]), sourceFactIds: [] };
         itemId = String(candidate.id);
         candidate.sourceFactIds = union(candidate.sourceFactIds as unknown[], [factId]);
-        outcome = mergeInto(candidate, payload, section, itemId);
+        outcome = mergeInto(candidate, draft ? rest : payload, section, itemId);
+        if (draft) rename(candidate, itemId);
         // 草稿还没进画像，用户改口直接以新说法为准
         for (const [field, value] of Object.entries(outcome.conflicted)) {
           candidate[field] = value;
@@ -728,17 +797,18 @@ export function applyFacts(
           if (hit) hit.detail = c.proposed;
         }
         outcome.entryConflicts = [];
-        const checked = ITEM_SCHEMA[section].safeParse(candidate);
-        if (checked.success) {
+        const admitted = admission(section, candidate);
+        if (admitted.parsed) {
           if (draft) drafts.splice(drafts.indexOf(draft), 1);
-          list.push(checked.data as Rec);
-          outcome.changes = [{ section, itemId, field: "_item", value: checked.data }];
+          list.push(admitted.parsed);
+          outcome.changes = [{ section, itemId, field: "_item", value: admitted.parsed }];
         } else {
           if (!draft) drafts.push({ section, item: candidate });
           result.drafted.push({
             section,
             label: String(candidate[keyField]),
-            missing: missingFields(checked.error),
+            missing: admitted.missing,
+            ...(admitted.placeholder ? { placeholder: true } : {}),
           });
           outcome.changes = [];
         }
