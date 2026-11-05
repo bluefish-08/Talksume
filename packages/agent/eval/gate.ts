@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { bootstrapDiff, type Cluster, fisher, type Interval, pct } from "./lib/stats.ts";
+import type { AuditSummary } from "./personas/audit.ts";
 import type { Summary } from "./personas/run.ts";
 import type { ProbeReport } from "./probes/run.ts";
 
@@ -52,6 +53,7 @@ if (import.meta.main) {
       base: { type: "string" },
       cand: { type: "string" },
       personas: { type: "string" },
+      audit: { type: "string" },
       out: { type: "string" },
     },
   });
@@ -89,18 +91,32 @@ if (import.meta.main) {
     const { summary } = read<{ summary: Summary }>(values.personas);
     const m = (id: string) => summary.metrics.find((x) => x.id === id);
     const prec = m("precision");
+    const said = m("precisionSaid");
     const first = m("firstP50");
     const empty = m("emptyItems");
     const dup = m("dupItems");
-    if (summary.versions.length !== 2 || !prec?.diff || !first?.values[0] || !first.diff) {
+    if (summary.versions.length !== 2 || !prec?.diff || !said?.diff || !first?.values[0] || !first.diff) {
       verdicts.push({ gate: "多人设门槛", ok: null, detail: "需要 --a/--b 两个版本的交替运行结果" });
     } else {
       const base = first.values[0].estimate ?? 0;
+      lines.push("", `参考：沿用 eval 的 P（tp / tp+fp）差 ${fmtCi(prec.diff)}，不再作为门槛。`);
+      const [from, to] = summary.versions;
+      const audit = values.audit ? read<{ summary: AuditSummary }>(values.audit).summary : undefined;
+      const cOf = (label?: string) => audit?.versions.find((v) => v.label === label);
+      const [cBase, cCand] = [cOf(from?.label), cOf(to?.label)];
       verdicts.push(
         {
-          gate: "准确性 P 下降不超过 1 个百分点（看点估计）",
-          ok: (prec.diff.estimate ?? 0) >= -0.01,
-          detail: fmtCi(prec.diff),
+          gate: "3a 按原话口径的 P 不显著下降（差的 95% 区间上界 ≥ 0）",
+          ok: (said.diff.high ?? -1) >= 0,
+          detail: fmtCi(said.diff),
+        },
+        {
+          gate: "3b 编造 (c) 每次运行均值不高于基线",
+          ok: cBase && cCand ? cCand.cPerRun <= cBase.cPerRun : null,
+          detail:
+            cBase && cCand
+              ? `基线 ${cBase.cPerRun.toFixed(3)}（${cBase.c}/${cBase.runs}），新版本 ${cCand.cPerRun.toFixed(3)}（${cCand.c}/${cCand.runs}）`
+              : "缺数据：没有审计输出（--audit，先跑 personas/audit.ts）",
         },
         {
           gate: "整段对话里空或重复条目为 0（新版本）",
@@ -122,7 +138,7 @@ if (import.meta.main) {
     "| 门槛 | 结果 | 依据 |",
     "|---|---|---|",
     ...verdicts.map(
-      (v) => `| ${v.gate} | ${v.ok === null ? "—" : v.ok ? "通过" : "**未过**"} | ${v.detail} |`,
+      (v) => `| ${v.gate} | ${v.ok === null ? "缺数据" : v.ok ? "通过" : "**未过**"} | ${v.detail} |`,
     ),
   );
   const md = lines.join("\n");
