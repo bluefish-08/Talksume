@@ -5,12 +5,9 @@ import { ApiError } from "../api/client.ts";
 import { useStartConversation } from "../api/queries.ts";
 import { useToast } from "../components/Toast.tsx";
 import { Button, Chip, EmptyState, Spinner } from "../components/ui.tsx";
-import { ApplyDialog, type ManualApply } from "../features/jobs/ApplyDialog.tsx";
 import { BrowseJobs } from "../features/jobs/BrowseJobs.tsx";
 import { applyFilter, buildChips, totalOpenJobs } from "../features/jobs/format.ts";
 import {
-  useAppliedJobs,
-  useCreateApplication,
   useFeedback,
   useJobDetail,
   useJobSearch,
@@ -26,6 +23,7 @@ import { JobList, JobListSkeleton, type JobRow } from "../features/jobs/JobList.
 import styles from "../features/jobs/Jobs.module.css";
 import { JobsTabs } from "../features/jobs/JobsTabs.tsx";
 import type { ImportResult } from "../features/jobs/types.ts";
+import { useApplyFlow } from "../features/jobs/useApplyFlow.tsx";
 
 const NARROW = "(max-width: 999px)";
 
@@ -67,7 +65,6 @@ function RecommendJobs() {
   const q = useDebounced(input.trim(), 300);
   const [filter, setFilter] = useState("all");
   const [importing, setImporting] = useState(false);
-  const [manual, setManual] = useState<ManualApply | null>(null);
   const [imported, setImported] = useState<Record<string, ImportResult>>({});
 
   const { query: matchesQ } = useMatches();
@@ -75,9 +72,7 @@ function RecommendJobs() {
   const refresh = useRefreshMatches();
   const refreshInfo = useRefreshResult().data;
   const searchQ = useJobSearch(q);
-  const applied = useAppliedJobs().data;
   const feedback = useFeedback();
-  const createApp = useCreateApplication();
   const optimize = useOptimizeResume();
   const startChat = useStartConversation();
 
@@ -156,33 +151,7 @@ function RecommendJobs() {
   const detailQ = useJobDetail(selectedId);
   const listJob = rows.find((r) => r.job.id === selectedId)?.job ?? match?.job ?? importedHit?.job;
   const job = detailQ.data ?? listJob;
-  const application = job ? applied?.get(job.id) : undefined;
-
-  function apply() {
-    if (!job) return;
-    const target = { company: job.company, title: job.title, url: job.url };
-    if (application?.status === "pending") {
-      setManual({ applicationId: application.id, ...target });
-      return;
-    }
-    createApp.mutate(job.id, {
-      onSuccess: (r) => {
-        if (r.nextAction === "manual_apply") {
-          setManual({
-            applicationId: r.application.id,
-            ...target,
-            ...(r.submitError && { submitError: r.submitError }),
-          });
-        } else {
-          toast("已投递，进度会出现在「投递进度」里", { tone: "success" });
-        }
-      },
-      onError: (e) =>
-        toast(e instanceof ApiError && e.code === "already_applied" ? "已经投递过这个岗位了" : errorText(e), {
-          tone: e instanceof ApiError && e.code === "already_applied" ? "info" : "error",
-        }),
-    });
-  }
+  const flow = useApplyFlow(job);
 
   function dislike() {
     if (!job) return;
@@ -287,11 +256,11 @@ function RecommendJobs() {
           excluded={importedHit?.excluded}
           jdText={detailQ.data?.jdText}
           jdLoading={detailQ.isPending}
-          application={application}
+          application={flow.application}
           retryingReport={retryReport.isPending}
-          busy={{ apply: createApp.isPending, optimize: optimize.isPending, dislike: feedback.isPending }}
+          busy={{ apply: flow.applying, optimize: optimize.isPending, dislike: feedback.isPending }}
           onBack={() => select(null, true)}
-          onApply={apply}
+          onApply={flow.apply}
           onOptimize={() =>
             optimize.mutate(
               { company: job.company, title: job.title },
@@ -385,16 +354,7 @@ function RecommendJobs() {
       </div>
 
       {importing && <ImportDialog onClose={() => setImporting(false)} onDone={onImported} />}
-      {manual && (
-        <ApplyDialog
-          apply={manual}
-          onClose={() => setManual(null)}
-          onApplied={() => {
-            setManual(null);
-            toast("已记录投递，进度可以在「投递进度」里看", { tone: "success" });
-          }}
-        />
-      )}
+      {flow.dialog}
     </div>
   );
 }

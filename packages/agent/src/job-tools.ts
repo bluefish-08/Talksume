@@ -16,7 +16,7 @@ import type { JobCard, JobTools, ResumeTailor, ToolRecord } from "./types.ts";
 const JOB_TYPE_LABEL = { internship: "实习", campus: "校招", experienced: "社招" } as const;
 
 const CARD_NOTE =
-  "这些岗位会以卡片展示给用户（带匹配度和「看详情」「去投递」按钮）。文字里挑一两个重点点评，不要逐条复述卡片字段；投递要用户自己点按钮确认，你不能代投。";
+  "这些岗位会以卡片展示给用户（带匹配度和「看详情」按钮）。文字里挑一两个重点点评，不要逐条复述卡片字段；投递在岗位详情页由用户自己点按钮，官网岗位要用户在官网自己提交，你不能代投。";
 
 const ABOUT_NOTE =
   "这个岗位会在你这条回复顶部显示为一行「关于：公司 · 岗位」标签，点开是岗位详情；本轮查到的岗位都不会以卡片展示，回复里不要提卡片或让用户点卡片。";

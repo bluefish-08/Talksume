@@ -10,17 +10,22 @@ const SOURCE: Record<ApplicationEvent["source"], string> = {
   system: "系统",
 };
 
-function eventLabel(e: ApplicationEvent): string {
-  if (e.fromStatus === null && e.toStatus === "pending") return "创建投递";
+function eventLabel(e: ApplicationEvent, channel?: string): string {
+  if (e.fromStatus === null && e.toStatus === "pending") {
+    return channel === "assisted" ? "已记录，待在官网投递" : "创建投递";
+  }
+  if (e.toStatus === "applied" && channel === "assisted") return "已在官网投递";
   return statusLabel(e.toStatus, e.outcome);
 }
 
 export function Timeline({
   events,
   viewer = "candidate",
+  channel,
 }: {
   events: ApplicationEvent[];
   viewer?: "candidate" | "hr";
+  channel?: string;
 }) {
   const names = viewer === "hr" ? { ...SOURCE, user: "候选人", hr: "你" } : SOURCE;
   const newestFirst = [...events].reverse();
@@ -30,7 +35,7 @@ export function Timeline({
         <li key={e.id} className={[styles.item, i === 0 && styles.latest].filter(Boolean).join(" ")}>
           <span className={styles.dot} aria-hidden="true" />
           <div className={styles.row}>
-            <span className={styles.label}>{eventLabel(e)}</span>
+            <span className={styles.label}>{eventLabel(e, channel)}</span>
             <span className={styles.meta}>
               {names[e.source]} · <time dateTime={e.createdAt}>{dateTime(e.createdAt)}</time>
             </span>

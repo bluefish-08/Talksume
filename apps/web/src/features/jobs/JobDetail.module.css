@@ -193,6 +193,14 @@
   flex: 1 1 120px;
 }
 
+.applyNote {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-3, var(--text-2));
+  text-align: center;
+}
+
 .minor {
   display: flex;
   flex-wrap: wrap;

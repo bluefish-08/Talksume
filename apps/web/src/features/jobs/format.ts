@@ -90,7 +90,7 @@ export function evidenceLines(match: MatchItem, max = 4): string[] {
   const context: string[] = [];
   for (const key of DIM_KEYS) {
     const d = match.dims[key];
-    const text = d?.evidence[0];
+    const text = d?.evidence[0]?.replace(/；?JD「[^」]*」/g, "");
     if (!d || !text || d.weight <= 0 || d.score < 0.6) continue;
     if (key === "major" || key === "city") context.push(text);
     else main.push({ text, weighted: d.score * d.weight });

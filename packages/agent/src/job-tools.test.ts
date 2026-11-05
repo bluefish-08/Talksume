@@ -380,7 +380,7 @@ describe("岗位相关的系统提示", () => {
     expect(prompt).toContain("## 岗位问题");
     expect(prompt).toContain("不要推说「等画像补完再推荐」");
     expect(prompt).toContain("recommend_jobs");
-    expect(prompt).toContain("去投递");
+    expect(prompt).toContain("岗位详情页");
     expect(prompt).not.toContain("比如生成简历、改写措辞、重点突出某条、投递");
     expect(prompt).not.toContain("tailor_resume");
   });

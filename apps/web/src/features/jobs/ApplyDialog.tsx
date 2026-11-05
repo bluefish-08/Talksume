@@ -10,6 +10,8 @@ export interface ManualApply {
   company: string;
   title: string;
   url?: string | null;
+  /** 点投递时已经替用户打开了官网页。 */
+  opened?: boolean;
   submitError?: string;
 }
 
@@ -25,9 +27,11 @@ export function ApplyDialog({
   const mark = useMarkApplied();
 
   return (
-    <Modal title="还差一步：去官网投递" onClose={onClose}>
+    <Modal title="已记录，记得在官网完成投递" onClose={onClose}>
       <p className={styles.lead}>
-        {apply.company}「{apply.title}」需要在公司官网提交。投完回来点「我已投递」，我们会把它记进投递进度。
+        {apply.company}「{apply.title}」要在公司官网提交，我们没法替你投。
+        {apply.opened ? "官网页已在新标签页打开，" : ""}
+        投完回来点「我已在官网投递」，投递进度里才会显示已投；还没投也没关系，之后可以在「投递进度」里继续。
       </p>
       {apply.submitError && (
         <p className={styles.notice}>自动投递没有成功（{apply.submitError}），已改为你手动投递。</p>
@@ -43,7 +47,7 @@ export function ApplyDialog({
         </Button>
         {apply.url ? (
           <a className={styles.linkBtn} href={apply.url} target="_blank" rel="noreferrer">
-            去官网投递
+            {apply.opened ? "重新打开官网" : "去官网投递"}
             <ExternalLink size={14} strokeWidth={1.6} aria-hidden="true" />
           </a>
         ) : (
@@ -54,7 +58,7 @@ export function ApplyDialog({
           disabled={mark.isPending}
           onClick={() => mark.mutate(apply.applicationId, { onSuccess: onApplied })}
         >
-          {mark.isPending && <Spinner label="提交中" />}我已投递
+          {mark.isPending && <Spinner label="提交中" />}我已在官网投递
         </Button>
       </div>
     </Modal>

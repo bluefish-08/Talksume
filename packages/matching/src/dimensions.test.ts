@@ -26,6 +26,18 @@ describe("技能维度", () => {
     expect(res.evidence.join("\n")).toContain("JD「");
   });
 
+  it("任选其一的技能只写实际命中的那个，并说明满足几项", () => {
+    const job = makeJob({
+      title: "后端开发",
+      jdText: "【任职要求】\n精通C/C++/Java/Go其中一门语言\n熟悉Redis",
+    });
+    const res = scoreSkills(makeProfile({ skills: [skill("Java")] }), job);
+    const hit = res.evidence.find((e) => e.startsWith("命中"));
+    expect(hit).toMatch(/^命中 Java（JD 要求 .*之一）：/);
+    expect(hit).not.toMatch(/^命中 [^（]*\//);
+    expect(res.evidence.at(-1)).toBe("满足 1/2 项技能要求");
+  });
+
   it("加分项权重减半，缺失时只扣一半", () => {
     const job = makeJob({ title: "后端", jdText: "【任职要求】\n熟悉Java\n【加分项】\n了解Kubernetes" });
     const jd = extractJdSkills(job);

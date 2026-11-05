@@ -8,6 +8,7 @@ import { type FactQuote, ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
 import { TemplatePicker } from "../resume/TemplatePicker.tsx";
 import { TailorDraft } from "../tailor/TailorDraft.tsx";
+import { VersionSwitch } from "../tailor/VersionSwitch.tsx";
 import styles from "./ResumePane.module.css";
 
 interface Props {
@@ -92,24 +93,12 @@ export function ResumePane({
       </div>
 
       {tab === "resume" && tailor && (
-        <fieldset className={styles.versions} aria-label="简历版本">
-          <button
-            type="button"
-            className={styles.version}
-            aria-pressed={!tailor.showing}
-            onClick={() => onTailorShow(false)}
-          >
-            通用简历
-          </button>
-          <button
-            type="button"
-            className={styles.version}
-            aria-pressed={tailor.showing}
-            onClick={() => onTailorShow(true)}
-          >
-            {tailor.company} · {tailor.title} 定制版
-          </button>
-        </fieldset>
+        <VersionSwitch
+          className={styles.versionSwitch}
+          label={`${tailor.company} · ${tailor.title}`}
+          showing={tailor.showing}
+          onShow={onTailorShow}
+        />
       )}
 
       {tailoring ? (

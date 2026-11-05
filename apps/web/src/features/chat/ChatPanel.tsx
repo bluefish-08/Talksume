@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Maximize2, PanelRightClose, SquarePen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { ApiError, api } from "../../api/client.ts";
 import { qk, useConversations } from "../../api/queries.ts";
 import type { Completeness, ResumeContent } from "../../api/types.ts";
@@ -10,11 +10,11 @@ import { Button, Chip, IconButton, Spinner } from "../../components/ui.tsx";
 import { usePolishedResume } from "../resume/polishQueries.ts";
 import type { ResumeSuggestion } from "../resume/workbench.ts";
 import { useResumeImport } from "../resume-import/useResumeImport.tsx";
-import { tailorPath } from "../tailor/queries.ts";
+import { tailoringKey } from "../tailor/queries.ts";
 import styles from "./ChatPanel.module.css";
 import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
-import type { ConversationDetail } from "./types.ts";
+import type { ConversationDetail, TailorCard } from "./types.ts";
 import { useChatSession } from "./useChatSession.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
 
@@ -40,10 +40,12 @@ interface Props {
   /** 页面要求发送的消息，id 变化才算一次新请求。 */
   request: PanelRequest | null;
   onLive: (live: LiveResume | null) => void;
+  /** 定制卡片被点开，或本轮刚生成了定制版；页面负责在简历预览里展示。 */
+  onOpenTailor: (card: TailorCard) => void;
   onClose: () => void;
 }
 
-export function ChatPanel({ visible, prompts, suggestions, request, onLive, onClose }: Props) {
+export function ChatPanel({ visible, prompts, suggestions, request, onLive, onOpenTailor, onClose }: Props) {
   const client = useQueryClient();
   const toast = useToast();
   const conversations = useConversations();
@@ -131,6 +133,7 @@ export function ChatPanel({ visible, prompts, suggestions, request, onLive, onCl
           onConsumed={() => setQueued(null)}
           onLive={onLive}
           onAttach={() => importer.open()}
+          onOpenTailor={onOpenTailor}
         />
       ) : noConversation ? (
         <PanelStart
@@ -249,6 +252,7 @@ function PanelSession({
   onConsumed,
   onLive,
   onAttach,
+  onOpenTailor,
 }: {
   detail: ConversationDetail;
   visible: boolean;
@@ -258,6 +262,7 @@ function PanelSession({
   onConsumed: () => void;
   onLive: (live: LiveResume | null) => void;
   onAttach: () => void;
+  onOpenTailor: (card: TailorCard) => void;
 }) {
   const session = useChatSession(detail);
   const resume = usePolishedResume(session.resume);
@@ -271,6 +276,15 @@ function PanelSession({
   }, [onLive, resume, session.completeness, session.highlights]);
   useEffect(() => () => onLive(null), [onLive]);
 
+  const client = useQueryClient();
+  const live = messages.at(-1);
+  const liveTailor = live?.state === "streaming" ? live.tailor : undefined;
+  useEffect(() => {
+    if (!liveTailor) return;
+    void client.invalidateQueries({ queryKey: tailoringKey(liveTailor.jobId) });
+    onOpenTailor(liveTailor);
+  }, [liveTailor, client, onOpenTailor]);
+
   // StrictMode 会把 effect 跑两遍，ref 保证同一请求只发一次；助手还在回复时先放进输入框
   useEffect(() => {
     if (!queued || consumed.current === queued.id) return;
@@ -280,7 +294,6 @@ function PanelSession({
     onConsumed();
   }, [queued, send, onConsumed, scroller]);
 
-  const navigate = useNavigate();
   const talk = (text: string) => {
     scroller.pin();
     return send(text);
@@ -301,7 +314,7 @@ function PanelSession({
           }}
           onResolve={(c, choice) => void session.resolveConflict(c, choice)}
           onQuickReply={talk}
-          onOpenTailor={(card) => navigate(tailorPath(card.jobId))}
+          onOpenTailor={onOpenTailor}
         />
         {fresh && !session.streaming && (
           <StarterPrompts prompts={prompts} suggestions={suggestions} onPick={talk} />

@@ -36,12 +36,14 @@ const stripQuotes = (evidence: string) => evidence.replace(/；?JD「[^」]*」/
 
 /** 没有 AI 报告时用规则证据拼一句理由：方向是否对口、命中了哪些技能。 */
 export function reasonFromDims(dims: MatchDims): string | undefined {
-  const hits = (dims.skills?.evidence ?? []).flatMap(
-    (e) => /^命中 (.+?)：/.exec(e)?.[1]?.replace(/ 任一$/, "") ?? [],
-  );
+  const lines = dims.skills?.evidence ?? [];
+  const hits = lines.flatMap((e) => /^命中 (.+?)(?:（[^）]*）)?：/.exec(e)?.[1] ?? []);
+  const coverage = lines.map((e) => /^满足 (\d+\/\d+) 项技能要求/.exec(e)?.[1]).find(Boolean);
   const parts = [
     ...((dims.role?.score ?? 0) >= STRONG ? ["方向对口"] : []),
-    ...(hits.length > 0 ? [`技能命中 ${hits.slice(0, 3).join("、")}`] : []),
+    ...(hits.length > 0
+      ? [`技能命中 ${hits.slice(0, 3).join("、")}${coverage ? `（满足 ${coverage} 项要求）` : ""}`]
+      : []),
   ];
   if (parts.length > 0) return parts.join("，");
   const best = coreDims(dims).sort((a, b) => b.score * b.weight - a.score * a.weight)[0];

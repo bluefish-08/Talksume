@@ -18,7 +18,7 @@ export function JobAbout({ job }: { job: JobCard }) {
   );
 }
 
-/** 投递只跳到职位页，由用户在那里亲手确认。 */
+/** 卡片只负责看详情；投递按钮在详情页里，按岗位来源说明是站内投递还是去官网。 */
 export function JobCards({ jobs }: { jobs: JobCard[] }) {
   return (
     <ul className={styles.list} aria-label="岗位">
@@ -43,11 +43,8 @@ export function JobCards({ jobs }: { jobs: JobCard[] }) {
             </div>
             {job.reason && <p className={styles.reason}>{job.reason}</p>}
             <div className={styles.actions}>
-              <Link className={styles.btn} to={href}>
-                看详情
-              </Link>
               <Link className={`${styles.btn} ${styles.primary}`} to={href}>
-                去投递
+                看详情
               </Link>
             </div>
           </li>

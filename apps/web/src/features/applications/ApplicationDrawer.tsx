@@ -67,6 +67,11 @@ function Body({ detail }: { detail: ApplicationDetail }) {
           <ChannelTag channel={app.channel} />
           {app.resumeVersionId && <ResumeTag tailored={!!app.resumeTailored} />}
         </div>
+        {app.channel === "assisted" && app.status === "pending" && (
+          <p className={styles.pending}>
+            已记录，但还没有投出去：记得在官网完成投递，再回来点「我已在官网投递」。
+          </p>
+        )}
         {job.url && (
           <a className={styles.link} href={job.url} target="_blank" rel="noreferrer">
             查看职位原文
@@ -84,7 +89,7 @@ function Body({ detail }: { detail: ApplicationDetail }) {
 
       <section className={styles.section}>
         <h3 className={styles.h}>进度记录</h3>
-        <Timeline events={timeline} />
+        <Timeline events={timeline} channel={app.channel} />
       </section>
     </div>
   );
@@ -144,7 +149,7 @@ function Actions({ detail }: { detail: ApplicationDetail }) {
           disabled={run.isPending}
           onClick={() => submit({ kind: "mark-applied" })}
         >
-          我已投递
+          我已在官网投递
         </Button>
       )}
       {assisted &&

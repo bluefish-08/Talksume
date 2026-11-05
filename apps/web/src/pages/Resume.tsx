@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useProfile } from "../api/queries.ts";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { ChatPanel, type LiveResume, type PanelRequest } from "../features/chat/ChatPanel.tsx";
+import type { TailorCard } from "../features/chat/types.ts";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
 import { PolishButton } from "../features/resume/PolishButton.tsx";
 import { useFacts, useResume, useResumeStyle } from "../features/resume/queries.ts";
@@ -24,6 +25,8 @@ import {
 } from "../features/resume/workbench.ts";
 import { ZoomControl } from "../features/resume/ZoomControl.tsx";
 import { useResumeImport } from "../features/resume-import/useResumeImport.tsx";
+import { TailorDraft } from "../features/tailor/TailorDraft.tsx";
+import { VersionSwitch } from "../features/tailor/VersionSwitch.tsx";
 import styles from "./Resume.module.css";
 
 const CHAT_OPEN_KEY = "talksume.resume.chatOpen";
@@ -74,6 +77,17 @@ export function ResumePage() {
   const [drawer, setDrawer] = useState(false);
   const [live, setLive] = useState<LiveResume | null>(null);
   const [request, setRequest] = useState<PanelRequest | null>(null);
+  const [tailor, setTailor] = useState<{
+    jobId: string;
+    company: string;
+    title: string;
+    showing: boolean;
+  } | null>(null);
+  const showTailor = useCallback(
+    (card: TailorCard) =>
+      setTailor({ jobId: card.jobId, company: card.company, title: card.title, showing: true }),
+    [],
+  );
   const [zoom, setZoom] = useState<ZoomMode>(() => readZoom(ZOOM_KEY));
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const importer = useResumeImport();
@@ -168,7 +182,19 @@ export function ResumePage() {
             </Button>
           </EmptyState>
         )}
-        {content && (
+        {content && tailor && (
+          <VersionSwitch
+            label={`${tailor.company} · ${tailor.title}`}
+            showing={tailor.showing}
+            onShow={(showing) => setTailor((t) => t && { ...t, showing })}
+          />
+        )}
+        {content && tailor?.showing && (
+          <div className={styles.tailorView}>
+            <TailorDraft jobId={tailor.jobId} onDiscard={() => setTailor(null)} />
+          </div>
+        )}
+        {content && !tailor?.showing && (
           <>
             <div className={styles.zoombar}>
               <ZoomControl mode={zoom} scale={scale} onChange={chooseZoom} />
@@ -206,6 +232,7 @@ export function ResumePage() {
           suggestions={suggestions}
           request={request}
           onLive={setLive}
+          onOpenTailor={showTailor}
           onClose={() => setOpen(false)}
         />
       </div>

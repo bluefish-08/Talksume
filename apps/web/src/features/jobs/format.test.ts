@@ -80,7 +80,7 @@ describe("jobs format", () => {
       dims: {
         major: dim(1, 0.1, "画像专业符合 JD"),
         city: dim(1, 0.1, "城市在意向内"),
-        skills: dim(0.7, 0.3, "命中 Go：美团实习"),
+        skills: dim(0.7, 0.3, "命中 Go：美团实习；JD「熟悉 Go」"),
         experience: dim(0.8, 0.25, "实习与岗位同属后端"),
       },
     });

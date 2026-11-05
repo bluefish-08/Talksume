@@ -10,11 +10,12 @@ describe("推荐理由", () => {
         weight: 0.3,
         evidence: [
           "命中 Java：画像技能「Java」；JD「熟悉 Java」",
-          "命中 C++/Go 任一：画像技能「Go」；JD「Go」",
+          "命中 Go（JD 要求 C++/Go 之一）：画像技能「Go」；JD「Go」",
+          "满足 2/5 项技能要求",
         ],
       },
     });
-    expect(reason).toBe("方向对口，技能命中 Java、C++/Go");
+    expect(reason).toBe("方向对口，技能命中 Java、Go（满足 2/5 项要求）");
   });
 
   it("没有方向和技能证据时退回贡献最大的维度，去掉 JD 引文", () => {

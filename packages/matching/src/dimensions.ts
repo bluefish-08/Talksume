@@ -127,6 +127,7 @@ export function scoreSkills(profile: Profile, job: Job): DimensionScore {
   let got = 0;
   const hitLines: string[] = [];
   const missLines: string[] = [];
+  let hitCount = 0;
   for (const members of units.values()) {
     const weight = Math.max(...members.map((m) => m.weight));
     let best: { skill: JdSkill; owned: Owned } | undefined;
@@ -136,14 +137,20 @@ export function scoreSkills(profile: Profile, job: Job): DimensionScore {
     }
     total += weight;
     got += weight * (best?.owned.credit ?? 0);
-    const label =
-      members.length > 1 ? `${members.map((m) => m.name).join("/")} 任一` : (members[0]?.name ?? "");
+    const anyOf = members.length > 1 ? members.map((m) => m.name).join("/") : undefined;
     const first = members[0];
-    if (best) hitLines.push(`命中 ${label}：${best.owned.source}；JD「${best.skill.snippet}」`);
-    else if (first) missLines.push(`缺少 ${label}：JD「${first.snippet}」${weight < 1 ? "（加分项）" : ""}`);
+    if (best) {
+      const name = anyOf ? `${best.skill.name}（JD 要求 ${anyOf} 之一）` : best.skill.name;
+      hitLines.push(`命中 ${name}：${best.owned.source}；JD「${best.skill.snippet}」`);
+      hitCount += 1;
+    } else if (first) {
+      const name = anyOf ? `${anyOf} 之一` : first.name;
+      missLines.push(`缺少 ${name}：JD「${first.snippet}」${weight < 1 ? "（加分项）" : ""}`);
+    }
   }
   const evidence = [...hitLines.slice(0, 5), ...missLines.slice(0, 3)];
   if (hitLines.length === 0) evidence.unshift("画像中没有出现 JD 要求的任何技能");
+  else evidence.push(`满足 ${hitCount}/${units.size} 项技能要求`);
   return { score: clamp01(got / total), applicable: true, evidence };
 }
 

@@ -52,6 +52,9 @@ function Card({ item, active }: { item: BoardItem; active: boolean }) {
         {place}
       </span>
       {interviewAt && <span className={styles.interview}>面试 {dateTime(interviewAt)}</span>}
+      {item.channel === "assisted" && item.status === "pending" && (
+        <span className={styles.interview}>已记录，记得在官网完成投递</span>
+      )}
       <span className={styles.foot}>
         <span className={styles.tags}>
           <ChannelTag channel={item.channel} />

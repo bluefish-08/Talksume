@@ -14,6 +14,7 @@ import {
 } from "./format.ts";
 import styles from "./JobDetail.module.css";
 import type { ApplicationRef, JobSummary, MatchItem } from "./types.ts";
+import { isOfficialJob } from "./useApplyFlow.tsx";
 
 export interface DetailProps {
   job: JobSummary;
@@ -36,26 +37,43 @@ export interface DetailProps {
   onRetryReport: () => void;
 }
 
-function applyButton({ application, busy, onApply }: DetailProps) {
+function applyButton({ job, application, busy, onApply }: DetailProps) {
+  const official = isOfficialJob(job);
   if (!application) {
     return (
       <Button variant="primary" size="lg" className={styles.apply} disabled={busy.apply} onClick={onApply}>
-        {busy.apply && <Spinner label="投递中" />}投递
+        {busy.apply && <Spinner label="投递中" />}
+        {official ? "去官网投递" : "投递"}
+        {official && <ExternalLink size={14} strokeWidth={1.6} aria-hidden="true" />}
       </Button>
     );
   }
   if (application.status === "pending" && application.channel === "assisted") {
     return (
       <Button variant="primary" size="lg" className={styles.apply} onClick={onApply}>
-        继续投递
+        完成官网投递
       </Button>
     );
   }
+  const done = application.channel === "assisted" ? "已在官网投递" : "已投递";
   return (
     <Button variant="secondary" size="lg" className={styles.apply} disabled>
-      {application.status === "closed" ? "投递已结束" : "已投递"}
+      {application.status === "closed" ? "投递已结束" : done}
     </Button>
   );
+}
+
+function applyNote({ job, application }: DetailProps) {
+  if (!isOfficialJob(job)) return null;
+  if (!application)
+    return (
+      <p className={styles.applyNote}>
+        岗位来自公司官网：会打开官网投递页，并在这里记一笔，投递要你自己在官网完成。
+      </p>
+    );
+  if (application.status === "pending")
+    return <p className={styles.applyNote}>已记录，但还没标记为已在官网投递，记得去官网完成。</p>;
+  return null;
 }
 
 export function JobDetail(props: DetailProps) {
@@ -221,6 +239,7 @@ export function JobDetail(props: DetailProps) {
           </Button>
           {applyButton(props)}
         </div>
+        {applyNote(props)}
         <div className={styles.minor}>
           <button type="button" className={styles.link} disabled={busy.dislike} onClick={props.onDislike}>
             不感兴趣

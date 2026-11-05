@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router";
 import { ApiError } from "../../api/client.ts";
 import { useToast } from "../../components/Toast.tsx";
 import { Button, EmptyState, Spinner } from "../../components/ui.tsx";
-import { ApplyDialog, type ManualApply } from "./ApplyDialog.tsx";
 import styles from "./Browse.module.css";
 import { BrowseFilterBar } from "./BrowseFilters.tsx";
 import {
@@ -16,19 +15,12 @@ import {
   useBrowseJobs,
   useMatchPreview,
 } from "./browse.ts";
-import {
-  useAppliedJobs,
-  useCreateApplication,
-  useFeedback,
-  useJobDetail,
-  useMatches,
-  useOptimizeResume,
-} from "./hooks.ts";
+import { useFeedback, useJobDetail, useMatches, useOptimizeResume } from "./hooks.ts";
 import { JobDetail, JobDetailSkeleton } from "./JobDetail.tsx";
 import { JobList, JobListSkeleton, type JobRow } from "./JobList.tsx";
 import jobsStyles from "./Jobs.module.css";
 import { JobsTabs } from "./JobsTabs.tsx";
-import type { JobSummary } from "./types.ts";
+import { useApplyFlow } from "./useApplyFlow.tsx";
 
 const NARROW = "(max-width: 999px)";
 
@@ -51,52 +43,6 @@ function previewNote(p: MatchPreview): string {
     return `没有进入你的推荐。${p.excluded.message}。下面是按你的简历现场算的匹配度，仅供参考。`;
   if (p.belowThreshold) return "这个岗位和你的技能、经历相关度不高，所以没有进入推荐。下面是现场算的匹配度。";
   return "这个岗位不在你当前的推荐列表里，下面是现场算的匹配度。";
-}
-
-function useApplyFlow(job: JobSummary | undefined) {
-  const toast = useToast();
-  const applied = useAppliedJobs().data;
-  const createApp = useCreateApplication();
-  const [manual, setManual] = useState<ManualApply | null>(null);
-  const application = job ? applied?.get(job.id) : undefined;
-
-  function apply() {
-    if (!job) return;
-    const target = { company: job.company, title: job.title, url: job.url };
-    if (application?.status === "pending") {
-      setManual({ applicationId: application.id, ...target });
-      return;
-    }
-    createApp.mutate(job.id, {
-      onSuccess: (r) => {
-        if (r.nextAction === "manual_apply") {
-          setManual({
-            applicationId: r.application.id,
-            ...target,
-            ...(r.submitError && { submitError: r.submitError }),
-          });
-        } else {
-          toast("已投递，进度会出现在「投递进度」里", { tone: "success" });
-        }
-      },
-      onError: (e) => {
-        const dup = e instanceof ApiError && e.code === "already_applied";
-        toast(dup ? "已经投递过这个岗位了" : errorText(e), { tone: dup ? "info" : "error" });
-      },
-    });
-  }
-
-  const dialog = manual && (
-    <ApplyDialog
-      apply={manual}
-      onClose={() => setManual(null)}
-      onApplied={() => {
-        setManual(null);
-        toast("已记录投递，进度可以在「投递进度」里看", { tone: "success" });
-      }}
-    />
-  );
-  return { apply, application, applying: createApp.isPending, dialog };
 }
 
 export function BrowseJobs() {
