@@ -94,7 +94,7 @@ export function matchingJobTools(service: MatchingService, userId: string): JobT
   };
 }
 
-const ITEM_SECTION_LABEL = { experiences: "经历", projects: "项目" } as const;
+const ITEM_SECTION_LABEL = { experiences: "经历", projects: "项目", campus: "校园经历" } as const;
 
 export function describeTailorChange(change: TailorChange): string {
   switch (change.kind) {

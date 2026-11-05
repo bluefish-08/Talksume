@@ -49,6 +49,8 @@ export interface RunContext {
   emit(event: IntakeEvent): void;
   /** rejected：本轮有 upsert_facts 条目被拒，等待模型修正。 */
   flags: { asked: boolean; changed: boolean; jobs?: boolean; rejected?: boolean };
+  /** 本轮已经说出口的正文。 */
+  spoken?: () => string;
 }
 
 export function normalizeQuote(text: string): string {
@@ -158,6 +160,20 @@ function declineOf(m: MissingField, text: string): string | undefined {
   return NOTHING_TO_SAY.test(text) ? text.trim() : undefined;
 }
 
+/**
+ * 上一轮问的深挖项或挖掘角度，用户这轮答了实质内容（不是简短的「没有」）：返回该项名称，
+ * 模型没写入也没跳过时用来提醒它补写。
+ */
+export function answeredSlot(state: IntakeState, text: string): string | undefined {
+  const key = lastAskedKey(state);
+  if (!key) return undefined;
+  const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
+  const slot = missing.find((m) => m.key === key);
+  if (!slot || !(slot.depth || slot.kind === "probe") || declineOf(slot, text)) return undefined;
+  if (normalizeQuote(text).length <= SHORT_DECLINE) return undefined;
+  return `${slot.itemLabel ? `「${slot.itemLabel}」的` : ""}${slot.label}`;
+}
+
 /** 上一轮问的是深挖项，用户答没有、没遇到、记不清时直接记为跳过，不指望模型记得调用 skip_field。 */
 export function skipDeclined(state: IntakeState, text: string): SkipEntry | null {
   const key = lastAskedKey(state);
@@ -265,6 +281,21 @@ export function unconfirmedValues(
   });
 }
 
+const WRAP_UP =
+  /(?:基本|差不多|都)(?:就)?齐了|右侧(?:的)?(?:预览|就是)|(?:可以|直接)导出|(?:基本|比较|已经)(?:收集)?完整|先到这里|就到这里/;
+
+export const wrapsUp = (assistantText: string) => WRAP_UP.test(assistantText);
+
+/**
+ * 模型这一轮没提问时，替它补上目标字段的问题；它已经在收尾，就只补还缺的必填基础项，
+ * 深挖、挖掘角度这类可选追问不再拼在「基本齐了」后面。
+ */
+export function fallbackQuestion(assistantText: string, slot: Slot): string | undefined {
+  if (/[?？]/.test(assistantText)) return undefined;
+  if (!WRAP_UP.test(assistantText)) return slot.question;
+  return slot.kind === "field" && slot.required && !slot.depth ? `不过还差一项：${slot.question}` : undefined;
+}
+
 export function noteAsked(state: IntakeState, slot: Slot | null): void {
   if (slot) state.askCounts[slot.key] = (state.askCounts[slot.key] ?? 0) + 1;
 }
@@ -339,6 +370,16 @@ export function tool(
 export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
   const { state } = ctx;
 
+  // 正文里已经问过或已经收尾时还给「下一个目标」，模型会照着再问一遍
+  const nextTarget = (fallback = "下一个目标：无，信息已基本完整。"): string => {
+    const said = ctx.spoken?.() ?? "";
+    if (/[?？]/.test(said))
+      return "这一轮的回复里已经提过问题了：写完就结束，不要再输出文字，也不要换个说法再问；需要快捷回答就调用 ask_user，question 照抄正文里那句。";
+    if (wrapsUp(said)) return "这一轮的回复已经在收尾：写完就结束，不要再输出文字，也不要再提问。";
+    const next = nextSlotOf(state);
+    return next ? `下一个目标：\n${describeSlot(next)}` : fallback;
+  };
+
   const upsertFacts = tool(
     "upsert_facts",
     "写入事实",
@@ -403,6 +444,10 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
           `有 ${result.conflicts.length} 处与已记录内容矛盾，已自动向用户发起确认，本轮请不要再追问其他内容，不要在文字里复述矛盾，也不要调用 ask_user。`,
         );
       }
+      if (result.unchanged.length > 0) {
+        const which = result.unchanged.map((i) => (accepted[i]?.index ?? i) + 1).join("、");
+        lines.push(`第 ${which} 条和已记录的内容一样，不用重复写入。`);
+      }
       if (result.drafted.length > 0) lines.push(result.drafted.map(describeDrafted).join("\n"));
       if (result.dropped.length > 0) {
         const dropped = result.dropped.map(
@@ -410,12 +455,17 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
         );
         lines.push(`已忽略这些推测字段（事实其余部分照常写入），用户没说就留空：\n${dropped.join("\n")}`);
       }
+      if (result.reverted.length > 0) {
+        const reverted = result.reverted.map(
+          (d) => `第 ${(accepted[d.index]?.index ?? d.index) + 1} 条：${d.reason}`,
+        );
+        lines.push(`这些写法超出了用户原话，已按原话写入，不用重写：\n${reverted.join("\n")}`);
+      }
       if (rejected.length > 0) {
         ctx.flags.rejected = true;
         lines.push(`被拒绝：\n${rejected.join("\n")}`);
       }
-      const next = nextSlotOf(state);
-      lines.push(next ? `下一个目标：\n${describeSlot(next)}` : "下一个目标：无，信息已基本完整。");
+      lines.push(nextTarget());
       return text(lines.join("\n"), confirmed === 0 && result.conflicts.length === 0 && rejected.length > 0);
     },
   );
@@ -475,10 +525,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
         const entry = sectionSkipEntry(section, args.quote);
         state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
       }
-      const next = nextSlotOf(state);
-      return text(
-        `已完成「${label}」。${next ? `\n下一个目标：\n${describeSlot(next)}` : "\n所有分区均已完成。"}`,
-      );
+      return text(`已完成「${label}」。\n${nextTarget("所有分区均已完成。")}`);
     },
   );
 
@@ -512,10 +559,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
 
   function skipped(entry: SkipEntry, note = ""): AgentToolResult<unknown> {
     ctx.flags.changed = true;
-    const next = nextSlotOf(state);
-    return text(
-      `${note}已记下用户不提供「${entry.label}」，以后不会再问。${next ? `\n下一个目标：\n${describeSlot(next)}` : "\n下一个目标：无，信息已基本完整。"}`,
-    );
+    return text(`${note}已记下用户不提供「${entry.label}」，以后不会再问。\n${nextTarget()}`);
   }
 
   const resolveConflictTool = tool(
@@ -546,8 +590,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       if (state.conflicts.length > 0) {
         lines.push("还有矛盾待确认，已自动向用户发起确认，本轮请不要再追问其他内容，也不要调用 ask_user。");
       } else {
-        const next = nextSlotOf(state);
-        lines.push(next ? `下一个目标：\n${describeSlot(next)}` : "下一个目标：无，信息已基本完整。");
+        lines.push(nextTarget());
       }
       return text(lines.join("\n"));
     },

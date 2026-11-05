@@ -67,6 +67,10 @@ export const Experience = Sourced.extend({
 
 export const Project = Sourced.extend({
   name: z.string(),
+  kind: z
+    .enum(["project", "campus"])
+    .optional()
+    .describe("campus=社团、学生会、志愿者、学生活动等校园经历，简历上单列「校园经历」；不填即项目"),
   role: z.string().optional(),
   techStack: z.array(z.string()).default([]),
   situation: z.string().optional().describe("STAR：背景"),

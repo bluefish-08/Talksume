@@ -36,7 +36,7 @@ describe("quoteInCorpus", () => {
   });
 });
 
-function upsertWith(texts: string[]) {
+function upsertWith(texts: string[], spoken = "") {
   const state = createIntakeState();
   const ctx: RunContext = {
     state,
@@ -46,6 +46,7 @@ function upsertWith(texts: string[]) {
     genId: (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 8)}`,
     emit: () => {},
     flags: { asked: false, changed: false },
+    spoken: () => spoken,
   };
   const tool = createIntakeTools(ctx).find((t) => t.name === "upsert_facts");
   if (!tool) throw new Error("upsert_facts missing");
@@ -74,6 +75,21 @@ describe("upsert_facts tool", () => {
     ]);
     expect(text).not.toContain("被拒绝");
     expect(state.profile.education[0]).toMatchObject({ start: "2021-09", end: "2025-06" });
+  });
+
+  it("gives no next target once the reply already asked something", async () => {
+    const said = "好的，记下了。期望薪资想写在简历上吗？";
+    const { run } = upsertWith(["想找江城的 Java 开发校招岗位"], said);
+    const fact = {
+      section: "intention",
+      payload: { cities: ["江城"] },
+      quote: "想找江城的 Java 开发校招岗位",
+    };
+    const text = await run([fact]);
+    expect(text).not.toContain("下一个目标");
+    expect(text).toContain("不要换个说法再问");
+    const plain = await upsertWith(["想找江城的 Java 开发校招岗位"]).run([fact]);
+    expect(plain).toContain("下一个目标");
   });
 
   it("tells the model which guessed fields were dropped", async () => {

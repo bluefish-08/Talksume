@@ -432,3 +432,23 @@ describe("pickNextSlot", () => {
     expect(pickNextSlot(empty(), { completedSections: all, skipped })).toBeNull();
   });
 });
+
+describe("campus items", () => {
+  it("does not ask for a tech stack on a campus activity", () => {
+    const profile = Profile.parse({
+      projects: [
+        {
+          id: "p1",
+          name: "计算机协会电脑义诊",
+          kind: "campus",
+          role: "现场登记",
+          highlights: [{ detail: "负责现场登记" }],
+        },
+        { id: "p2", name: "学生成绩管理系统", role: "成员" },
+      ],
+    });
+    const keys = computeCompleteness(profile).missing.map((m) => m.key);
+    expect(keys).not.toContain("projects:p1:techStack");
+    expect(keys).toContain("projects:p2:techStack");
+  });
+});

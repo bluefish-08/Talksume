@@ -416,3 +416,20 @@ describe("求职意向行", () => {
     );
   });
 });
+
+describe("校园经历", () => {
+  it("kind=campus 的条目单列「校园经历」，排在项目经历之后", () => {
+    const profile = Profile.parse({
+      projects: [
+        { id: "p1", name: "学生成绩管理系统", techStack: ["Java"] },
+        { id: "p2", name: "计算机协会电脑义诊", kind: "campus", highlights: [{ detail: "负责现场登记" }] },
+      ],
+    });
+    const sections = profileToResume(profile).sections;
+    expect(sections.map((s) => [s.kind, s.title])).toEqual([
+      ["projects", "项目经历"],
+      ["campus", "校园经历"],
+    ]);
+    expect(sections[1]?.items[0]?.heading).toBe("计算机协会电脑义诊");
+  });
+});

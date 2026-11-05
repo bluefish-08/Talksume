@@ -36,7 +36,7 @@ const f = (
 ): FieldSpec => ({ field, label, weight, required, question, strategy, ...extra });
 
 const HIGHLIGHT_RULE =
-  "把用户的叙述整理成 highlights：title 是 4～10 字的关键词短语，detail 照用户原话写，不改写、不夸大，数字只用用户说过的。";
+  "把用户的叙述整理成 highlights：title 是 4～10 字的关键词短语，detail 写成简历用语（去掉「我」、动词开头），只用原话里的事实，不夸大，数字只用用户说过的。";
 
 /** 实习和项目共用的深挖四步：技术栈 → 负责什么 → 难点与做法 → 量化结果。 */
 const deepDive = (what: string): FieldSpec[] => [
@@ -46,7 +46,7 @@ const deepDive = (what: string): FieldSpec[] => [
     2,
     true,
     `这段${what}主要用了哪些技术栈或工具？`,
-    "techStack 一项一条，和已有的取并集。quickReplies 给 2～3 个贴合这段经历方向的组合（如「Java + MySQL」「Go」），再加一个「跳过」。社团、志愿者这类不涉及技术的活动直接用 skip_field 跳过，不要硬问。",
+    "techStack 一项一条，和已有的取并集。quickReplies 给 2～3 个贴合这段经历方向的组合（如「Java + MySQL」「Go」），再加一个「跳过」。不涉及技术的活动直接用 skip_field 跳过，不要硬问。",
     { depth: 1 },
   ),
   f(
@@ -367,7 +367,9 @@ function scoreRecord(
         ...(depth ? { depth } : {}),
       });
   };
+  const campus = spec.section === "projects" && record.kind === "campus";
   for (const field of spec.fields) {
+    if (campus && field.field === "techStack") continue;
     const kind = field.field === "impact" ? "quantify" : field.depth && field.depth > 1 ? "deepen" : "field";
     add(
       field.field,
@@ -679,7 +681,7 @@ export interface Slot extends MissingField {
 
 const PROBE_STRATEGY =
   "用户之前说没有项目或实习，多半是觉得课程作业、社团这些不算，这里换个角度只问这一个。附上 quickReplies。" +
-  "用户说有但没细讲，就追问做的是什么、自己负责哪块，不要转去问别的角度；讲清楚后照常写入：课程设计、练手作品、帮老师同学做的东西、比赛作品、组织过的活动写 projects，兼职和勤工俭学写 experiences（kind=parttime），奖项和证书写 awards。" +
+  "用户说有但没细讲，就追问做的是什么、自己负责哪块，不要转去问别的角度；讲清楚后照常写入：课程设计、练手作品、帮老师同学做的东西、比赛作品写 projects；社团、学生会、志愿者、组织过的活动也写 projects 并带 kind=campus（简历上单列「校园经历」，不问技术栈）；兼职和勤工俭学写 experiences（kind=parttime），奖项和证书写 awards。" +
   "用户说没有，就用 skip_field 跳过这个角度。";
 
 export function toSlot(m: MissingField): Slot {

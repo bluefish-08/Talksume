@@ -19,7 +19,7 @@ const SECTION_NAMES: Record<ProfileSection, string> = {
   intention: "求职意向",
 };
 
-const ITEM_KIND = { experiences: "实习", projects: "项目" } as const;
+const ITEM_KIND = { experiences: "实习", projects: "项目", campus: "校园" } as const;
 const THIN_BULLETS = 3;
 const HAS_NUMBER = /\d/;
 
@@ -62,7 +62,7 @@ function gapSuggestions(completeness: Completeness | undefined): ResumeSuggestio
 
 function thinItemSuggestions(resume: ResumeContent): ResumeSuggestion[] {
   return resume.sections.flatMap((section) => {
-    if (section.kind !== "experiences" && section.kind !== "projects") return [];
+    if (section.kind !== "experiences" && section.kind !== "projects" && section.kind !== "campus") return [];
     const kind = ITEM_KIND[section.kind];
     return section.items.flatMap((item, i) => {
       const count = item.bullets.length;

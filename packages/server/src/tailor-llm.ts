@@ -89,6 +89,7 @@ function indexResume(resume: ResumeContent): IndexedItem[] {
 const SECTION_LABEL: Record<TailorItemSection, string> = {
   experiences: "实习与工作经历",
   projects: "项目经历",
+  campus: "校园经历",
 };
 
 function promptOf(job: TailorJob, resume: ResumeContent, index: IndexedItem[], note?: string): string {

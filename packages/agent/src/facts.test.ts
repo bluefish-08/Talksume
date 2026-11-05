@@ -7,8 +7,17 @@ let counter = 0;
 const genId = (prefix: string) => `${prefix}_${++counter}`;
 const ctx = { messageId: "m1", genId };
 
-const fact = (section: FactInput["section"], payload: Record<string, unknown>, quote = "原话") =>
-  ({ section, payload, quote }) as FactInput;
+// 默认 quote 取 payload 里的文字，让测合并的用例不被要点写法校验退回
+const wordsOf = (value: unknown): string[] =>
+  typeof value === "string"
+    ? [value]
+    : Array.isArray(value)
+      ? value.flatMap(wordsOf)
+      : value && typeof value === "object"
+        ? Object.values(value).flatMap(wordsOf)
+        : [];
+const fact = (section: FactInput["section"], payload: Record<string, unknown>, quote?: string) =>
+  ({ section, payload, quote: quote ?? (wordsOf(payload).join("，") || "原话") }) as FactInput;
 
 describe("applyFacts", () => {
   it("writes basics and creates confirmed fact records with the quote and message id", () => {
@@ -316,19 +325,24 @@ describe("applyFacts: ungrounded guesses", () => {
     expect(result.facts[1]?.payload).toEqual({ name: "Rust" });
   });
 
-  it("keeps an award date only when the quote mentions a year or date", () => {
+  it("keeps an award date only when the quote spells out the year and month", () => {
     const result = applyFacts(
       Profile.parse({}),
       [
-        fact("awards", { name: "数学建模省一等奖", date: "2023-11" }, "2023年拿了数学建模省一等奖"),
+        fact("awards", { name: "数学建模省一等奖", date: "2023-11" }, "2023年11月拿了数学建模省一等奖"),
+        fact("awards", { name: "校二等奖学金", date: "2024-12" }, "拿过2024年的校二等奖学金"),
         fact("awards", { name: "优秀学生干部", date: "2024-06" }, "去年评上了优秀学生干部"),
         fact("awards", { name: "国家奖学金", date: "2022-10" }, "大二拿过国家奖学金"),
       ],
       ctx,
     );
-    expect(result.profile.awards.map((a) => a.date)).toEqual(["2023-11", "2024-06", undefined]);
-    expect(result.dropped).toEqual([expect.objectContaining({ index: 2, field: "date" })]);
-    expect(result.profile.awards[2]?.name).toBe("国家奖学金");
+    expect(result.profile.awards.map((a) => a.date)).toEqual(["2023-11", undefined, undefined, undefined]);
+    expect(result.dropped.map((d) => [d.index, d.field])).toEqual([
+      [1, "date"],
+      [2, "date"],
+      [3, "date"],
+    ]);
+    expect(result.profile.awards[3]?.name).toBe("国家奖学金");
   });
 });
 
@@ -376,7 +390,7 @@ describe("applyFacts: new resume fields", () => {
           "响应从 800ms 降到 120ms",
         ),
       ],
-      ctx,
+      { ...ctx, userText: "设计了订单模块，给商品搜索加了 Redis 缓存。响应从 800ms 降到 120ms" },
     );
     expect(project(second)?.highlights).toEqual([
       { title: "订单模块设计", detail: "设计了订单模块" },
@@ -645,5 +659,30 @@ describe("applyFacts: new resume fields", () => {
     });
     expect(r.profile.skills[0]?.category).toBe("编程语言");
     expect(r.conflicts).toEqual([]);
+  });
+});
+
+describe("applyFacts duplicates", () => {
+  it("records nothing when the payload matches what is already there", () => {
+    const first = applyFacts(
+      Profile.parse({}),
+      [
+        fact("basics", { name: "李明" }, "我叫李明"),
+        fact("education", { school: "江城职业技术学院", degree: "associate" }, "江城职业技术学院，大专"),
+      ],
+      ctx,
+    );
+    const again = applyFacts(
+      first.profile,
+      [
+        fact("basics", { name: "李明" }, "我叫李明"),
+        fact("basics", {}, "我叫李明"),
+        fact("education", { school: "江城职业技术学院" }, "江城职业技术学院，大专"),
+      ],
+      ctx,
+    );
+    expect(again.facts).toEqual([]);
+    expect(again.unchanged).toEqual([0, 1, 2]);
+    expect(again.profile).toEqual(first.profile);
   });
 });

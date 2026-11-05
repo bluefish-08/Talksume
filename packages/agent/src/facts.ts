@@ -12,6 +12,7 @@ import {
 import type { z } from "zod";
 import { SECTION_BY_NAME } from "./completeness.ts";
 import { type FactInput, formatZodIssues, SectionPayload } from "./schemas.ts";
+import { resumeWording, wordingProblems } from "./wording.ts";
 
 type Rec = Record<string, unknown>;
 export type ListSection = "education" | "experiences" | "projects" | "skills" | "awards";
@@ -77,9 +78,13 @@ export interface ApplyResult {
   rejected: RejectedFact[];
   /** 原话里找不到依据、被丢掉的推测字段；事实本身照常写入。 */
   dropped: DroppedField[];
+  /** 要点的简历写法没通过校验、已退回用户原话。 */
+  reverted: DroppedField[];
   changes: ProfileChange[];
   drafts: Draft[];
   drafted: Drafted[];
+  /** 和已记录内容完全一样、没有写入的事实下标。 */
+  unchanged: number[];
 }
 
 export const LEVEL_WORDS = {
@@ -90,6 +95,41 @@ export const LEVEL_WORDS = {
 } as const satisfies Record<NonNullable<Skill["level"]>, readonly string[]>;
 
 const DATE_LIKE = /\d{2,4}\s*[年.\-/]|\d{4}|[〇零一二三四五六七八九]{2,4}年|[去今前]年|\d{1,2}\s*月/;
+
+const plainText = (text: string) => text.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
+
+const CN_MONTHS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"];
+
+/** 年份要在原话里写明；实习和项目的月份也要写明，教育按约定只知道年份时月份记 09。 */
+function dateGrounded(value: string, quote: string, checkMonth: boolean): boolean {
+  const [year = "", month = ""] = value.split("-");
+  const text = quote.replace(/\s+/g, "");
+  if (!(text.includes(year) || new RegExp(`(?<!\\d)${year.slice(2)}年`).test(text))) return false;
+  if (!checkMonth) return true;
+  const m = Number(month);
+  return new RegExp(`(?<!\\d)0?${m}月|${year}[.\\-/]0?${m}(?!\\d)|(?<!十)${CN_MONTHS[m]}月`).test(text);
+}
+
+const DATED_SECTIONS: Partial<Record<ProfileSection, boolean>> = {
+  education: false,
+  experiences: true,
+  projects: true,
+};
+
+const NEGATION =
+  /没(?:有)?(?:怎么)?(?:用|学|接触|碰|做|写|听说|了解)过|没(?:用|学|接触|碰)|不会|不懂|不熟|不了解|从没|从来没/;
+const EXCEPT = /除了|以外|之外|别的|其他|其它/;
+
+/** 原话是在说没用过、不会这项（「Git 没用过」），不能记成技能或技术栈。 */
+export function negatedIn(quote: string, name: string): boolean {
+  const target = name.toLowerCase().replace(/\s+/g, "");
+  if (!target) return false;
+  return quote.split(/[，,。；;！!？?\n…]/).some((clause) => {
+    const flat = clause.toLowerCase().replace(/\s+/g, "");
+    const at = flat.indexOf(target);
+    return at >= 0 && !EXCEPT.test(flat) && NEGATION.test(flat.slice(at + target.length));
+  });
+}
 
 /** 熟练度和获奖日期最常被推测，只在原话里有对应字样时保留。 */
 function dropUngrounded(
@@ -110,6 +150,39 @@ function dropUngrounded(
     dropped.push({ field: "date", reason: "原话里没有年份或日期" });
     delete payload.date;
   }
+  for (const [field, own] of [
+    ["date", section === "awards"],
+    ["availableFrom", section === "intention"],
+  ] as const) {
+    const value = payload[field];
+    if (!own || typeof value !== "string" || dateGrounded(value, quote, true)) continue;
+    dropped.push({ field, reason: `原话里没有写明 ${value} 这个年月，不要推算` });
+    delete payload[field];
+  }
+  if (
+    typeof payload.city === "string" &&
+    !plainText(`${quote}|${userText}`).includes(plainText(payload.city))
+  ) {
+    dropped.push({ field: "city", reason: `用户没说过「${payload.city}」，不要按学校或公司推断城市` });
+    delete payload.city;
+  }
+  const checkMonth = DATED_SECTIONS[section];
+  if (checkMonth !== undefined) {
+    for (const field of ["start", "end"]) {
+      const value = payload[field];
+      if (typeof value !== "string" || value === "present" || dateGrounded(value, quote, checkMonth))
+        continue;
+      dropped.push({ field, reason: `原话里没有写明 ${value} 这个年月，不要推算` });
+      delete payload[field];
+    }
+  }
+  if (Array.isArray(payload.techStack)) {
+    const negated = (payload.techStack as string[]).filter((t) => negatedIn(quote, t));
+    if (negated.length > 0) {
+      dropped.push({ field: "techStack", reason: `原话说的是没用过「${negated.join("、")}」` });
+      payload.techStack = (payload.techStack as string[]).filter((t) => !negated.includes(t));
+    }
+  }
   if (Array.isArray(payload.highlights)) {
     payload.highlights = (payload.highlights as Highlight[]).filter((h) => {
       const missing = ungroundedNumbers(`${h.title ?? ""} ${h.detail}`, `${quote}|${userText}`);
@@ -122,6 +195,42 @@ function dropUngrounded(
     });
   }
   return dropped;
+}
+
+const MIN_FALLBACK = 6;
+
+/** 要点 detail 用模型写的简历用语，校验不过退回原话；标题和角色里有拔高说法就去掉。 */
+function checkWording(payload: Rec, quote: string, userText = ""): Omit<DroppedField, "index">[] {
+  const source = `${quote}\n${userText}`;
+  const original = quote.split(/…+|\.{3,}/).join("，");
+  const reverted: Omit<DroppedField, "index">[] = [];
+  const labelProblems = (text: string) => wordingProblems(text, source, true);
+  // 「做过」这类确认退回原话没有意义，不合格就整条去掉
+  const bare = original.replace(/[\s\p{P}\p{S}]/gu, "").length < MIN_FALLBACK;
+  if (Array.isArray(payload.highlights)) {
+    payload.highlights = (payload.highlights as Highlight[]).filter((h) => {
+      const worded = resumeWording(h.detail, original, source, String(payload.name ?? payload.company ?? ""));
+      if (worded.problems.length > 0) {
+        const what = `要点「${h.title ?? h.detail.slice(0, 10)}」的写法里有「${worded.problems.join("、")}」`;
+        reverted.push({ field: "highlights", reason: `${what}，${bare ? "已去掉" : "已退回原话"}` });
+        if (bare) return false;
+      }
+      h.detail = worded.text;
+      if (h.title && labelProblems(h.title).length > 0) {
+        reverted.push({ field: "highlights", reason: `要点标题「${h.title}」超出原话，已去掉` });
+        delete h.title;
+      }
+      return true;
+    });
+  }
+  if (typeof payload.role === "string" && labelProblems(payload.role).length > 0) {
+    reverted.push({
+      field: "role",
+      reason: `角色「${payload.role}」里有原话没说的「${labelProblems(payload.role).join("、")}」，已去掉`,
+    });
+    delete payload.role;
+  }
+  return reverted;
 }
 
 const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
@@ -549,9 +658,11 @@ export function applyFacts(
     conflicts: [],
     rejected: [],
     dropped: [],
+    reverted: [],
     changes: [],
     drafts,
     drafted: [],
+    unchanged: [],
   };
 
   for (const [index, input] of inputs.entries()) {
@@ -567,8 +678,16 @@ export function applyFacts(
       continue;
     }
     const payload = { ...parsed.data };
+    if (section === "skills" && negatedIn(input.quote, String(payload.name ?? ""))) {
+      reject(`原话「${input.quote}」说的是没用过/不会「${String(payload.name)}」，不能记成技能`);
+      continue;
+    }
     for (const d of dropUngrounded(section, payload, input.quote, context.userText))
       result.dropped.push({ ...d, index });
+    if (section === "experiences" || section === "projects") {
+      for (const d of checkWording(payload, input.quote, context.userText))
+        result.reverted.push({ ...d, index });
+    }
     const factId = genId("fact");
 
     let outcome: MergeOutcome;
@@ -630,7 +749,8 @@ export function applyFacts(
     const base = { section, quote: input.quote.trim(), sourceMessageId: context.messageId };
     const keyPayload = isList(section) ? { [ITEM_KEY[section]]: payload[ITEM_KEY[section]] } : {};
     const pendingCount = Object.keys(outcome.conflicted).length + outcome.entryConflicts.length;
-    if (Object.keys(outcome.applied).length > 0 || pendingCount === 0) {
+    if (Object.keys(outcome.applied).length === 0 && pendingCount === 0) result.unchanged.push(index);
+    if (Object.keys(outcome.applied).length > 0) {
       result.facts.push({
         id: factId,
         ...base,

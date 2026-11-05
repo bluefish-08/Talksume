@@ -945,6 +945,36 @@ describe("intake controller: digging into one experience", () => {
     expect(state.history.at(-1)?.content).toBe("这个项目里你具体负责哪一块？");
   });
 
+  it("nudges once when the user answered the challenge but nothing was written", async () => {
+    const answer = "碰到过中文乱码，后来把数据库和连接的编码都改成 UTF-8 就解决了";
+    const { core, controller } = fake([
+      fauxAssistantMessage([fauxText("这个问题挺典型的。")]),
+      toolTurn(
+        upsert([
+          {
+            section: "projects",
+            payload: {
+              name: "校园二手平台",
+              highlights: [{ title: "中文乱码", detail: "将数据库及连接编码统一改为 UTF-8，解决中文乱码" }],
+            },
+            quote: answer,
+          },
+        ]),
+        ask("最后效果怎么样？"),
+      ),
+    ]);
+    const state = seeded();
+    state.history.push({
+      id: "a0",
+      role: "assistant",
+      content: "遇到过什么难点？",
+      meta: { slot: "projects:prj_1:challenge" },
+    });
+    await collect(controller.handleUserMessage(state, { id: "m1", text: answer }));
+    expect(core.state.callCount).toBe(2);
+    expect(state.profile.projects[0]?.highlights?.map((h) => h.title)).toEqual(["中文乱码"]);
+  });
+
   it("does not treat 记不清 as a skip when a different question is pending", async () => {
     const { controller } = fake([toolTurn(ask("你具体负责哪一块？"))]);
     const state = seeded();
@@ -988,6 +1018,23 @@ describe("intake controller: claimed but not written", () => {
     await collect(controller.handleUserMessage(state, { id: "m1", text: "我会 Python" }));
     expect(state.profile.skills.map((s) => s.name)).toEqual(["Python"]);
     expect(core.state.callCount).toBe(2);
+  });
+
+  it("does not flag a claim about something recorded in an earlier turn", async () => {
+    const { core, controller } = fake([
+      fauxAssistantMessage([fauxText("Java 和 MySQL 就先记下了。想找什么岗位？")]),
+    ]);
+    const state = createIntakeState({
+      profile: Profile.parse({
+        skills: [
+          { id: "s1", name: "Java" },
+          { id: "s2", name: "MySQL" },
+        ],
+      }),
+    });
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "就这些了" }));
+    expect(core.state.callCount).toBe(1);
+    expect(asks(events).filter((a) => a.kind === "clarify")).toEqual([]);
   });
 
   it("does not nudge a plain answer that claims nothing", async () => {

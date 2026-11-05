@@ -3,6 +3,7 @@ import type { ResumeContent, ResumeItem, ResumeSection } from "./resume.ts";
 export const POLISHABLE_KINDS = [
   "experiences",
   "projects",
+  "campus",
   "awards",
 ] as const satisfies readonly ResumeSection["kind"][];
 

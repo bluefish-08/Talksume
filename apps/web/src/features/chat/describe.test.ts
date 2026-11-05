@@ -20,3 +20,11 @@ describe("技能熟练度展示", () => {
     expect(text).toBe("Go · 熟悉");
   });
 });
+
+describe("校园经历归类", () => {
+  it("项目的 kind=campus 不显示成校招", () => {
+    expect(describeChange({ section: "projects", itemId: "p1", field: "kind", value: "campus" })).toBe(
+      "归入校园经历",
+    );
+  });
+});

@@ -6,9 +6,11 @@ import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { createJobTools, withoutCards } from "./job-tools.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import {
+  answeredSlot,
   buildUserCorpus,
   completenessEvent,
   createIntakeTools,
+  fallbackQuestion,
   lastAskedKey,
   nextSlotOf,
   normalizeQuote,
@@ -18,6 +20,7 @@ import {
   skipDeclined,
   skippableSlot,
   skipSlot,
+  wrapsUp,
 } from "./tools.ts";
 import type {
   ChatTurn,
@@ -225,12 +228,16 @@ function userWordsFor(userText: string, subject: string): string {
   return (best && score(best) > 0 ? best : subject).slice(0, 40);
 }
 
-function nudgeText(subjects: string[], asked: boolean): string {
+function nudgeText(subjects: string[], asked: boolean, closed = false): string {
   const what = subjects
     .filter(Boolean)
     .map((s) => `「${s}」`)
     .join("");
-  return `[系统提示，不是用户发言] 你在回复里说已经记下${what}，但画像里没有${what ? "这些内容" : "新写入的内容"}（没有调用 upsert_facts 或调用失败）。请现在用 upsert_facts 写入用户上一条消息里对应的信息（quote 逐字摘抄原话）。${asked ? "问题已经发给用户，写完不要再输出文字，也不要再调用 ask_user。" : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
+  return `[系统提示，不是用户发言] 你在回复里说已经记下${what}，但画像里没有${what ? "这些内容" : "新写入的内容"}（没有调用 upsert_facts 或调用失败）。请现在用 upsert_facts 写入用户上一条消息里对应的信息（quote 逐字摘抄原话）。${asked || closed ? `${asked ? "问题已经发给用户" : "你已经在收尾"}，写完不要再输出文字，也不要再提问或调用 ask_user。` : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
+}
+
+function answerNudge(label: string, stop: boolean): string {
+  return `[系统提示，不是用户发言] 用户上一条在回答${label}，但这一轮没有写入任何内容。里面有能写进简历的（做法、难点、结果等），现在用 upsert_facts 写进对应条目的 highlights（quote 逐字摘抄原话）；用户其实是在说没有或不想说，就用 skip_field。${stop ? "写完不要再输出文字，也不要再提问或调用 ask_user。" : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
 }
 
 const REPAIR_TEXT =
@@ -365,9 +372,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         queue.push(event);
       },
       flags,
+      spoken: () => assistantText,
     };
 
     const autoSkipped = user ? skipDeclined(state, user.text) : null;
+    const answered = user && !autoSkipped ? answeredSlot(state, user.text) : undefined;
     const completeness = computeCompleteness(state.profile, { completedSections: state.completedSections });
     const target = nextSlotOf(state);
     const systemPrompt = buildSystemPrompt({
@@ -411,11 +420,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const snapshot = () => JSON.stringify([state.profile, state.drafts]);
     const beforeWrite = new Map<string, string>();
     const said = normalizeQuote(user?.text ?? "");
-    // 用户没说过的词（「联系方式」「时间线」）是模型的概括，只看这一轮写没写；用户原话里的具体内容要真在画像里
+    // 用户没说过的词（「联系方式」「时间线」）是模型的概括，只看这一轮写没写、画像里有没有；用户原话里的具体内容要真在画像里
     const unrecorded = (): string[] => {
       const corpus = normalizeQuote(snapshot());
       return claimedSubjects(assistantText).filter((s) =>
-        s && mentioned(said, s) ? !mentioned(corpus, s) : !wrote,
+        s && mentioned(said, s) ? !mentioned(corpus, s) : !wrote && !(s && mentioned(corpus, s)),
       );
     };
 
@@ -448,7 +457,20 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           const missed = unrecorded();
           if (missed.length > 0) {
             nudged = true;
-            agent.steer({ role: "user", content: nudgeText(missed, flags.asked), timestamp: Date.now() });
+            agent.steer({
+              role: "user",
+              content: nudgeText(missed, flags.asked, wrapsUp(assistantText)),
+              timestamp: Date.now(),
+            });
+            return { action: "continue" };
+          }
+          if (answered && !wrote && !skipDone) {
+            nudged = true;
+            agent.steer({
+              role: "user",
+              content: answerNudge(answered, flags.asked || wrapsUp(assistantText)),
+              timestamp: Date.now(),
+            });
             return { action: "continue" };
           }
         }
@@ -628,14 +650,15 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       yield { type: "ask", kind: "clarify", question };
     } else if (!flags.asked && !flags.jobs) {
       const slot = nextSlotOf(state);
-      if (slot && !/[?？]/.test(assistantText)) {
+      const question = slot ? fallbackQuestion(assistantText, slot) : undefined;
+      if (slot && question) {
         noteAsked(state, slot);
-        asks.push(slot.question);
+        asks.push(question);
         askedSlot = slot.key;
         yield {
           type: "ask",
           kind: "followup",
-          question: slot.question,
+          question,
           slot: {
             key: slot.key,
             section: slot.section,

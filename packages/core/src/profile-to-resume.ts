@@ -240,7 +240,10 @@ export function profileToResume(profile: Profile): ResumeContent {
     title: experienceTitle(profile.experiences),
     items: newestFirst(profile.experiences).map(experienceItem),
   });
-  add({ kind: "projects", title: "项目经历", items: newestFirst(profile.projects).map(projectItem) });
+  const isCampus = (p: Project) => p.kind === "campus";
+  const projects = newestFirst(profile.projects);
+  add({ kind: "projects", title: "项目经历", items: projects.filter((p) => !isCampus(p)).map(projectItem) });
+  add({ kind: "campus", title: "校园经历", items: projects.filter(isCampus).map(projectItem) });
   add({ kind: "skills", title: "专业技能", items: skills });
   add({
     kind: "awards",

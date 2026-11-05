@@ -16,7 +16,7 @@ export const ResumeItem = z.object({
 });
 
 export const ResumeSection = z.object({
-  kind: z.enum(["education", "experiences", "projects", "skills", "awards", "custom"]),
+  kind: z.enum(["education", "experiences", "projects", "campus", "skills", "awards", "custom"]),
   title: z.string(),
   items: z.array(ResumeItem).default([]),
 });

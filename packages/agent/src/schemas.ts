@@ -19,7 +19,13 @@ export const HighlightInput = z.object({
     .trim()
     .min(1)
     .describe("4～10 字的关键词短语，概括这条要点，如「订单查询重构」「缓存一致性」"),
-  detail: z.string().trim().min(1).describe("照用户原话写的细节，不改写、不夸大；数字只能用用户说过的"),
+  detail: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "简历写法的一句话：去掉「我」和口语，动词开头、精炼；事实、技术、数字只用用户说过的，不拔高角色，系统会校验，不合格退回原话",
+    ),
 });
 
 const TechStack = z.array(z.string()).describe("这段经历用到的技术、框架、工具，一项一条");

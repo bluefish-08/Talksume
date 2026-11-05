@@ -103,6 +103,9 @@ export function describeChange(change: ProfileChange): string {
   if (change.field === "_item" && typeof change.value === "object" && change.value !== null) {
     return itemSummary(change.section, change.value as Record<string, unknown>);
   }
+  if (change.section === "projects" && change.field === "kind") {
+    return change.value === "campus" ? "归入校园经历" : "归入项目经历";
+  }
   const label = FIELD_LABELS[change.section][change.field] ?? change.field;
   const next = formatValue(change.value);
   const prev = formatValue(change.previous);

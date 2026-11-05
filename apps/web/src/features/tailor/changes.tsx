@@ -13,7 +13,7 @@ const KIND_LABEL: Record<TailorChange["kind"], string> = {
   skill_order: "技能顺序",
 };
 
-const SECTION_LABEL = { experiences: "实习与工作经历", projects: "项目经历" } as const;
+const SECTION_LABEL = { experiences: "实习与工作经历", projects: "项目经历", campus: "校园经历" } as const;
 
 export const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "操作失败，请稍后再试");
 

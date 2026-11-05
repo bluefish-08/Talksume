@@ -1,7 +1,7 @@
 import { polishItemKey, polishSourceHash } from "./polish.ts";
 import type { ResumeContent, ResumeItem } from "./resume.ts";
 
-export const TAILOR_ITEM_SECTIONS = ["experiences", "projects"] as const;
+export const TAILOR_ITEM_SECTIONS = ["experiences", "projects", "campus"] as const;
 export type TailorItemSection = (typeof TAILOR_ITEM_SECTIONS)[number];
 
 interface ChangeBase {
