@@ -10,6 +10,7 @@ import {
   PROFILE_SECTIONS,
   type ProfileSection,
   Project,
+  ResumeTheme,
   Skill,
   TAILOR_LEVELS,
   THEME_ALIGNS,
@@ -19,6 +20,7 @@ import {
   THEME_HEADERS,
   THEME_HEADINGS,
   THEME_LAYOUTS,
+  THEME_SKELETONS,
   THEME_SKILLS,
 } from "@talksume/core";
 import { z } from "zod";
@@ -218,6 +220,12 @@ export const DesignResumeStyleArgs = z.object({
     .enum(THEME_LAYOUTS)
     .optional()
     .describe("single 单栏（网申系统读取最稳），sidebar 两栏（左栏放教育、技能、奖项）"),
+  skeleton: z
+    .enum(THEME_SKELETONS)
+    .optional()
+    .describe(
+      "页面骨架（决定整页结构，比 layout 优先）：classic 经典单栏；side-left 左侧深色通栏侧栏、抬头在侧栏里；side-right 右侧浅色通栏侧栏；band-cols 通栏色块抬头 + 正文/侧栏两栏；timeline 时间线；cards 灰底白卡片；numbered 01/02 编号标题。选了骨架后 header/headingStyle 不再生效，颜色和字体仍按主题",
+    ),
   bullet: z.enum(THEME_BULLETS).optional().describe("项目符号：dot 圆点，square 方块，dash 短横"),
   skills: z.enum(THEME_SKILLS).optional().describe("技能展示：line 文字行，tags 标签"),
   density: z
@@ -238,6 +246,39 @@ export const SetResumeCssArgs = z.object({
 });
 export type SetResumeCssArgs = z.infer<typeof SetResumeCssArgs>;
 
+export const ProposeDesignsArgs = z.object({
+  designs: z
+    .array(
+      z.object({
+        direction: z
+          .string()
+          .max(40)
+          .optional()
+          .describe("方向库里的方向 id（只从系统提示里本轮候选方向挑）；填了它就不用再给 theme 和 css"),
+        accent: HexColor.optional().describe("想换主色时才填（用方向时），不填就用方向自带的配色"),
+        summary: z
+          .string()
+          .min(2)
+          .max(40)
+          .optional()
+          .describe("一句话说清这版的气质；用方向时可省略，自己设计时必填"),
+        theme: ResumeTheme.optional().describe(
+          "不用方向、自己设计时给这一版的完整主题（所有字段都要填；name 是这版的名字，不超过 12 个字）",
+        ),
+        css: z
+          .string()
+          .max(CSS_LIMITS.maxChars + 2000)
+          .optional()
+          .describe("可选的定制 CSS，用来加装饰（几何形状、编号、渐变），写法同 set_resume_css"),
+      }),
+    )
+    .length(3)
+    .describe(
+      "恰好 3 版，页面骨架互不相同（方向的骨架或 theme.skeleton，同一组里不能有两版同骨架），配色、字体气质也要明显不同",
+    ),
+});
+export type ProposeDesignsArgs = z.infer<typeof ProposeDesignsArgs>;
+
 export const PreviewResumeArgs = z.object({});
 
 export type ToolName =
@@ -252,7 +293,8 @@ export type ToolName =
   | "tailor_resume"
   | "design_resume_style"
   | "set_resume_css"
-  | "preview_resume";
+  | "preview_resume"
+  | "propose_resume_designs";
 
 export const JOB_TOOL_NAMES: readonly ToolName[] = [
   "recommend_jobs",
@@ -329,8 +371,14 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   },
   {
     name: "set_resume_css",
-    description: `用受限的 CSS 复刻参考图里主题字段表达不了的外观（渐变和色块、图标、分隔线、照片位、字体、精细的间距和标题样式）。CSS 只作用于简历的固定结构，写进去的内容必须落在下面的白名单里，写错的规则（没有的类、不支持的属性或值）会被整条丢弃并逐条告诉你，其余照常保存；夹带 url()、@规则等试探写法则整份都不保存（上一版继续有效）；选择器会自动限定在简历内部，不要写 body、html、* 或 @规则，禁止 url()、@import、@font-face、content 里写文字（content 只能是 ""）、!important、transform、filter、list-style-type；要点符号用 li::before 自己画（background 或 mask 配 asset 素材），不要用 ::marker；mask 不加 -webkit- 前缀也行。每次传完整的一份，会替换上一份。简历文字、条目顺序都由系统渲染，CSS 改不了也不能隐藏。\n结构：header.head（.photo 照片位、.head-main 里 h1 姓名和 .headline 求职意向、.contacts 里每个 span 联系方式、.summary 摘要）→ section[data-kind] 里 h2 分区标题 + .sec-body 里的 .item（.item-head 里 .item-title .item-sub 和 .item-aside 里的 .item-period .item-meta；.item-stack；ul>li 要点，li 里 .lead .num）或 .skill-line（.item-title .lvl .tags>.tag）；两栏时 .cols 里是 .side 和 .main。\n${describeCssVocabulary()}`,
+    description: `用受限的 CSS 复刻参考图里主题字段表达不了的外观（渐变和色块、图标、分隔线、照片位、字体、精细的间距和标题样式）。CSS 只作用于简历的固定结构，写进去的内容必须落在下面的白名单里，写错的规则（没有的类、不支持的属性或值）会被整条丢弃并逐条告诉你，其余照常保存；夹带 url()、@规则等试探写法则整份都不保存（上一版继续有效）；选择器会自动限定在简历内部，不要写 body、html、* 或 @规则，禁止 url()、@import、@font-face、伪元素以外的地方写 transform / clip-path、content 里写任意文字（伪元素的 content 只能是 ""、01–12 编号或少量符号）、!important、filter、list-style-type；要点符号用 li::before 自己画（background 或 mask 配 asset 素材），不要用 ::marker；mask 不加 -webkit- 前缀也行。每次传完整的一份，会替换上一份。简历文字、条目顺序都由系统渲染，CSS 改不了也不能隐藏。\n结构（页面骨架不同，外层容器也不同：side-left/side-right 是 .frame>(.side 含抬头 + .main)，band-cols 是 header 后接 .frame>(.main + .side)，timeline/cards/numbered 是 header 后接 .frame 包住全部分区）：header.head（.photo 照片位、.head-main 里 h1 姓名和 .headline 求职意向、.contacts 里每个 span 联系方式、.summary 摘要）→ section[data-kind] 里 h2 分区标题 + .sec-body 里的 .item（.item-head 里 .item-title .item-sub 和 .item-aside 里的 .item-period .item-meta；.item-stack；ul>li 要点，li 里 .lead .num）或 .skill-line（.item-title .lvl .tags>.tag）；两栏时 .cols 里是 .side 和 .main。\n${describeCssVocabulary()}`,
     schema: SetResumeCssArgs,
+  },
+  {
+    name: "propose_resume_designs",
+    description:
+      "一次给用户 3 版明显不同的简历设计，让用户在缩略图里点选，选中后才保存。用户说了风格词（清新、高级极简、设计感、理工风、活泼……）、说「帮我设计一下/换个好看的/来几个版式」或者没提具体要求只想要更好看时调用；用户只要改某一处（换成深绿、标题加粗）时仍用 design_resume_style。优先用系统提示里的「本轮候选方向」：每版只填 direction（三版骨架互不相同、字体/抬头/标题样式也要拉开），方向自带完整的版式手法和配色；只有候选都不合用户要求时，才自己填 theme（和可选 css）。工具会逐版校验和渲染，返回三张缩略图和自检结果；有被拒绝或自检不过的版本，按原因修好重新提交（最多再调一次）。调用后用两三句话介绍三版各自的气质，请用户点选，不要说已经应用了。",
+    schema: ProposeDesignsArgs,
   },
   {
     name: "preview_resume",

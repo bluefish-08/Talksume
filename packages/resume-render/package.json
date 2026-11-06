@@ -11,11 +11,16 @@
     "sample": "node scripts/sample.ts"
   },
   "dependencies": {
+    "@fontsource/long-cang": "^5.3.0",
     "@fontsource/ma-shan-zheng": "^5.3.1",
     "@fontsource/noto-sans-sc": "^5.3.1",
     "@fontsource/noto-serif-sc": "^5.3.1",
+    "@fontsource/zcool-qingke-huangyou": "^5.3.0",
+    "@fontsource/zcool-xiaowei": "^5.3.0",
     "@talksume/core": "workspace:*",
     "docx": "^9.15.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.5.438",
     "playwright": "^1.64.1"
   },
   "devDependencies": {

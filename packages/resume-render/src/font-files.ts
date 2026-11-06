@@ -10,6 +10,9 @@ const SOURCES: Record<ResumeFontName, { pkg: string; family: string; weights: nu
   song: { pkg: "noto-serif-sc", family: "Talksume Song", weights: [400, 700] },
   hei: { pkg: "noto-sans-sc", family: "Talksume Hei", weights: [400, 700] },
   brush: { pkg: "ma-shan-zheng", family: "Talksume Brush", weights: [400] },
+  xiaowei: { pkg: "zcool-xiaowei", family: "Talksume Xiaowei", weights: [400] },
+  huangyou: { pkg: "zcool-qingke-huangyou", family: "Talksume Huangyou", weights: [400] },
+  cang: { pkg: "long-cang", family: "Talksume Cang", weights: [400] },
 };
 
 /** PDF 和截图用的虚拟地址：请求会被拦截并从本地文件应答，不会真的联网。 */

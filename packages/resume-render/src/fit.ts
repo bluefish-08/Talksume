@@ -34,7 +34,8 @@ async function pagesOf(content: ResumeContent, options: RenderOptions): Promise<
  * 内容本来就放不下一页（实测最紧档仍超出）时保持自动档位，不为一页强压。
  */
 export async function fitDensity(content: ResumeContent, options: RenderOptions): Promise<RenderOptions> {
-  if (!options.css || options.density || !customCss(options)) return options;
+  const skeleton = options.theme?.skeleton && options.theme.skeleton !== "classic";
+  if (options.density || !(skeleton || (options.css && customCss(options)))) return options;
   if ((await pagesOf(content, options)) <= 1) return options;
   for (const density of ORDER) {
     const tried = { ...options, density };

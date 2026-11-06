@@ -1,3 +1,6 @@
+export { type AtsReport, atsCheck } from "./ats.ts";
+export { auditStyle, type StyleAudit } from "./audit.ts";
+export { type DesignScore, designScore } from "./design-metrics.ts";
 export { renderDocx } from "./docx.ts";
 export { fontFaceCss, fontFile } from "./font-files.ts";
 export { FONT_ORIGIN, withFonts } from "./font-route.ts";

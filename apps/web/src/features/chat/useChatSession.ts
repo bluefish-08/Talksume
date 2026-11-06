@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   Conflict,
   ConversationDetail,
+  DesignOption,
   JobCard,
   MessageImage,
   ProfileChange,
@@ -43,6 +44,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     jobs: m.jobs ?? [],
     ...(m.about && { about: m.about }),
     ...(m.tailor && { tailor: m.tailor }),
+    ...(m.designs && { designs: m.designs }),
     ...(m.resumeImport && { resumeImport: m.resumeImport }),
     ...(m.images && { images: m.images }),
     state: "done",
@@ -138,6 +140,9 @@ export function useChatSession(detail: ConversationDetail) {
               break;
             case "tailor":
               patch(replyKey, (m) => ({ ...m, tailor: data.tailor as TailorCard }));
+              break;
+            case "style_options":
+              patch(replyKey, (m) => ({ ...m, designs: data.options as DesignOption[] }));
               break;
             case "resume_style":
               client.setQueryData(resumeStyleKey, data.style as ResumeStyle);

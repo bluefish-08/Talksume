@@ -62,6 +62,21 @@ export function applyCustomCss(
   return { ok: true, style: { ...current, css: result.css }, rules: result.rules, dropped: result.dropped };
 }
 
+/** 一版完整设计（整套主题 + 可选 CSS）直接成样式，不继承当前样式里的任何字段。 */
+export function styleFromDesign(
+  theme: unknown,
+  css?: string,
+): { ok: true; style: ResumeStyle; notes: string[] } | { ok: false; errors: string[] } {
+  const sanitized = sanitizeTheme(theme);
+  if (!sanitized) return { ok: false, errors: ["主题字段不合法：所有字段都要填，颜色用 #rrggbb"] };
+  const base: ResumeStyle = { ...fallbackPreset(sanitized.theme), theme: sanitized.theme };
+  if (!css?.trim()) return { ok: true, style: base, notes: sanitized.notes };
+  const applied = applyCustomCss(base, css);
+  if (!applied.ok) return applied;
+  const notes = [...sanitized.notes, ...applied.dropped.map((d) => `CSS 规则已丢弃：${d}`)];
+  return { ok: true, style: applied.style, notes };
+}
+
 export function clearCustomCss(current: ResumeStyle): ResumeStyle {
   const { css: _css, ...rest } = current;
   return rest;

@@ -210,6 +210,8 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
     }
   }
 
+  const phHost =
+    page.querySelector<HTMLElement>(".main") ?? page.querySelector<HTMLElement>(".frame") ?? page;
   for (const title of d.placeholders) {
     const section = el("section", "ph");
     section.setAttribute("aria-hidden", "true");
@@ -220,7 +222,7 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
       body.append(bar);
     }
     section.append(el("h2", "", title), body);
-    page.append(section);
+    phHost.append(section);
   }
 
   if (!resume.basics.name && resume.sections.length === 0 && d.placeholders.length === 0) {

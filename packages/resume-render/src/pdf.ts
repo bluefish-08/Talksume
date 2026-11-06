@@ -3,6 +3,7 @@ import { getBrowser } from "./chromium.ts";
 import { fitDensity } from "./fit.ts";
 import { FONT_ORIGIN, serveFonts, withFonts } from "./font-route.ts";
 import { renderHtml } from "./html.ts";
+import { fixPdfText } from "./pdf-text.ts";
 import type { RenderOptions } from "./types.ts";
 
 export { close } from "./chromium.ts";
@@ -21,7 +22,7 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
     const page = await context.newPage();
     await page.setContent(html, { waitUntil: html.includes(FONT_ORIGIN) ? "networkidle" : "load" });
     const buffer = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
-    return new Uint8Array(buffer);
+    return await fixPdfText(new Uint8Array(buffer));
   } finally {
     await context.close();
   }

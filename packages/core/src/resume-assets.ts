@@ -216,6 +216,21 @@ export const RESUME_FONTS = {
     stack: `"Talksume Brush", "Ma Shan Zheng", "Kaiti SC", "STKaiti", "KaiTi", serif`,
     weights: [400],
   },
+  xiaowei: {
+    label: "站酷小薇（纤细优雅的展示体，只适合姓名或分区标题，正文不要用）",
+    stack: `"Talksume Xiaowei", "ZCOOL XiaoWei", "Songti SC", "STSong", serif`,
+    weights: [400],
+  },
+  huangyou: {
+    label: "站酷庆科黄油体（圆润厚重的展示体，活泼醒目，只适合姓名或分区标题，正文不要用）",
+    stack: `"Talksume Huangyou", "ZCOOL QingKe HuangYou", "PingFang SC", sans-serif`,
+    weights: [400],
+  },
+  cang: {
+    label: "龙藏体（手写钢笔体，像签名，只适合姓名，正文和标题不要用）",
+    stack: `"Talksume Cang", "Long Cang", "Kaiti SC", "STKaiti", cursive`,
+    weights: [400],
+  },
 } as const satisfies Record<string, ResumeFont>;
 
 export type ResumeFontName = keyof typeof RESUME_FONTS;

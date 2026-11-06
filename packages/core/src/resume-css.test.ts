@@ -178,3 +178,38 @@ describe("expandResumeCss", () => {
     expect(css).toContain("Noto Sans SC");
   });
 });
+
+describe("装饰层（伪元素）", () => {
+  it("伪元素可以用 clip-path、transform、编号和符号", () => {
+    const css = ok(`
+      .head::after { content: ""; position: absolute; top: 0; right: 0; width: 40mm; height: 12mm; background-color: var(--accent);
+        clip-path: polygon(0 0, 100% 0, 100% 100%, 12% 100%); z-index: -1 }
+      h2::before { content: "01"; display: inline-block; color: var(--accent); transform: rotate(-4deg); transform-origin: left center }
+      .item-title::before { content: "◆"; margin-right: 3pt; color: var(--accent) }
+      section h2::after { content: counter(sec, decimal-leading-zero) }
+      .photo::after { content: ""; clip-path: circle(50% at 50% 50%) }
+    `);
+    expect(css).toContain("clip-path:polygon(");
+    expect(css).toContain("transform:rotate(-4deg)");
+    expect(css).toContain('content:"01"');
+  });
+
+  const cases: [string, string][] = [
+    ["正文元素 transform", ".item { transform: rotate(2deg) }"],
+    ["正文元素 clip-path", ".summary { clip-path: circle(50%) }"],
+    ["伪元素 content 任意文字", '.head::before { content: "已录用" }'],
+    ["伪元素 content 超出编号", '.head::before { content: "13" }'],
+    ["非伪元素写编号", '.head { content: "01" }'],
+    ["counter 用别的计数器", ".head::before { content: counter(x) }"],
+    ["clip-path url", ".head::after { content: ''; clip-path: url(#x) }"],
+    ["clip-path 不认识的函数", ".head::after { content: ''; clip-path: path('M0 0') }"],
+    ["transform 不认识的函数", ".head::after { content: ''; transform: matrix(1,0,0,1,0,0) }"],
+    ["角度过大", ".head::after { content: ''; transform: rotate(9999deg) }"],
+    ["filter", ".head::after { content: ''; filter: blur(4px) }"],
+  ];
+  for (const [name, css] of cases) {
+    it(`拒绝：${name}`, () => {
+      expect(errors(css).length).toBeGreaterThan(0);
+    });
+  }
+});

@@ -15,8 +15,10 @@ export interface LayoutCheck {
   hiddenText: number;
   /** 文字块之间明显重叠的对数。 */
   overlaps: number;
-  /** 文字色与（纯色）底色对比度低于 3 的元素数；渐变或图片底不检查。 */
+  /** 文字色与底色对比度低于 3 的元素数。 */
   lowContrast: number;
+  /** 文字所在位置最上面的不是它自己（被伪元素之类盖住）的元素数。 */
+  covered: number;
   /** 简历正文的纯文本，用来和没有定制 CSS 的渲染对比。 */
   text: string;
 }
@@ -31,6 +33,12 @@ export interface PreviewImage {
 const PAGE_PX = { width: 794, height: 1123 };
 const SCALE = 1.25;
 
+export interface PngOptions {
+  /** 设备像素比，缩略图用小值。 */
+  scale?: number;
+  format?: "png" | "jpeg";
+}
+
 /** 页面内的版式自检；脚本由我们注入，文档本身没有脚本也联不了网。 */
 const CHECK_SCRIPT = `(() => {
   const root = document.querySelector(".resume");
@@ -39,6 +47,22 @@ const CHECK_SCRIPT = `(() => {
   const leaves = [...root.querySelectorAll("*")].filter((el) =>
     [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()));
   const texts = [];
+  let covered = 0;
+  const coveredAt = (el) => {
+    const range = document.createRange();
+    const rects = [];
+    for (const n of el.childNodes) {
+      if (n.nodeType !== 3 || !n.textContent.trim()) continue;
+      range.selectNodeContents(n);
+      for (const q of range.getClientRects()) if (q.width > 2 && q.height > 2) rects.push(q);
+    }
+    const pick = [rects[0], rects[Math.floor(rects.length / 2)], rects.at(-1)].filter(Boolean);
+    for (const q of pick) {
+      const hit = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2);
+      if (hit && !el.contains(hit)) return true;
+    }
+    return false;
+  };
   let hiddenText = 0;
   let overflowX = 0;
   const pageRight = rect(page).right + 1;
@@ -52,6 +76,7 @@ const CHECK_SCRIPT = `(() => {
       if (m && Number(m[3] ?? 1) > 0.5) texts.push({ x: r.left, y: r.top + window.scrollY, w: r.width, h: r.height, c: [+m[0], +m[1], +m[2]] });
       r.el = el;
       boxes.push(r);
+      if (coveredAt(el)) covered++;
       if (r.right > pageRight) overflowX++;
     }
   }
@@ -66,7 +91,7 @@ const CHECK_SCRIPT = `(() => {
     }
   }
   const height = Math.ceil(document.documentElement.scrollHeight);
-  return { pages: Math.max(1, Math.ceil((height - 2) / ${PAGE_PX.height})), overflowX, hiddenText, overlaps, texts, text: root.textContent.replace(/\\s+/g, " ").trim(), height };
+  return { pages: Math.max(1, Math.ceil((height - 2) / ${PAGE_PX.height})), overflowX, hiddenText, overlaps, covered, texts, text: root.textContent.replace(/\\s+/g, " ").trim(), height };
 })()`;
 
 interface TextBox {
@@ -78,7 +103,7 @@ interface TextBox {
 }
 
 /** 文字先全部隐去再截一张纯背景图，在每个文字块处取样底色，连渐变、伪元素色块都能算进去。 */
-async function countLowContrast(page: Page, texts: TextBox[]): Promise<number> {
+async function countLowContrast(page: Page, texts: TextBox[], scale: number): Promise<number> {
   if (texts.length === 0) return 0;
   const hide =
     "*,*::before,*::after{color:transparent!important;text-shadow:none!important;-webkit-text-fill-color:transparent!important}";
@@ -92,7 +117,7 @@ async function countLowContrast(page: Page, texts: TextBox[]): Promise<number> {
   await page.evaluate(`document.getElementById("__hide_text")?.remove()`);
   return (await page.evaluate(`(async () => {
     const boxes = ${JSON.stringify(texts)};
-    const scale = ${SCALE};
+    const scale = ${scale};
     const img = new Image();
     img.src = "data:image/png;base64,${bg.toString("base64")}";
     await img.decode();
@@ -124,14 +149,16 @@ async function countLowContrast(page: Page, texts: TextBox[]): Promise<number> {
 export async function renderResumePng(
   content: ResumeContent,
   input: RenderOptions = {},
+  image: PngOptions = {},
 ): Promise<PreviewImage> {
+  const scale = image.scale ?? SCALE;
   const options = await fitDensity(content, input);
   const browser = await getBrowser();
   const context = await browser.newContext({
     offline: true,
     serviceWorkers: "block",
     viewport: { width: PAGE_PX.width, height: PAGE_PX.height },
-    deviceScaleFactor: SCALE,
+    deviceScaleFactor: scale,
   });
   try {
     await context.route("**/*", (route) => route.abort("blockedbyclient"));
@@ -146,13 +173,17 @@ export async function renderResumePng(
       height: number;
       texts: TextBox[];
     };
-    const lowContrast = await countLowContrast(page, texts);
+    const lowContrast = await countLowContrast(page, texts, scale);
     const check: LayoutCheck = { ...rest, lowContrast };
-    const png = await page.screenshot({ type: "png", fullPage: true });
+    const png = await page.screenshot(
+      image.format === "jpeg"
+        ? { type: "jpeg", quality: 72, fullPage: true }
+        : { type: "png", fullPage: true },
+    );
     return {
       png: new Uint8Array(png),
-      width: Math.round(PAGE_PX.width * SCALE),
-      height: Math.round(height * SCALE),
+      width: Math.round(PAGE_PX.width * scale),
+      height: Math.round(height * scale),
       check,
     };
   } finally {

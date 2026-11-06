@@ -6,9 +6,10 @@ export async function imageNotes(images: readonly ChatImage[]): Promise<string[]
   const notes = await Promise.all(
     images.map(async (image, i) => {
       try {
-        const { colors, facts } = await analyzeImage(Buffer.from(image.data, "base64"), image.mimeType);
+        const { colors, facts, flat } = await analyzeImage(Buffer.from(image.data, "base64"), image.mimeType);
+        if (!flat) return `第 ${i + 1} 张图：${facts.join("；")}。`;
         if (colors.length === 0) return "";
-        return `第 ${i + 1} 张图量出的事实（比肉眼准，以它为准）：${facts.join("；")}；主要颜色（占比由高到低）：${describePalette(colors)}。复刻时主色、色块、标题色请直接取自这些色值`;
+        return `第 ${i + 1} 张图量出的事实（平整截图时可参考）：${facts.join("；")}；主要颜色（占比由高到低）：${describePalette(colors)}。复刻时主色、色块、标题色请直接取自这些色值`;
       } catch {
         return "";
       }

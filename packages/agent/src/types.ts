@@ -109,6 +109,7 @@ export interface StylePreviewCheck {
   hiddenText: number;
   overlaps: number;
   lowContrast?: number;
+  covered?: number;
 }
 
 export interface StylePreview {
@@ -120,6 +121,36 @@ export type CssSaveResult =
   | { ok: true; style: ResumeStyle; rules: number; dropped: string[] }
   | { ok: false; errors: string[] };
 
+/** 模型一次给出的一版设计：整套主题（含骨架）加可选的定制 CSS。 */
+export interface DesignProposal {
+  summary?: string;
+  /** 方向库里的方向 id；给了它就不用再给 theme 和 css。 */
+  direction?: string;
+  accent?: string;
+  theme?: unknown;
+  css?: string;
+}
+
+/** 校验、复核、渲染过缩略图的一版设计，等用户点选。 */
+export interface DesignOption {
+  id: string;
+  /** 来自方向库时的方向 id，用来记住用户见过哪些。 */
+  direction?: string;
+  name: string;
+  summary: string;
+  style: ResumeStyle;
+  /** data URL（jpeg 缩略图）。 */
+  thumbnail: string;
+  check: StylePreviewCheck;
+  /** 导出 PDF 后网申系统能不能读全；ok 为 false 时 issues 说明原因。 */
+  ats: { ok: boolean; issues: string[] };
+}
+
+export interface ProposeOutcome {
+  options: DesignOption[];
+  rejected: { index: number; errors: string[] }[];
+}
+
 /** 服务端注入的简历样式存取：校验、归一化和落库都在实现里做。 */
 export interface ResumeStyler {
   design(patch: ResumeThemePatch): Promise<{ style: ResumeStyle; notes: string[] }>;
@@ -128,6 +159,10 @@ export interface ResumeStyler {
   setCss?(css: string | null): Promise<CssSaveResult>;
   /** 把当前保存的样式套在用户的简历上渲染成一张 PNG。 */
   preview?(signal?: AbortSignal): Promise<StylePreview>;
+  /** 一次校验并渲染多版设计的缩略图；不保存，等用户点选。 */
+  propose?(designs: DesignProposal[], signal?: AbortSignal): Promise<ProposeOutcome>;
+  /** 该用户之前见过的方向 id（新的在前），用来换新鲜的给他。 */
+  recentDirections?(): Promise<string[]>;
 }
 
 /** 用户在对话里发的图片。data 是 base64，只在发出的这一轮传给模型。 */
@@ -158,6 +193,8 @@ export type TurnMeta = {
   about?: JobCard;
   tailor?: TailorCard;
   tools?: ToolRecord[];
+  /** 这条回复展示给用户挑选的几版设计。 */
+  designs?: DesignOption[];
   /** 这条回复是收尾：之后不再主动提问，用户只回致谢时也不追问。 */
   closed?: boolean;
   /** 这条用户消息是导入的简历原文，正文即抽取出的文字。 */
@@ -231,6 +268,7 @@ export type IntakeEvent =
   | { type: "about_job"; job: JobCard }
   | { type: "tailor"; tailor: TailorCard }
   | { type: "resume_style"; style: ResumeStyle }
-  | { type: "style_progress"; stage: "styling" | "previewing"; round: number; max: number }
+  | { type: "style_options"; options: DesignOption[] }
+  | { type: "style_progress"; stage: "styling" | "previewing" | "designing"; round: number; max: number }
   | { type: "completeness"; completeness: Completeness; nextSlot: Slot | null }
   | { type: "error"; code: string; message: string; recoverable: boolean };

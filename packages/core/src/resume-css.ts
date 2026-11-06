@@ -23,6 +23,7 @@ export const CSS_CLASSES = [
   "summary",
   "photo",
   "cols",
+  "frame",
   "side",
   "main",
   "sec-body",
@@ -83,6 +84,12 @@ const VARS = new Set([
   "--muted",
   "--faint",
   "--rule",
+  "--name",
+  "--fs",
+  "--lh",
+  "--sec-gap",
+  "--item-gap",
+  "--li-gap",
 ]);
 
 const COLOR_NAMES = new Set(
@@ -110,6 +117,58 @@ const GRADIENT_WORDS = new Set([
   "farthest-corner",
   "at",
 ]);
+const TRANSFORM_FUNCS = new Set([
+  "rotate",
+  "skew",
+  "skewx",
+  "skewy",
+  "scale",
+  "scalex",
+  "scaley",
+  "translate",
+  "translatex",
+  "translatey",
+]);
+const CLIP_FUNCS = new Set(["polygon", "circle", "ellipse", "inset"]);
+const CLIP_WORDS = new Set([
+  "at",
+  "round",
+  "closest-side",
+  "farthest-side",
+  "center",
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "nonzero",
+  "evenodd",
+]);
+const CLIP_MAX_TOKENS = 40;
+/** 伪元素的 content 只能是这几类：空串、01–12 编号、少量装饰符号，不能写任意文字。 */
+export const CSS_CONTENT_SYMBOLS = [
+  "◆",
+  "◇",
+  "■",
+  "□",
+  "●",
+  "○",
+  "▲",
+  "△",
+  "★",
+  "☆",
+  "→",
+  "—",
+  "·",
+  "•",
+  "/",
+  "+",
+  "✦",
+  "❖",
+  "✓",
+];
+export const CSS_CONTENT_NUMBERS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+const CONTENT_STRINGS = new Set(["", ...CSS_CONTENT_SYMBOLS, ...CSS_CONTENT_NUMBERS]);
+const COUNTER_STYLES = new Set(["decimal", "decimal-leading-zero", "upper-roman", "lower-roman"]);
 const COLOR_MIX_WORDS = new Set(["in", "srgb", "oklab", "hsl"]);
 
 interface PropSpec {
@@ -128,6 +187,10 @@ interface PropSpec {
   content?: boolean;
   /** 正的长度，不允许负值。 */
   positive?: boolean;
+  /** 只能用在 ::before / ::after 上（会移动或裁切元素，正文元素不许用）。 */
+  pseudoOnly?: boolean;
+  transform?: boolean;
+  clip?: boolean;
 }
 
 const BORDER_STYLES = ["none", "solid", "dashed", "dotted", "double"];
@@ -283,6 +346,15 @@ const PROPS: Record<string, PropSpec> = {
   "white-space": { kw: ["normal", "nowrap"] },
   "vertical-align": { kw: ["baseline", "middle", "top", "bottom", "text-top", "text-bottom"], len: true },
   opacity: { num: [0.4, 1] },
+  inset: { len: true, kw: ["auto"], max: 4 },
+  transform: { transform: true, pseudoOnly: true, max: 6 },
+  "transform-origin": {
+    len: true,
+    kw: ["center", "top", "bottom", "left", "right"],
+    pseudoOnly: true,
+    max: 2,
+  },
+  "clip-path": { clip: true, pseudoOnly: true, kw: ["none"] },
   "list-style": { kw: ["none"] },
   "list-style-type": { kw: ["none"] },
   content: { content: true },
@@ -311,13 +383,7 @@ function checkNumber(raw: string, issues: Issues, where: string): number | undef
   return n;
 }
 
-function walkValue(
-  nodes: csstree.CssNode[],
-  spec: PropSpec,
-  prop: string,
-  issues: Issues,
-  ctx: { subject: Subject; inMath: boolean; inGradient: boolean },
-): void {
+function walkValue(nodes: csstree.CssNode[], spec: PropSpec, prop: string, issues: Issues, ctx: Ctx): void {
   for (const node of nodes) {
     switch (node.type) {
       case "Identifier": {
@@ -344,6 +410,7 @@ function walkValue(
         )
           break;
         if (ctx.inGradient && GRADIENT_WORDS.has(name)) break;
+        if (ctx.inClip && CLIP_WORDS.has(name)) break;
         issues.push(`${prop}：不支持的值「${node.name}」`);
         break;
       }
@@ -365,7 +432,10 @@ function walkValue(
         const unit = node.unit.toLowerCase();
         const n = checkNumber(node.value, issues, prop);
         if (n === undefined) break;
-        if (ANGLE_UNITS.has(unit) && ctx.inGradient) break;
+        if (ANGLE_UNITS.has(unit) && (ctx.inGradient || ctx.inTransform)) {
+          if (Math.abs(n) > 360) issues.push(`${prop}：角度要在 ±360deg 以内`);
+          break;
+        }
         if (unit === "fr" && prop.startsWith("grid-template")) break;
         if (!spec.len || !LEN_UNITS.has(unit)) {
           issues.push(`${prop}：不支持的单位 ${node.value}${node.unit}（可用 pt、mm、px、em、%）`);
@@ -402,14 +472,14 @@ function walkValue(
         else if (!hexOk(node.value)) issues.push(`${prop}：颜色 #${node.value} 写法不对`);
         break;
       case "Operator":
-        if (!["/", ",", "+", "-", "*"].includes(node.value))
+        if (!["/", ",", "+", "-", "*"].includes(node.value.trim()))
           issues.push(`${prop}：不支持的运算符 ${node.value}`);
-        else if (node.value === "," && !spec.list && !ctx.inGradient && !ctx.inMath) {
+        else if (node.value.trim() === "," && !spec.list && !ctx.inGradient && !ctx.inMath) {
           issues.push(`${prop}：不接受逗号分隔的多个值`);
         }
         break;
       case "String":
-        if (spec.content && node.value === "") break;
+        if (spec.content && CONTENT_STRINGS.has(node.value)) break;
         if (spec.font) {
           if (isFontName(node.value)) break;
           issues.push(`${prop}：字体「${node.value}」不在内置字体里，可用：${RESUME_FONT_NAMES.join("、")}`);
@@ -417,7 +487,7 @@ function walkValue(
         }
         issues.push(
           spec.content
-            ? 'content 只能是 ""、none 或 normal：简历文字由我们的数据渲染，不能用 CSS 插入文字'
+            ? `content 只能是 ""、none、normal、01–12 编号或这些符号：${CSS_CONTENT_SYMBOLS.join(" ")}（简历文字由我们的数据渲染，不能用 CSS 插入文字）`
             : `${prop}：不支持字符串`,
         );
         break;
@@ -433,12 +503,25 @@ function walkValue(
   }
 }
 
+function counterArgsOk(args: csstree.CssNode[]): boolean {
+  const [name, comma, style] = args;
+  if (name?.type !== "Identifier" || !["sec", "item"].includes(name.name)) return false;
+  if (args.length === 1) return true;
+  return (
+    args.length === 3 &&
+    comma?.type === "Operator" &&
+    comma.value === "," &&
+    style?.type === "Identifier" &&
+    COUNTER_STYLES.has(style.name.toLowerCase())
+  );
+}
+
 function walkFunction(
   node: csstree.FunctionNode,
   spec: PropSpec,
   prop: string,
   issues: Issues,
-  ctx: { subject: Subject; inMath: boolean; inGradient: boolean },
+  ctx: Ctx,
 ): void {
   const name = node.name.toLowerCase();
   const args = node.children.toArray();
@@ -456,6 +539,24 @@ function walkFunction(
     if (args.length !== 1 || arg?.type !== "Identifier" || !VARS.has(arg.name)) {
       issues.push(`var() 只能引用 ${[...VARS].join("、")}`);
     }
+    return;
+  }
+  if (spec.transform || spec.clip) {
+    const okName = spec.transform ? TRANSFORM_FUNCS.has(name) : CLIP_FUNCS.has(name);
+    if (!okName) {
+      issues.push(
+        spec.transform
+          ? `transform 只支持 ${[...TRANSFORM_FUNCS].join("、")}`
+          : `clip-path 只支持 ${[...CLIP_FUNCS].join("、")}`,
+      );
+      return;
+    }
+    if (csstree.generate(node).length > 400 || args.length > CLIP_MAX_TOKENS) {
+      issues.push(`${prop}：写得太长`);
+      return;
+    }
+    const flags = spec.transform ? { inTransform: true } : { inClip: true };
+    walkValue(args, { len: true, num: [-1000, 1000], list: true }, prop, issues, { ...ctx, ...flags });
     return;
   }
   const isColor = COLOR_FUNCS.has(name);
@@ -480,6 +581,16 @@ function walkFunction(
 interface Subject {
   mayHide: boolean;
   mayFloat: boolean;
+  /** 选择器以 ::before / ::after 结尾。 */
+  pseudo: boolean;
+}
+
+interface Ctx {
+  subject: Subject;
+  inMath: boolean;
+  inGradient: boolean;
+  inTransform?: boolean;
+  inClip?: boolean;
 }
 
 function checkSelector(
@@ -588,7 +699,11 @@ function checkSelector(
   const scoped = text.startsWith(".resume") ? `.resume${text}` : `.resume.resume ${text}`;
   return {
     text: scoped,
-    subject: { mayHide: hasPseudoElement || onlyPhoto, mayFloat: hasPseudoElement || onlyPhoto },
+    subject: {
+      mayHide: hasPseudoElement || onlyPhoto,
+      mayFloat: hasPseudoElement || onlyPhoto,
+      pseudo: hasPseudoElement,
+    },
   };
 }
 
@@ -652,7 +767,7 @@ export function sanitizeResumeCss(input: string): CssResult {
     rules++;
     const issues: Issues = [];
     const selectors: string[] = [];
-    let subject: Subject = { mayHide: true, mayFloat: true };
+    let subject: Subject = { mayHide: true, mayFloat: true, pseudo: true };
     for (const sel of rule.prelude.children.toArray()) {
       if (sel.type !== "Selector") continue;
       const checked = checkSelector(sel, issues);
@@ -661,6 +776,7 @@ export function sanitizeResumeCss(input: string): CssResult {
       subject = {
         mayHide: subject.mayHide && checked.subject.mayHide,
         mayFloat: subject.mayFloat && checked.subject.mayFloat,
+        pseudo: subject.pseudo && checked.subject.pseudo,
       };
     }
     const decls: string[] = [];
@@ -684,6 +800,10 @@ export function sanitizeResumeCss(input: string): CssResult {
         issues.push(`${prop}：不要用 !important`);
         continue;
       }
+      if (spec.pseudoOnly && !subject.pseudo) {
+        issues.push(`${prop} 只能用在 ::before / ::after 上，正文元素不能移动或裁切`);
+        continue;
+      }
       if (decl.value.type !== "Value") {
         issues.push(`${prop}：值不合法`);
         continue;
@@ -703,12 +823,20 @@ export function sanitizeResumeCss(input: string): CssResult {
       }
       if (prop === "content") {
         const [only] = nodes;
+        const counterOk =
+          only?.type === "Function" &&
+          only.name.toLowerCase() === "counter" &&
+          counterArgsOk(only.children.toArray());
         const ok =
           nodes.length === 1 &&
-          ((only?.type === "String" && only.value === "") ||
-            (only?.type === "Identifier" && ["none", "normal"].includes(only.name.toLowerCase())));
+          ((only?.type === "String" &&
+            (only.value === "" || (subject.pseudo && CONTENT_STRINGS.has(only.value)))) ||
+            (only?.type === "Identifier" && ["none", "normal"].includes(only.name.toLowerCase())) ||
+            (counterOk && subject.pseudo));
         if (!ok) {
-          issues.push('content 只能是 ""、none 或 normal：简历文字由我们的数据渲染，不能用 CSS 插入文字');
+          issues.push(
+            `content 在伪元素上只能是 ""、none、normal、01–12 编号、counter(sec[, decimal-leading-zero]) 或这些符号：${CSS_CONTENT_SYMBOLS.join(" ")}；简历文字由我们的数据渲染，不能用 CSS 插入文字`,
+          );
           continue;
         }
       } else {
@@ -789,7 +917,8 @@ export function fontsUsedBy(canonical: string): string[] {
 export function describeCssVocabulary(): string {
   return [
     `可用的类：${CSS_CLASSES.map((c) => `.${c}`).join(" ")}；标签：${[...TYPE_SET].join(" ")}`,
-    `属性选择器：section[data-kind="${CSS_SECTION_KINDS.join("|")}"]、.contacts span[data-k="${CSS_CONTACT_KINDS.join("|")}"]；伪类：${[...PSEUDO_CLASS_SET].join(" ")}；伪元素：::before ::after（content 只能是 ""）`,
+    `属性选择器：section[data-kind="${CSS_SECTION_KINDS.join("|")}"]、.contacts span[data-k="${CSS_CONTACT_KINDS.join("|")}"]；伪类：${[...PSEUDO_CLASS_SET].join(" ")}；伪元素：::before ::after`,
+    `装饰（只能写在 ::before / ::after 上；正文元素不能移动、裁切、隐藏）：clip-path（polygon/circle/ellipse/inset）、transform（rotate/skew/scale/translate，单位 deg、px、pt、%）、transform-origin、inset、position:absolute、z-index（-1 放在文字下面）；content 只能是 ""、01–12 编号（如 "01"）、counter(sec, decimal-leading-zero)（仅「编号标题」骨架有分区计数）或这些符号：${CSS_CONTENT_SYMBOLS.join(" ")}；伪元素不能盖住文字，盖住会被判失败`,
     `可用属性：${CSS_PROPERTY_NAMES.join(" ")}`,
     `字体名（font-family）：${RESUME_FONT_NAMES.map((n) => `${n}=${RESUME_FONTS[n].label}`).join("；")}`,
     `素材（写进 background / background-image / mask / mask-image，如 mask: asset(icon-phone) center/contain no-repeat）：${RESUME_ASSET_NAMES.map((n) => `${n}（${RESUME_ASSETS[n].label}）`).join("、")}`,

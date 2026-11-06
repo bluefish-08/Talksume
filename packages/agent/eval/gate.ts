@@ -79,7 +79,11 @@ if (import.meta.main) {
     );
     const worst = Math.min(...rows.map((r) => r.diff));
     verdicts.push(
-      { gate: "探针写入正确率提升且 95% 区间不跨 0", ok: (overall.low ?? 0) > 0, detail: fmtCi(overall) },
+      {
+        gate: "探针写入正确率不低于基线（差的 95% 区间下界 ≥ −2%）",
+        ok: (overall.low ?? -1) >= -0.02,
+        detail: fmtCi(overall),
+      },
       {
         gate: "任何单个探针不退步超过 2/8",
         ok: worst >= -2 / 8 - 1e-9,

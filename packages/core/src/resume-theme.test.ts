@@ -4,6 +4,7 @@ import {
   DEFAULT_RESUME_STYLE,
   fallbackPreset,
   resolveResumeStyle,
+  styleFromDesign,
   themeFromPreset,
 } from "./resume-style.ts";
 import {
@@ -121,5 +122,28 @@ describe("样式偏好里的主题", () => {
 
   it("增量修改合并后不合法返回 null", () => {
     expect(applyThemePatch(DEFAULT_RESUME_STYLE, { accent: "nope" } as never)).toBeNull();
+  });
+});
+
+describe("styleFromDesign", () => {
+  it("整套主题成样式，不继承别处的骨架；颜色太浅自动加深", () => {
+    const r = styleFromDesign({ ...theme, accent: "#aaccee", skeleton: "timeline" });
+    expect(r.ok && r.style.theme?.skeleton).toBe("timeline");
+    expect(r.ok && r.notes.length).toBeGreaterThan(0);
+    const plain = styleFromDesign(theme);
+    expect(plain.ok && plain.style.theme?.skeleton).toBeUndefined();
+  });
+
+  it("主题不合法或 CSS 含试探写法：拒绝", () => {
+    expect(styleFromDesign({ name: "x" }).ok).toBe(false);
+    expect(styleFromDesign(theme, "@import url(http://evil.example.com/a.css);").ok).toBe(false);
+  });
+
+  it("带合法 CSS：保存 CSS", () => {
+    const r = styleFromDesign(
+      theme,
+      ".head::after { content: ''; display: block; height: 2pt; background: var(--accent) }",
+    );
+    expect(r.ok && r.style.css).toContain("--accent");
   });
 });

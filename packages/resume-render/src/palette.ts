@@ -32,6 +32,20 @@ const SCRIPT = `(async (src) => {
     const i = (y * w + x) * 4;
     return Math.hypot(d[i] - bgc[0], d[i + 1] - bgc[1], d[i + 2] - bgc[2]) > 70;
   };
+  const lumAt = (i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  const darkPx = (x, y) => {
+    const i = (y * w + x) * 4;
+    const mx = Math.max(d[i], d[i + 1], d[i + 2]);
+    const s = mx === 0 ? 0 : (mx - Math.min(d[i], d[i + 1], d[i + 2])) / mx;
+    return lumAt(i) < 80 || (s > 0.5 && lumAt(i) < 200);
+  };
+  const stripDark = (x0, x1, y0, y1) => {
+    let n = 0, t = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { t++; if (darkPx(x, y)) n++; }
+    return t > 0 && n / t >= 0.6;
+  };
+  const tk = Math.max(2, Math.round(Math.min(w, h) * 0.05));
+  const darkSides = [stripDark(0, w, 0, tk), stripDark(0, w, h - tk, h), stripDark(0, tk, 0, h), stripDark(w - tk, w, 0, h)].filter(Boolean).length;
   const pageH = Math.min(h, Math.round(w * 1.4142));
   const mean = (x0, x1, y0, y1) => {
     let r = 0, g = 0, b = 0, n = 0;
@@ -63,8 +77,10 @@ const SCRIPT = `(async (src) => {
   const band = bandRows / pageH >= 0.05 ? { ratio: bandRows / pageH, color: mean(0, w, 1, Math.max(2, bandRows - 1)) } : null;
   const sideCols = Math.max(left, right);
   const side = sideCols / w >= 0.15 ? { ratio: sideCols / w, left: left >= right, color: mean(left >= right ? 1 : w - sideCols, left >= right ? sideCols : w - 1, Math.floor(pageH * 0.3), Math.floor(pageH * 0.9)) } : null;
-  return { total: w * h, bg: bgc, band, side, bins: [...bins.values()].map((b) => [b.n, b.r / b.n, b.g / b.n, b.b / b.n]) };
+  return { total: w * h, bg: bgc, band, side, aspect: img.naturalWidth / img.naturalHeight, darkSides, bins: [...bins.values()].map((b) => [b.n, b.r / b.n, b.g / b.n, b.b / b.n]) };
 })`;
+
+const UNRELIABLE = "这张图不像平整截图，测量数据不可靠，以你看到的为准";
 
 const hex = (r: number, g: number, b: number) =>
   `#${[r, g, b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
@@ -82,6 +98,8 @@ export interface ImageAnalysis {
   colors: PaletteColor[];
   /** 用文字描述的版式事实：页面底色、抬头色块、侧栏。 */
   facts: string[];
+  /** 像不像平整的纸面截图（拍屏、斜拍、带边框的照片为否），不平整时测量数据不可靠。 */
+  flat: boolean;
 }
 
 export async function analyzeImage(data: Uint8Array, mimeType: string, limit = 6): Promise<ImageAnalysis> {
@@ -92,12 +110,16 @@ export async function analyzeImage(data: Uint8Array, mimeType: string, limit = 6
     const page = await context.newPage();
     await page.setContent("<!doctype html><meta charset=utf-8><body></body>");
     const src = `data:${mimeType};base64,${Buffer.from(data).toString("base64")}`;
-    const { total, bins, bg, band, side } = (await page.evaluate(`(${SCRIPT})(${JSON.stringify(src)})`)) as {
+    const { total, bins, bg, band, side, aspect, darkSides } = (await page.evaluate(
+      `(${SCRIPT})(${JSON.stringify(src)})`,
+    )) as {
       total: number;
       bins: [number, number, number, number][];
       bg: [number, number, number];
       band: { ratio: number; color: [number, number, number] } | null;
       side: { ratio: number; left: boolean; color: [number, number, number] } | null;
+      aspect: number;
+      darkSides: number;
     };
     const merged: { n: number; r: number; g: number; b: number }[] = [];
     for (const [n, r, g, b] of [...bins].sort((a, b) => b[0] - a[0])) {
@@ -110,6 +132,9 @@ export async function analyzeImage(data: Uint8Array, mimeType: string, limit = 6
         near.n = sum;
       } else merged.push({ n, r, g, b });
     }
+    const bgLum = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
+    const flat = aspect >= 0.6 && aspect <= 0.85 && bgLum >= 200 && darkSides < 2;
+    if (!flat) return { colors: [], facts: [UNRELIABLE], flat };
     const luminance = ([r, g, b]: number[]) =>
       0.299 * (r as number) + 0.587 * (g as number) + 0.114 * (b as number);
     const facts = [
@@ -130,7 +155,7 @@ export async function analyzeImage(data: Uint8Array, mimeType: string, limit = 6
         share: Math.round((m.n / total) * 1000) / 1000,
         chromatic: sat(m.r, m.g, m.b) > 0.25 && Math.max(m.r, m.g, m.b) > 50,
       }));
-    return { colors, facts };
+    return { colors, facts, flat };
   } finally {
     await context.close();
   }

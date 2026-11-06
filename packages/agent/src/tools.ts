@@ -52,7 +52,15 @@ export interface RunContext {
   genId: (prefix: string) => string;
   emit(event: IntakeEvent): void;
   /** rejected：本轮有 upsert_facts 条目被拒，等待模型修正。 */
-  flags: { asked: boolean; changed: boolean; jobs?: boolean; rejected?: boolean; styled?: boolean };
+  flags: {
+    asked: boolean;
+    changed: boolean;
+    jobs?: boolean;
+    rejected?: boolean;
+    styled?: boolean;
+    /** 本轮已经把几版设计展示给用户挑选。 */
+    designs?: boolean;
+  };
   /** 本轮已经说出口的正文。 */
   spoken?: () => string;
 }
@@ -513,6 +521,8 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
 
   const askUser = tool("ask_user", "追问", AskUserArgs, (args: z.infer<typeof AskUserArgs>) => {
     if (ctx.flags.asked) return { ...text("本轮已经向用户提问，不要重复提问。"), terminate: true };
+    if (ctx.flags.designs)
+      return { ...text("这一轮已经给了几版设计，只请用户点选，不再提问：直接结束。"), terminate: true };
     const plan = planNext(state);
     if (plan.kind !== "ask")
       return { ...text("这一轮不再提问：直接结束，不要再输出文字。"), terminate: true };

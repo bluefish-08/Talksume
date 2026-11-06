@@ -3,6 +3,7 @@ import { Fragment, useState } from "react";
 import { imageUrl } from "../../api/images.ts";
 import { SECTION_LABELS } from "../../api/types.ts";
 import { Button, Chip } from "../../components/ui.tsx";
+import { DesignOptions } from "./DesignOptions.tsx";
 import { describeChange } from "./describe.ts";
 import { JobAbout, JobCards } from "./JobCards.tsx";
 import styles from "./MessageList.module.css";
@@ -137,6 +138,7 @@ function Assistant({
         </div>
       )}
       {message.jobs.length > 0 && <JobCards jobs={message.jobs} />}
+      {message.designs && <DesignOptions options={message.designs} />}
       {message.tailor && <TailorCardView card={message.tailor} onOpen={onOpenTailor} />}
     </div>
   );
@@ -146,10 +148,16 @@ function StyleProgressLine({ progress }: { progress: StyleProgress }) {
   return (
     <div className={styles.progress} role="status" aria-live="polite">
       <i className={styles.spin} aria-hidden="true" />
-      正在复刻…第 {progress.round} 轮
-      <span className={styles.progressStage}>
-        （{progress.stage === "previewing" ? "对比参考图" : "调整样式"}，最多 {progress.max} 轮）
-      </span>
+      {progress.stage === "designing" ? (
+        "正在设计 3 版方案…"
+      ) : (
+        <>
+          正在复刻…第 {progress.round} 轮
+          <span className={styles.progressStage}>
+            （{progress.stage === "previewing" ? "对比参考图" : "调整样式"}，最多 {progress.max} 轮）
+          </span>
+        </>
+      )}
     </div>
   );
 }

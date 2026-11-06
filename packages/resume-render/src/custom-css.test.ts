@@ -76,6 +76,18 @@ describe("定制 CSS 渲染", () => {
     expect(ok.check.lowContrast).toBe(0);
   });
 
+  it("伪元素盖住文字：自检报 covered；放在文字下面的装饰不算", async () => {
+    const cover =
+      ".item::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #ffffff }";
+    const behind =
+      ".head::after { content: ''; position: absolute; top: 0; right: 0; width: 40mm; height: 14mm; background-color: var(--accent-soft); clip-path: polygon(0 0, 100% 0, 100% 100%, 20% 100%); z-index: -1 }";
+    const bad = await renderResumePng(sampleResume, { template: "campus", accent: "teal", css: cover });
+    const ok = await renderResumePng(sampleResume, { template: "campus", accent: "teal", css: behind });
+    expect(bad.check.covered).toBeGreaterThan(0);
+    expect(ok.check.covered).toBe(0);
+    expect(ok.png.length).toBeGreaterThan(1000);
+  });
+
   it("PDF 照常渲染，定制后的示例仍是一页", async () => {
     const pdf = await renderPdf(sampleResume, { template: "campus", accent: "teal", css });
     expect(countPages(pdf)).toBe(1);

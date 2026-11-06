@@ -12,6 +12,15 @@ export const THEME_HEADERS = ["plain", "rule", "band"] as const;
 export const THEME_ALIGNS = ["left", "center"] as const;
 export const THEME_HEADINGS = ["underline", "bar", "block", "plain"] as const;
 export const THEME_LAYOUTS = ["single", "sidebar"] as const;
+export const THEME_SKELETONS = [
+  "classic",
+  "side-left",
+  "side-right",
+  "band-cols",
+  "timeline",
+  "cards",
+  "numbered",
+] as const;
 export const THEME_BULLETS = ["dot", "square", "dash"] as const;
 export const THEME_SKILLS = ["line", "tags"] as const;
 export const THEME_DENSITIES = ["auto", "roomy", "normal", "compact"] as const;
@@ -27,6 +36,7 @@ export const ResumeTheme = z
     headerAlign: z.enum(THEME_ALIGNS),
     headingStyle: z.enum(THEME_HEADINGS),
     layout: z.enum(THEME_LAYOUTS),
+    skeleton: z.enum(THEME_SKELETONS).optional(),
     bullet: z.enum(THEME_BULLETS),
     skills: z.enum(THEME_SKILLS),
     density: z.enum(THEME_DENSITIES),
@@ -49,6 +59,15 @@ export const THEME_LABELS = {
     plain: "分区标题只变色",
   },
   layout: { single: "单栏", sidebar: "两栏（左栏放教育、技能、奖项）" },
+  skeleton: {
+    classic: "经典单栏骨架",
+    "side-left": "通栏侧栏（左，抬头在侧栏里）",
+    "side-right": "通栏侧栏（右，浅色，抬头在侧栏里）",
+    "band-cols": "通栏色块抬头 + 两栏",
+    timeline: "时间线",
+    cards: "卡片式",
+    numbered: "编号标题",
+  },
   bullet: { dot: "圆点符号", square: "方块符号", dash: "短横符号" },
   skills: { line: "技能文字行", tags: "技能标签" },
   density: { auto: "疏密自动适配一页", roomy: "宽松", normal: "标准疏密", compact: "紧凑" },
@@ -153,7 +172,9 @@ export function describeTheme(theme: ResumeTheme): string {
     `「${theme.name}」`,
     `主色${colorName(theme.accent)} ${theme.accent}`,
     heading !== theme.accent ? `标题色${colorName(heading)} ${heading}` : "",
-    THEME_LABELS.layout[theme.layout],
+    theme.skeleton && theme.skeleton !== "classic"
+      ? THEME_LABELS.skeleton[theme.skeleton]
+      : THEME_LABELS.layout[theme.layout],
     THEME_LABELS.headingFont[theme.headingFont],
     THEME_LABELS.bodyFont[theme.bodyFont],
     THEME_LABELS.header[theme.header],

@@ -1,7 +1,7 @@
 import { computeCompleteness } from "@talksume/agent";
 import { profileToResume, type ResumeContent, ResumeStyle, resolveResumeStyle } from "@talksume/core";
 import { schema } from "@talksume/db";
-import { renderDocx, renderPdf } from "@talksume/resume-render";
+import { auditStyle, renderDocx, renderPdf, sampleResume } from "@talksume/resume-render";
 import { and, eq } from "drizzle-orm";
 import type { RouteModule } from "../app.ts";
 import { latestCompletedSections, listFacts, loadProfile } from "../conversation-store.ts";
@@ -49,6 +49,12 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
     const parsed = ResumeStyle.safeParse(req.body);
     if (!parsed.success) return sendError(reply, 400, "invalid_request", "模板、强调色或定制样式不合法");
     const style = resolveResumeStyle(parsed.data);
+    if (style.css) {
+      const { profile } = await loadProfile(db, req.userId);
+      const mine = profileToResume(profile);
+      const audited = await auditStyle(mine.sections.length === 0 ? sampleResume : mine, style);
+      if (!audited.ok) return sendError(reply, 400, "invalid_style", audited.problems.join("；"));
+    }
     if (!(await saveResumeStyle(db, req.userId, style))) {
       return sendError(reply, 404, "user_not_found", "用户不存在");
     }

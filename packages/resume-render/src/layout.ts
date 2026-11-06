@@ -244,7 +244,8 @@ export function themeGeometry(theme: ResumeTheme): Geometry {
 export function layoutForTheme(content: ResumeContent, theme: ResumeTheme, density?: Density): Layout {
   const g = themeGeometry(theme);
   const forced = density ?? (theme.density === "auto" ? undefined : theme.density);
-  if (theme.layout === "single") return pick(g, (l) => estimateHeight(content, g, l), forced);
+  if (theme.layout === "single" || (theme.skeleton && theme.skeleton !== "classic"))
+    return pick(g, (l) => estimateHeight(content, g, l), forced);
   const side = content.sections.filter((s) => SIDEBAR_KINDS.includes(s.kind));
   const main = content.sections.filter((s) => !SIDEBAR_KINDS.includes(s.kind));
   const empty: ResumeContent["basics"] = { name: "", contacts: [] };

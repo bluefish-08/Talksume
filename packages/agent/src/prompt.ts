@@ -1,4 +1,4 @@
-import type { Profile, ProfileSection } from "@talksume/core";
+import type { DesignDirection, Profile, ProfileSection } from "@talksume/core";
 import { type Completeness, SECTION_BY_NAME, type Slot } from "./completeness.ts";
 import { type Conflict, type Draft, draftMissing, isPlaceholderDraft, LEVEL_WORDS } from "./facts.ts";
 import { memoryPromptLines, type SkipEntry, type SummaryNote } from "./memory.ts";
@@ -22,6 +22,8 @@ export interface PromptInput {
   tailorTool?: boolean;
   /** 是否开放对话定制简历样式。 */
   styleTool?: boolean;
+  designTool?: boolean;
+  designCandidates?: readonly DesignDirection[];
   /** 开放定制 CSS 和预览（有参考图，或之前用过）。 */
   replica?: boolean;
   /** 这一条用户消息带了图片。 */
@@ -87,6 +89,20 @@ const STYLE_LINES = [
   "- 改完样式可以自然地顺带问一个画像里的缺口，不要强行拉回建档；用户这条消息里同时说了个人信息，照常先用 upsert_facts 写入。",
 ];
 
+function designLines(candidates: readonly DesignDirection[]): string[] {
+  return [
+    "- 用户想要「帮我设计一下」「换个好看的」「来几个版式」，或说了风格词（清新、高级极简、设计感、理工风、活泼、复古……），或没提具体要求只想更好看：调用 propose_resume_designs 一次给 3 版，不要只给一版。用户只要改某一处（换深绿、标题加粗）仍用 design_resume_style。",
+    "- 三版从下面「本轮候选方向」里挑：每版填 direction（方向 id），主色想换才填 accent，summary 可省略；候选是按用户风格词匹配加随机抽出、并避开用户见过的，不要挑候选以外的。三版必须是三种不同的骨架，且「字体、抬头、标题」三项里至少两项互不相同（只换颜色算雷同，会被退回），风格词决定整体方向，没有风格词就挑三种不同气质。默认只填 direction，不要自己另起炉灶（方向里的版式手法比临时拼的完整）；候选里挑不出合用户要求的，才自己设计（填完整 theme 和 css）。",
+    ...candidates.map(
+      (d) =>
+        `  · ${d.id}｜${d.name}｜骨架 ${d.skeleton}${d.columns ? "（分栏）" : ""}｜字体 ${d.base.bodyFont}/${d.base.headingFont}、抬头 ${d.base.header}、标题 ${d.base.headingStyle}｜${d.words.join("/")}｜${d.craft}`,
+    ),
+    "- 设计标准（出图前先想、出图后对着缩略图查）：层级（姓名最醒目、分区标题次之、正文最弱）；对齐（左边线整齐）；留白（不挤不空）；对比度（文字都看得清）；排得进一页。有硬伤的版本先修再给用户。",
+    "- 三版展示后样式还没有保存，用户点选才保存；介绍各版时不要说「已应用」。这一轮只请用户点选：不要再问画像里的问题（「当前目标字段」那个也不问，不给举例、不给示范回答），不要调用 ask_user，也不要提示缺哪些简历内容；回复里只介绍三版并请用户点选，不要再接别的话题。用户点选后继续在对话里改，用 design_resume_style / set_resume_css 在选中的那版上微调。",
+    "- 三版里至少一版适合投大厂网申：用经典骨架或不依赖左右分栏的骨架；分栏骨架要提醒用户 ATS 可能读乱。",
+  ];
+}
+
 const REPLICA_LINES = [
   "",
   "## 复刻参考图的样式",
@@ -131,7 +147,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}${input.styleTool ? `；样式工具：design_resume_style 定制简历外观${input.replica ? "、set_resume_css 写受限 CSS、preview_resume 预览渲染结果" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}${input.styleTool ? `；样式工具：design_resume_style 定制简历外观${input.designTool ? "、propose_resume_designs 一次出 3 版供选" : ""}${input.replica ? "、set_resume_css 写受限 CSS、preview_resume 预览渲染结果" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -189,6 +205,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       lines.indexOf("## 当前画像（已记录的内容）") - 1,
       0,
       ...STYLE_LINES,
+      ...(input.designTool ? designLines(input.designCandidates ?? []) : []),
       ...(input.replica ? REPLICA_LINES : []),
     );
   }

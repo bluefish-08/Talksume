@@ -1,16 +1,29 @@
-import type { ResumeStyler } from "@talksume/agent";
+import { randomUUID } from "node:crypto";
+import type { DesignOption, ResumeStyler } from "@talksume/agent";
 import {
   applyCustomCss,
   applyThemePatch,
   clearCustomCss,
+  directionById,
   type Profile,
+  pickPalettes,
   profileToResume,
+  type ResumeContent,
   type ResumeStyle,
   resolveResumeStyle,
+  styleFromDesign,
+  styleFromDirection,
 } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
-import { maskContacts, renderResumePng, sampleResume } from "@talksume/resume-render";
-import { eq } from "drizzle-orm";
+import {
+  atsCheck,
+  auditStyle,
+  maskContacts,
+  renderPdf,
+  renderResumePng,
+  sampleResume,
+} from "@talksume/resume-render";
+import { eq, sql } from "drizzle-orm";
 
 export async function loadResumeStyle(db: Db, userId: string): Promise<ResumeStyle> {
   const [row] = await db
@@ -33,6 +46,10 @@ export interface StylerOptions {
   /** 预览用的画像；对话进行中它可能比库里新。不传则没有预览能力。 */
   profile?: () => Profile;
   render?: typeof renderResumePng;
+  audit?: typeof auditStyle;
+  /** 导出成 PDF 再做网申可读性自检。 */
+  ats?: (content: ResumeContent, style: ResumeStyle) => Promise<{ ok: boolean; issues: string[] }>;
+  random?: () => number;
 }
 
 export function storeResumeStyler(db: Db, userId: string, options: StylerOptions = {}): ResumeStyler {
@@ -41,6 +58,12 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
   };
   const render = options.render ?? renderResumePng;
   const { profile } = options;
+  const audit = options.audit ?? auditStyle;
+  const random = options.random ?? Math.random;
+  const ats =
+    options.ats ??
+    (async (content: ResumeContent, style: ResumeStyle) =>
+      atsCheck(await renderPdf(content, style), content));
   return {
     async design(patch) {
       const change = applyThemePatch(await loadResumeStyle(db, userId), patch);
@@ -63,8 +86,66 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
       }
       const result = applyCustomCss(current, css);
       if (!result.ok) return result;
+      const mine = profile ? profileToResume(profile()) : sampleResume;
+      const audited = await audit(mine.sections.length === 0 ? sampleResume : mine, result.style);
+      if (!audited.ok) return { ok: false, errors: audited.problems };
       await save(result.style);
       return { ok: true, style: result.style, rules: result.rules, dropped: result.dropped };
+    },
+    async recentDirections() {
+      const rows = await db.execute(sql`
+        select o->>'direction' as direction
+        from ${schema.messages} m
+        join ${schema.conversations} c on c.id = m.conversation_id,
+        jsonb_array_elements(m.metadata->'designs') o
+        where c.user_id = ${userId} and m.metadata ? 'designs' and o->>'direction' is not null
+        order by m.created_at desc
+        limit 60`);
+      const list = (Array.isArray(rows) ? rows : (rows as { rows: unknown[] }).rows) as {
+        direction: string;
+      }[];
+      return [...new Set(list.map((r) => r.direction))];
+    },
+    async propose(designs) {
+      const mine = profile ? profileToResume(profile()) : sampleResume;
+      const content = maskContacts(mine.sections.length === 0 ? sampleResume : mine);
+      const palettes = pickPalettes(
+        designs.map((d) => (d.direction ? directionById(d.direction) : undefined)),
+        random,
+      );
+      const settled = await Promise.all(
+        designs.map(async (d, index) => {
+          const direction = d.direction ? directionById(d.direction) : undefined;
+          if (d.direction && !direction)
+            return { index, errors: [`没有方向「${d.direction}」，只能用本轮候选里的方向 id`] };
+          if (!direction && !d.theme) return { index, errors: ["要么给 direction，要么给完整的 theme"] };
+          const built = direction
+            ? styleFromDirection(direction, {
+                ...(d.accent ? { accent: d.accent } : { palette: palettes[index] ?? 0 }),
+              })
+            : styleFromDesign(d.theme, d.css);
+          if (!built.ok) return { index, errors: built.errors };
+          const audited = await audit(content, built.style, { scale: 0.5, format: "jpeg" });
+          if (!audited.ok) return { index, errors: audited.problems };
+          const { pages, overflowX, hiddenText, overlaps, lowContrast, covered } = audited.check;
+          const readable = await ats(content, built.style).catch(() => ({ ok: true, issues: [] }));
+          const option: DesignOption = {
+            id: randomUUID(),
+            ...(direction && { direction: direction.id }),
+            name: built.style.theme?.name ?? "设计",
+            summary: d.summary ?? direction?.summary ?? built.style.theme?.name ?? "",
+            style: built.style,
+            thumbnail: `data:image/jpeg;base64,${Buffer.from(audited.image).toString("base64")}`,
+            check: { pages, overflowX, hiddenText, overlaps, lowContrast, covered },
+            ats: { ok: readable.ok, issues: readable.issues },
+          };
+          return { index, option, notes: built.notes };
+        }),
+      );
+      return {
+        options: settled.flatMap((r) => ("option" in r ? [r.option] : [])),
+        rejected: settled.flatMap((r) => ("errors" in r ? [{ index: r.index, errors: r.errors }] : [])),
+      };
     },
     ...(profile && {
       async preview() {
@@ -73,8 +154,8 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
         // 资料还很少时用虚构示例，免得对着一张空白页比版式
         const content = mine.sections.length === 0 ? sampleResume : mine;
         const { png, check } = await render(maskContacts(content), style);
-        const { pages, overflowX, hiddenText, overlaps, lowContrast } = check;
-        return { png, check: { pages, overflowX, hiddenText, overlaps, lowContrast } };
+        const { pages, overflowX, hiddenText, overlaps, lowContrast, covered } = check;
+        return { png, check: { pages, overflowX, hiddenText, overlaps, lowContrast, covered } };
       },
     }),
   };

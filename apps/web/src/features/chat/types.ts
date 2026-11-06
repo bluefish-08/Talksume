@@ -1,3 +1,4 @@
+import type { ResumeStyle } from "@talksume/core";
 import type { Completeness, Profile, ProfileSection, ResumeContent } from "../../api/types.ts";
 
 /** 与 packages/agent 的 ProfileChange / Conflict 保持一致（web 不依赖 agent 包）。 */
@@ -41,6 +42,16 @@ export interface TailorCard {
   rejected: number;
 }
 
+/** 与 packages/agent 的 DesignOption 保持一致：助手一次给出的几版设计之一。 */
+export interface DesignOption {
+  id: string;
+  name: string;
+  summary: string;
+  style: ResumeStyle;
+  thumbnail: string;
+  ats?: { ok: boolean; issues: string[] };
+}
+
 /** 导入简历时落库的那条用户消息，正文是抽取出的简历原文。 */
 export interface ResumeImportNote {
   fileName?: string;
@@ -54,7 +65,7 @@ export interface MessageImage {
 
 /** 复刻参考图时服务端推来的进度：round 是第几轮，stage 是这一轮在改样式还是对比预览。 */
 export interface StyleProgress {
-  stage: "styling" | "previewing";
+  stage: "styling" | "previewing" | "designing";
   round: number;
   max: number;
 }
@@ -72,6 +83,7 @@ export interface ConversationDetail {
     jobs?: JobCard[];
     about?: JobCard;
     tailor?: TailorCard;
+    designs?: DesignOption[];
     resumeImport?: ResumeImportNote;
     images?: MessageImage[];
     createdAt: string;
@@ -96,6 +108,7 @@ export interface ChatMessage {
   /** 这条回复在讲的具体岗位，顶部显示一行标签；有它时不出岗位卡片。 */
   about?: JobCard;
   tailor?: TailorCard;
+  designs?: DesignOption[];
   resumeImport?: ResumeImportNote;
   images?: MessageImage[];
   /** 流式回复中的复刻进度；回复结束后清掉。 */

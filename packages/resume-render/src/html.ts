@@ -19,6 +19,7 @@ import {
 } from "@talksume/core";
 import { customCss } from "./custom-css.ts";
 import { type Layout, layoutFor, layoutForTheme, SIDEBAR, SIDEBAR_KINDS } from "./layout.ts";
+import { skeletonOf } from "./skeleton.ts";
 import { richSpans, typeset } from "./text.ts";
 import { FONT_STACK_CSS, type RenderOptions, SERIF_STACK_CSS } from "./types.ts";
 
@@ -52,7 +53,7 @@ interface TemplateSpec {
 const MONO_STACK = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
 
 const BASE_CSS = `
-.resume { position: relative; font-family: ${FONT_STACK_CSS}; font-size: var(--fs); line-height: var(--lh); background: #fff;
+.resume { position: relative; isolation: isolate; font-family: ${FONT_STACK_CSS}; font-size: var(--fs); line-height: var(--lh); background: #fff;
   font-variant-ligatures: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-rendering: optimizeLegibility;
   --ink: #111827; --body: #374151; --label: #4b5563; --muted: #6b7280; --faint: #9ca3af; --rule: #e5e7eb; color: var(--body);
   --accent-soft: color-mix(in srgb, var(--accent) 9%, #fff); --accent-deep: color-mix(in srgb, var(--accent) 78%, #000); }
@@ -76,9 +77,9 @@ const BASE_CSS = `
 .resume .item-stack { margin-top: 0.5pt; font-size: 0.88em; color: var(--muted); }
 .resume .item-stack .label { color: var(--label); }
 .resume ul { list-style: none; margin-top: 1pt; }
-.resume li { position: relative; padding-left: 1em; }
+.resume li { padding-left: 1em; text-indent: -1em; }
 .resume li + li { margin-top: var(--li-gap); }
-.resume ul.lines li { padding-left: 0; }
+.resume ul.lines li { padding-left: 0; text-indent: 0; }
 .resume ul.lines li::before { display: none; }
 .resume .lead, .resume .num { font-weight: 700; color: var(--ink); }
 .resume .num { white-space: nowrap; }
@@ -99,7 +100,7 @@ const TAGS_CSS = `
 `;
 
 const dot = (size: string, color: string, radius = "50%") =>
-  `li::before { content: ""; position: absolute; left: 0.28em; top: calc(var(--lh) * 0.5em - ${size} / 2); width: ${size}; height: ${size}; border-radius: ${radius}; background: ${color}; }`;
+  `li::before { content: ""; display: inline-block; vertical-align: middle; width: ${size}; height: ${size}; margin: 0 calc(0.72em - ${size}) 0 0.28em; border-radius: ${radius}; background: ${color}; }`;
 
 const TEMPLATES: Record<ResumeTemplate, TemplateSpec> = {
   campus: {
@@ -142,7 +143,7 @@ ${dot("3.5pt", "var(--accent)", "1pt")}
 .contacts span + span::before { content: "/"; margin: 0 0.7em; color: #aaaaaa; }
 h2 { display: flex; align-items: center; gap: 8pt; font-size: 1em; line-height: 1.4; letter-spacing: 0.3em; color: #111111; margin-bottom: 3.5pt; }
 h2::after { content: ""; flex: 1; height: 0.5pt; background: var(--rule); }
-li::before { content: ""; position: absolute; left: 0.1em; top: calc(var(--lh) * 0.5em); width: 0.45em; height: 0.75pt; background: #777777; }
+li::before { content: ""; display: inline-block; vertical-align: middle; width: 0.45em; height: 0.75pt; margin: 0 0.45em 0 0.1em; background: #777777; }
 `,
   },
   tech: {
@@ -346,7 +347,7 @@ h2 { font-size: 1.12em; line-height: 1.4; color: var(--heading); letter-spacing:
 const THEME_BULLET: Record<ResumeTheme["bullet"], string> = {
   dot: dot("3pt", "var(--accent)"),
   square: dot("3.5pt", "var(--accent)", "0.5pt"),
-  dash: `li::before { content: ""; position: absolute; left: 0.1em; top: calc(var(--lh) * 0.5em); width: 0.5em; height: 0.75pt; background: var(--accent); }`,
+  dash: `li::before { content: ""; display: inline-block; vertical-align: middle; width: 0.5em; height: 0.75pt; margin: 0 0.4em 0 0.1em; background: var(--accent); }`,
 };
 
 const SIDEBAR_CSS = `
@@ -359,20 +360,20 @@ const SIDEBAR_CSS = `
 .side .skill-line .item-title { display: block; }`;
 
 /** 主题 CSS 只由上面的常量片段拼成；唯一的变量是已校验的 hex 颜色，放在内联 CSS 变量里。 */
-function themeCss(theme: ResumeTheme): string {
+function themeCss(theme: ResumeTheme, skeleton = false): string {
   return [
     `.resume { font-family: ${FONT[theme.bodyFont]}; }`,
     `h1, h2 { font-family: ${FONT[theme.headingFont]}; }`,
     theme.headingFont === "serif" ? "h1 { letter-spacing: 0.14em; }" : "h1 { letter-spacing: 0.06em; }",
-    theme.headerAlign === "center"
+    !skeleton && theme.headerAlign === "center"
       ? ".head { text-align: center; } .summary { text-align: center; text-wrap: balance; }"
       : "",
-    THEME_HEADER[theme.header],
-    THEME_HEADING[theme.headingStyle],
+    skeleton ? "" : THEME_HEADER[theme.header],
+    skeleton ? "" : THEME_HEADING[theme.headingStyle],
     THEME_BULLET[theme.bullet],
     ".lead { color: var(--accent-deep); }",
     theme.skills === "tags" ? TAGS_CSS : "",
-    theme.layout === "sidebar" ? SIDEBAR_CSS : "",
+    !skeleton && theme.layout === "sidebar" ? SIDEBAR_CSS : "",
   ].join("\n");
 }
 
@@ -384,8 +385,11 @@ function renderThemed(content: ResumeContent, theme: ResumeTheme, options: Rende
   const main = sections.filter((x) => !SIDEBAR_KINDS.includes(x.s.kind) && x.html);
   const join = (xs: typeof sections) => xs.map((x) => x.html).join("\n");
   // DOM 先侧栏后正文，文本抽取是「教育、技能 → 经历」整块读出，不会左右交错
-  const body =
-    theme.layout === "sidebar" && side.length > 0 && main.length > 0
+  const head = headHtml(content, Boolean(extra));
+  const sk = skeletonOf(theme);
+  const body = sk
+    ? sk.html({ head, side: join(side), main: join(main), all: join(sections) })
+    : theme.layout === "sidebar" && side.length > 0 && main.length > 0
       ? `<div class="cols"><aside class="side">${join(side)}</aside><div class="main">${join(main)}</div></div>`
       : join(sections);
   const vars = [
@@ -393,15 +397,19 @@ function renderThemed(content: ResumeContent, theme: ResumeTheme, options: Rende
     `--heading: ${theme.headingColor ?? theme.accent}`,
     ...layoutVars(layout),
   ].join("; ");
-  const html = `<div class="resume th l-${theme.layout} d-${layout.density}${extra ? " custom" : ""}" style="${vars}">
-${headHtml(content, Boolean(extra))}
+  const html = `<div class="resume th l-${sk ? "single" : theme.layout}${sk ? ` sk-${sk.name}` : ""} d-${layout.density}${extra ? " custom" : ""}" style="${vars}">
+${sk ? "" : head}
 ${body}
 </div>`;
   const preset = options.template && options.accent ? resolveRenderStyle(options) : fallbackPreset(theme);
   return {
-    css: BASE_CSS + scopeCss(themeCss(theme)) + (extra ? `\n${extra.css}` : ""),
+    css:
+      BASE_CSS +
+      scopeCss(themeCss(theme, Boolean(sk))) +
+      (sk ? scopeCss(sk.css) : "") +
+      (extra ? `\n${extra.css}` : ""),
     html,
-    margin: `${layout.margin.y}mm ${layout.margin.x}mm`,
+    margin: sk?.bleed ? "0mm 0mm" : `${layout.margin.y}mm ${layout.margin.x}mm`,
     style: { ...preset, theme },
     layout,
     fonts: extra?.fonts ?? [],

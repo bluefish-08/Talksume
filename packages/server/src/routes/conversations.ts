@@ -141,6 +141,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         jobs: m.meta.jobs ?? [],
         ...(m.meta.about && { about: m.meta.about }),
         ...(m.meta.tailor && { tailor: m.meta.tailor }),
+        ...(m.meta.designs && { designs: m.meta.designs }),
         ...(m.meta.resumeImport && { resumeImport: m.meta.resumeImport }),
         ...(m.meta.images && { images: m.meta.images }),
         createdAt: m.createdAt.toISOString(),

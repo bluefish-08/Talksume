@@ -1,5 +1,6 @@
 import { Agent, type AgentMessage, type StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Model, ToolResultMessage } from "@earendil-works/pi-ai";
+import { pickDirections } from "@talksume/core";
 import { errorKindOf, isRetryableKind } from "@talksume/llm-gateway";
 import { computeCompleteness, SECTION_SPECS } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
@@ -28,6 +29,7 @@ import {
 import type {
   ChatImage,
   ChatTurn,
+  DesignOption,
   IntakeEvent,
   IntakeState,
   JobCard,
@@ -55,6 +57,8 @@ export interface IntakeDeps {
   tailor?: ResumeTailor;
   /** 对话里定制简历样式；不传则不开放 design_resume_style。 */
   styles?: ResumeStyler;
+  /** 挑候选设计方向用的随机源，测试里固定它。 */
+  random?: () => number;
   /** 每轮结束时回报耗时，时间都相对本轮开始，单位毫秒。 */
   onMetrics?: (metrics: TurnMetrics) => void;
 }
@@ -478,6 +482,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let cardSource: "recommend" | "search" = "recommend";
     let about: JobCard | undefined;
     let tailored: TailorCard | undefined;
+    let designs: DesignOption[] | undefined;
     const toolLog: ToolRecord[] = [];
     const flags: RunContext["flags"] = { asked: false, changed: false };
     const userTexts = [
@@ -519,6 +524,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           queue.push({ type: "about_job", job: about });
           return;
         } else if (event.type === "tailor") tailored = event.tailor;
+        else if (event.type === "style_options") designs = event.options;
         queue.push(event);
       },
       flags,
@@ -555,6 +561,13 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const answered = user && !autoSkipped ? answeredSlot(state, user.text) : undefined;
     const completeness = computeCompleteness(state.profile, { completedSections: state.completedSections });
     const target = nextSlotOf(state);
+    const designCandidates = deps.styles?.propose
+      ? pickDirections({
+          text: user?.text ?? "",
+          avoid: (await deps.styles.recentDirections?.()) ?? [],
+          ...(deps.random && { random: deps.random }),
+        })
+      : [];
     const systemPrompt = buildSystemPrompt({
       profile: state.profile,
       completeness,
@@ -569,6 +582,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       jobTools: Boolean(deps.jobs),
       tailorTool: Boolean(deps.jobs && deps.tailor),
       styleTool: Boolean(deps.styles),
+      designTool: Boolean(deps.styles?.propose),
+      designCandidates,
       replica,
       hasImage: Boolean(user?.images?.length),
     });
@@ -594,6 +609,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       if (!plain) return true;
       const plan = planNext(state);
       if (closingShown) return false;
+      // 三版缩略图已经摆出来：这一轮只请用户点选，模型顺带追问的建档问题不送出
+      if (flags.designs && isQuestion(plain)) return false;
       if (isQuestion(plain)) {
         if (plan.kind !== "ask" || flags.asked) return false;
         return questionsShown === 0 || ELABORATION.test(plain);
@@ -642,7 +659,12 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         tools: [
           ...createIntakeTools(ctx),
           ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog, deps.tailor) : []),
-          ...(deps.styles ? createStyleTools(ctx, deps.styles, toolLog, { replica }) : []),
+          ...(deps.styles
+            ? createStyleTools(ctx, deps.styles, toolLog, {
+                replica,
+                directions: designCandidates.length > 0,
+              })
+            : []),
         ],
         messages: historyToMessages(state, deps.model, historyLimit),
       },
@@ -912,7 +934,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     }
 
     if (llmError) shown = withoutFragment(shown);
-    const reply = [shown.trim(), ...asks].filter(Boolean).join("\n");
+    const reply = [shown.trim(), ...(designs ? [] : asks)].filter(Boolean).join("\n");
     const meta: TurnMeta = {
       ...(changes.length > 0 ? { changes } : {}),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
@@ -921,9 +943,18 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(closed ? { closed } : {}),
       ...(about ? { about } : cards.length > 0 ? { jobs: cards } : {}),
       ...(tailored ? { tailor: tailored } : {}),
+      ...(designs ? { designs } : {}),
       ...(toolLog.length > 0 ? { tools: about ? withoutCards(toolLog) : toolLog } : {}),
     };
-    if (!llmError || flags.changed || changes.length > 0 || cards.length > 0 || about || tailored) {
+    if (
+      !llmError ||
+      flags.changed ||
+      changes.length > 0 ||
+      cards.length > 0 ||
+      about ||
+      tailored ||
+      designs
+    ) {
       if (user) state.history.push(userTurn(user));
       if (user || reply || changes.length > 0) {
         state.history.push({
