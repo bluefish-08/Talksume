@@ -1,16 +1,16 @@
 import { api } from "@talksume/web/api/client.ts";
-import { Button } from "@talksume/web/components/ui.tsx";
-import { Field } from "@talksume/web/features/hr/Field.tsx";
 import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import styles from "../auth/Auth.module.css";
-import { AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthButton, AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthField, PasswordInput, useReveal } from "../auth/AuthField.tsx";
 import { newPasswordError } from "../auth/validate.ts";
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
+  const reveal = useReveal();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
@@ -47,26 +47,27 @@ export function ResetPasswordPage() {
   return (
     <AuthPage title="设置新密码" footer={<Link to="/forgot-password">链接失效？重新获取</Link>}>
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field label="新密码" error={errors.password} hint="至少 8 位">
-          <input
-            type="password"
+        <AuthField label="新密码" error={errors.password} hint="至少 8 位">
+          <PasswordInput
+            shown={reveal.shown}
+            onToggle={reveal.toggle}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
           />
-        </Field>
-        <Field label="确认新密码" error={errors.confirm}>
-          <input
-            type="password"
+        </AuthField>
+        <AuthField label="确认新密码" error={errors.confirm}>
+          <PasswordInput
+            shown={reveal.shown}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             autoComplete="new-password"
           />
-        </Field>
+        </AuthField>
         <FormError error={reset.error} />
-        <Button type="submit" variant="dark" size="lg" disabled={reset.isPending}>
+        <AuthButton type="submit" disabled={reset.isPending}>
           {reset.isPending ? "提交中…" : "重置密码"}
-        </Button>
+        </AuthButton>
       </form>
     </AuthPage>
   );

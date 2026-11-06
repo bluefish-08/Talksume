@@ -1,8 +1,8 @@
-import { Button, Spinner } from "@talksume/web/components/ui.tsx";
+import { Spinner } from "@talksume/web/components/ui.tsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { Navigate } from "react-router";
 import styles from "../auth/Auth.module.css";
-import { AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthButton, AuthPage, FormError } from "../auth/AuthCard.tsx";
 import { meKey, useLogout, useMe, useResendVerification } from "../auth/api.ts";
 
 export function VerifyPendingPage() {
@@ -22,10 +22,12 @@ export function VerifyPendingPage() {
       </p>
       <FormError error={resend.error} />
       {resend.isSuccess && <p className={`${styles.notice} ${styles.success}`}>已重新发送，请稍候查收。</p>}
-      <Button variant="dark" disabled={resend.isPending} onClick={() => resend.mutate(undefined)}>
+      <AuthButton disabled={resend.isPending} onClick={() => resend.mutate(undefined)}>
         重新发送验证邮件
-      </Button>
-      <Button onClick={() => qc.invalidateQueries({ queryKey: meKey })}>我已验证，刷新状态</Button>
+      </AuthButton>
+      <AuthButton variant="secondary" onClick={() => qc.invalidateQueries({ queryKey: meKey })}>
+        我已验证，刷新状态
+      </AuthButton>
       <div className={styles.footer}>
         <button type="button" className={styles.link} onClick={() => logout.mutate()}>
           退出登录

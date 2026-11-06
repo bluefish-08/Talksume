@@ -1,11 +1,10 @@
 import { api } from "@talksume/web/api/client.ts";
-import { Button } from "@talksume/web/components/ui.tsx";
-import { Field } from "@talksume/web/features/hr/Field.tsx";
 import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router";
 import styles from "../auth/Auth.module.css";
-import { AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthButton, AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthField } from "../auth/AuthField.tsx";
 import { useAuthConfig } from "../auth/api.ts";
 import { emailError } from "../auth/validate.ts";
 
@@ -44,18 +43,18 @@ export function ForgotPasswordPage() {
         </p>
       ) : (
         <form className={styles.form} onSubmit={submit} noValidate>
-          <Field label="邮箱" error={error}>
+          <AuthField label="邮箱" error={error}>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
-          </Field>
+          </AuthField>
           <FormError error={send.error} />
-          <Button type="submit" variant="dark" size="lg" disabled={send.isPending}>
+          <AuthButton type="submit" disabled={send.isPending}>
             {send.isPending ? "发送中…" : "发送重置邮件"}
-          </Button>
+          </AuthButton>
         </form>
       )}
     </AuthPage>

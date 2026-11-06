@@ -1,11 +1,10 @@
 import { api } from "@talksume/web/api/client.ts";
-import { Button } from "@talksume/web/components/ui.tsx";
-import { Field } from "@talksume/web/features/hr/Field.tsx";
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import styles from "../auth/Auth.module.css";
-import { AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthButton, AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthField, PasswordInput, useReveal } from "../auth/AuthField.tsx";
 import { useRegister, useResendVerification } from "../auth/api.ts";
 import { safeNext, withNext } from "../auth/redirect.ts";
 import { emailError, newPasswordError } from "../auth/validate.ts";
@@ -17,6 +16,7 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const register = useRegister();
   const resend = useResendVerification();
+  const reveal = useReveal();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -68,9 +68,9 @@ export function RegisterPage() {
         <p className={styles.lead}>没收到？检查一下垃圾邮件，或者重新发送。</p>
         <FormError error={resend.error} />
         {resend.isSuccess && <p className={`${styles.notice} ${styles.success}`}>已重新发送，请稍候查收。</p>}
-        <Button disabled={resend.isPending} onClick={() => resend.mutate(sentTo)}>
+        <AuthButton variant="secondary" disabled={resend.isPending} onClick={() => resend.mutate(sentTo)}>
           重新发送验证邮件
-        </Button>
+        </AuthButton>
       </AuthPage>
     );
   }
@@ -79,12 +79,16 @@ export function RegisterPage() {
 
   return (
     <AuthPage
-      title="注册"
-      lead="用邮箱创建账号，和助手聊几句就能生成简历。"
-      footer={<Link to={withNext("/login", next)}>已有账号？登录</Link>}
+      title="创建账号"
+      lead="一个账号，管好你的简历和求职。"
+      footer={
+        <span>
+          已有账号？<Link to={withNext("/login", next)}>登录</Link>
+        </span>
+      }
     >
       {invite && !inviteInfo.isError && (
-        <p className={styles.notice}>你正在通过邀请注册 HR 账号，验证邮箱后自动开通。</p>
+        <p className={styles.notice}>你正在通过邀请注册 HR 账号，注册完成后自动开通 HR 工作台。</p>
       )}
       {inviteBlocked && (
         <p className={styles.error} role="alert">
@@ -92,32 +96,47 @@ export function RegisterPage() {
         </p>
       )}
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field label="邮箱" error={errors.email}>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-        </Field>
-        <Field label="称呼" hint="选填，默认取邮箱前缀">
-          <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={60} />
-        </Field>
-        <Field label="密码" error={errors.password} hint="至少 8 位">
+        <AuthField label="邮箱" error={errors.email}>
           <input
-            type="password"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            placeholder="you@example.com"
+          />
+        </AuthField>
+        <AuthField label="昵称" hint="选填">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="nickname"
+            maxLength={60}
+            placeholder="默认取邮箱前缀"
+          />
+        </AuthField>
+        <AuthField label="密码" error={errors.password} hint="至少 8 位">
+          <PasswordInput
+            shown={reveal.shown}
+            onToggle={reveal.toggle}
+            placeholder="设置密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
           />
-        </Field>
-        <Field label="确认密码" error={errors.confirm}>
-          <input
-            type="password"
+        </AuthField>
+        <AuthField label="确认密码" error={errors.confirm}>
+          <PasswordInput
+            shown={reveal.shown}
+            placeholder="再输入一次"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             autoComplete="new-password"
           />
-        </Field>
+        </AuthField>
         <FormError error={register.error} />
-        <Button type="submit" variant="dark" size="lg" disabled={register.isPending || inviteBlocked}>
-          {register.isPending ? "提交中…" : "注册"}
-        </Button>
+        <AuthButton type="submit" disabled={register.isPending || inviteBlocked}>
+          {register.isPending ? "提交中…" : "创建账号"}
+        </AuthButton>
       </form>
     </AuthPage>
   );

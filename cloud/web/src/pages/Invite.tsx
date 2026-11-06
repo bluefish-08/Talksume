@@ -1,9 +1,9 @@
 import { api } from "@talksume/web/api/client.ts";
-import { Button, Spinner } from "@talksume/web/components/ui.tsx";
+import { Spinner } from "@talksume/web/components/ui.tsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import styles from "../auth/Auth.module.css";
-import { AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthButton, AuthPage, FormError } from "../auth/AuthCard.tsx";
 import { meKey, useMe } from "../auth/api.ts";
 
 export function InvitePage() {
@@ -57,20 +57,15 @@ export function InvitePage() {
             当前账号：<strong>{user.email}</strong>
           </p>
           <FormError error={accept.error} />
-          <Button variant="dark" size="lg" disabled={accept.isPending} onClick={() => accept.mutate()}>
+          <AuthButton disabled={accept.isPending} onClick={() => accept.mutate()}>
             {accept.isPending ? "处理中…" : "接受邀请，成为 HR"}
-          </Button>
+          </AuthButton>
         </>
       ) : (
         <>
-          <Button
-            variant="dark"
-            size="lg"
-            className={styles.fill}
-            onClick={() => navigate(`/register?invite=${encodeURIComponent(token)}`)}
-          >
+          <AuthButton onClick={() => navigate(`/register?invite=${encodeURIComponent(token)}`)}>
             用这个邀请注册新账号
-          </Button>
+          </AuthButton>
           <div className={styles.footer}>
             <Link to={`/login?next=${encodeURIComponent(here)}`}>已有账号？登录后接受</Link>
           </div>

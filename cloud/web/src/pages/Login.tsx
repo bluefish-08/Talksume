@@ -1,9 +1,8 @@
-import { Button } from "@talksume/web/components/ui.tsx";
-import { Field } from "@talksume/web/features/hr/Field.tsx";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import styles from "../auth/Auth.module.css";
-import { AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthButton, AuthPage, FormError } from "../auth/AuthCard.tsx";
+import { AuthField, PasswordInput, useReveal } from "../auth/AuthField.tsx";
 import { useAuthConfig, useLogin } from "../auth/api.ts";
 import { safeNext, withNext } from "../auth/redirect.ts";
 import { emailError } from "../auth/validate.ts";
@@ -13,6 +12,7 @@ export function LoginPage() {
   const next = safeNext(params.get("next"), "");
   const navigate = useNavigate();
   const login = useLogin();
+  const reveal = useReveal();
   const config = useAuthConfig().data;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,39 +39,44 @@ export function LoginPage() {
 
   return (
     <AuthPage
-      title="登录"
-      lead="登录后继续你的简历和求职进度。"
+      title="登录简聊"
+      lead="继续你的简历和求职进度。"
       footer={
         <>
-          <Link to={withNext("/register", next || "/")}>没有账号？注册</Link>
+          <span>
+            还没有账号？<Link to={withNext("/register", next || "/")}>创建一个</Link>
+          </span>
           {config?.emailEnabled && <Link to="/forgot-password">忘记密码</Link>}
-          {config && !config.emailEnabled && <span>忘记密码？请联系管理员重置</span>}
+          {config && !config.emailEnabled && <span>忘记密码请联系管理员</span>}
         </>
       }
     >
       <form className={styles.form} onSubmit={submit} noValidate>
-        <Field label="邮箱" error={errors.email}>
+        <AuthField label="邮箱" error={errors.email}>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
+            placeholder="you@example.com"
             // biome-ignore lint/a11y/noAutofocus: 登录页的唯一任务就是填这个框
             autoFocus
           />
-        </Field>
-        <Field label="密码" error={errors.password}>
-          <input
-            type="password"
+        </AuthField>
+        <AuthField label="密码" error={errors.password}>
+          <PasswordInput
+            shown={reveal.shown}
+            onToggle={reveal.toggle}
+            placeholder="输入密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
           />
-        </Field>
+        </AuthField>
         <FormError error={login.error} />
-        <Button type="submit" variant="dark" size="lg" disabled={login.isPending}>
+        <AuthButton type="submit" disabled={login.isPending}>
           {login.isPending ? "登录中…" : "登录"}
-        </Button>
+        </AuthButton>
       </form>
     </AuthPage>
   );
