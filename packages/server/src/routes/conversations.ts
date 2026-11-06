@@ -91,8 +91,17 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const slot = nextSlotOf(state);
     noteAsked(state, slot);
     const topic = summaries[0]?.topic ?? topicOfFacts(facts);
-    const greeting = { id: randomUUID(), text: openingMessage({ profile, slot, topic }) };
-    state.history.push({ id: greeting.id, role: "assistant", content: greeting.text });
+    const greeting = {
+      id: randomUUID(),
+      text: openingMessage({ profile, slot, topic }),
+      ...(slot ? { slot: slot.key } : {}),
+    };
+    state.history.push({
+      id: greeting.id,
+      role: "assistant",
+      content: greeting.text,
+      ...(slot ? { meta: { slot: slot.key } } : {}),
+    });
     const id = await createConversation(db, req.userId, state, greeting, ledger);
     const { summarizer } = deps;
     if (summarizer) {

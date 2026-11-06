@@ -4,7 +4,7 @@ import { computeCompleteness, pickNextSlot } from "./completeness.ts";
 import { applyFacts, type Draft } from "./facts.ts";
 import { isGenericName, isPlaceholder } from "./identity.ts";
 import type { FactInput } from "./schemas.ts";
-import { fallbackQuestion, nextSlotOf } from "./tools.ts";
+import { nextSlotOf, slotQuestion } from "./tools.ts";
 import { createIntakeState } from "./types.ts";
 
 let counter = 0;
@@ -187,14 +187,13 @@ describe("placeholders and the planner", () => {
     expect(pickNextSlot(legacy)?.itemId).toBeUndefined();
   });
 
-  it("asks what a placeholder is, as an optional slot that never trails a wrap-up", () => {
+  it("asks what a placeholder is, as an optional slot", () => {
     const state = createIntakeState();
     state.profile.basics = { name: "李明", phone: "13800001111", email: "a@b.com" } as never;
     state.drafts = converse([[bare]]).drafts;
     const slot = nextSlotOf(state);
     expect(slot).toMatchObject({ section: "projects", field: "name", required: false });
     expect(slot?.question).toContain("具体做的是什么");
-    expect(fallbackQuestion("基本齐了，右侧预览就是简历。", slot as never)).toBeUndefined();
   });
 
   it("still asks a real draft's required field as required", () => {
@@ -202,6 +201,6 @@ describe("placeholders and the planner", () => {
     state.drafts = converse([[project({ name: "学生成绩管理系统" }, "学生成绩管理系统")]]).drafts;
     const slot = nextSlotOf(state);
     expect(slot).toMatchObject({ field: "role", required: true });
-    expect(fallbackQuestion("基本齐了，右侧预览就是简历。", slot as never)).toContain("不过还差一项");
+    expect(slotQuestion(slot as never)).toBe(slot?.question);
   });
 });

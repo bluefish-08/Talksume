@@ -11,6 +11,8 @@ export interface PromptInput {
   conflicts: readonly Conflict[];
   drafts?: readonly Draft[];
   skipped?: readonly SkipEntry[];
+  /** 已经收尾：这一轮不再提问。 */
+  closed?: boolean;
   /** 本轮用户这句话已被系统直接记为跳过的字段。 */
   autoSkipped?: SkipEntry;
   summaries?: readonly SummaryNote[];
@@ -36,7 +38,14 @@ const LEVEL_LINE = Object.entries(LEVEL_WORDS)
   .map(([level, words]) => `${words.join("/")}→${level}`)
   .join("，");
 
-const RESUME_HINT = "右侧预览就是简历，可以点「润色」优化表述、切换模板，或者直接导出。";
+export const RESUME_HINT = "右侧预览就是简历，可以点「润色」优化表述、切换模板，或者直接导出。";
+
+/** 收尾指令：thin 为简历还比较单薄。 */
+export function wrapGuide(thin: boolean): string {
+  return thin
+    ? `先用一句话回应用户，再用两三句话（不要列清单）总结，如实说明还缺什么，总结只写一次，告诉用户简历页有「投递前可以补的东西」，并告诉用户：${RESUME_HINT}`
+    : `先用一句话回应用户，再用两三句话（不要列清单）总结已经收集的信息，总结只写一次，并告诉用户：${RESUME_HINT}`;
+}
 
 const INTAKE_TOOLS =
   "upsert_facts 写入事实、ask_user 结束本轮等用户回答、complete_section 结束分区、skip_field 跳过单个字段、resolve_conflict 按用户的选择消解矛盾";
@@ -94,7 +103,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」写下一个问题，最后调用 ask_user，question 填你刚问的那句。`,
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -104,8 +113,8 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 获奖的 date 只在用户说了年份或时间时填，不要从在校时间推算；quote 里没有年份或日期的 date 会被丢弃。",
     "- ask_user 时尽量附带 quickReplies：2 到 4 条用户可能的简短回答（第一人称、12 字以内，可含「跳过这个」）。选项必须是用户真实可能的回答，不要替用户编造经历；不确定就不给。",
     "- 时间统一写成 YYYY-MM，只写用户明确说出的年月，「大二下学期」「去年暑假」这类不要自己换算（系统会丢掉原话里找不到的年月）；学位用 associate/bachelor/master/phd；求职类型用 internship/campus/experienced。",
-    "- 用了收尾说法（「基本齐了」「右侧预览就是简历」「可以导出」）的那条回复就到此为止，不要再接着提新问题；还有要问的就先别收尾。",
-    `- 用户闲聊时，礼貌回应一句再拉回当前目标${input.jobTools ? "（问岗位不算闲聊，见「岗位问题」）" : ""}。用户对某一项说没有或不想说时，不要强迫，用 skip_field 记下；整个分区都没有时用 complete_section（reason=user_skipped）。跳过的项以后都不会再问。`,
+    "- 问什么、什么时候收尾都由系统决定：「下一个目标」给了就只问那一项，写成一句话；写「无」就不要提问，也不要自己加「还有别的想补充吗」这类话。",
+    `- 用户闲聊时，礼貌回应一句再拉回当前目标${input.jobTools ? "（问岗位不算闲聊，见「岗位问题」）" : ""}。用户对上一轮刚问的那一项说没有或不想说时，不要强迫，用 skip_field 记下（只能跳过上一轮问的那一项）；闲聊或没有信息的消息不要跳过任何字段，系统会拒绝。整个分区都没有时用 complete_section（reason=user_skipped）。跳过的项以后都不会再问。`,
     "- 如果用户说的内容与已记录的信息矛盾，照常写入，系统会自动发出确认问句和按钮，你不要自行决定以哪个为准，不要说已经改了，也不要在文字里复述这个矛盾问题。补充细节（新说法包含旧说法）不算矛盾，系统会直接更新。",
     "- 叙述性字段（项目的 situation、获奖的 description、basics.summary、要点的 detail）已有内容时，补充新信息要写出包含原有内容的完整合并文本：原文逐字保留，新信息接在后面；只有用户明确纠正某处时，才写成替换后的文本。",
     input.tailorTool
@@ -126,7 +135,7 @@ export function buildSystemPrompt(input: PromptInput): string {
     "- 「润色」在你的写法上再做精炼，由用户决定采不采用；最后可以提醒用户点「润色」。",
     "- 技术栈写进对应条目的 techStack，一项一条，和已有的取并集；技能区只记用户聊技能时说的，不要把技术栈复制过去。",
     "- 一轮只问「当前目标字段」这一项，不要顺带问背景或别的。深挖顺序由系统给出：技术栈 → 你具体负责什么 → 遇到的难点和你的做法 → 量化结果。用户一次说了好几件，全部写入后直接问下一个还缺的。",
-    "- 用户说「没有数字」「记不清」「没统计过」，用 skip_field 跳过量化结果，不要再追问；用户说没遇到难点，也用 skip_field 跳过。skip_field 的 key 照抄「当前目标字段」里的 key，不确定就不传。",
+    "- 用户说「没有数字」「记不清」「没统计过」，用 skip_field 跳过量化结果，不要再追问；用户说没遇到难点，也用 skip_field 跳过。skip_field 的 key 不确定就不传。",
     "",
     "## 其他字段",
     "- 教育：gpa 写用户说的原样（如 3.7/4.0），排名写 rank（如 专业前 10%、3/120），有一个就够；courses 一门一条。奖学金、竞赛奖项写 awards；三好学生、优秀毕业生这类荣誉称号写 education 的 honors。",
@@ -174,7 +183,11 @@ export function buildSystemPrompt(input: PromptInput): string {
       `用户这句「${input.autoSkipped.quote}」是在回答上一轮问的「${input.autoSkipped.label}」，系统已记为跳过，不要再调用 skip_field，也不要把这句话当成对下面目标的回答。`,
     );
   }
-  if (input.slot) {
+  if (input.closed) {
+    lines.push(
+      "已经收尾过了：这一轮不要提问，也不要再总结收尾。用户补充了新信息就照常写入，回应完就结束；用户只是致谢或客套，一句话回应即可。",
+    );
+  } else if (input.slot) {
     lines.push(
       describeSlot(input.slot),
       input.autoSkipped
@@ -182,11 +195,7 @@ export function buildSystemPrompt(input: PromptInput): string {
         : `用户这条消息很可能正是在回答这个目标：先写入，再根据 upsert_facts 返回的「下一个目标」继续追问${input.jobTools ? "；问的是岗位就先回答岗位问题" : ""}。`,
     );
   } else {
-    lines.push(
-      input.completeness.tips.length > 0
-        ? `该问的都问过了，但简历还比较单薄。简短总结后如实说明还缺什么，告诉用户简历页有「投递前可以补的东西」，并告诉用户：${RESUME_HINT}`
-        : `信息已基本收集完整。可以简短总结，并告诉用户：${RESUME_HINT}`,
-    );
+    lines.push(`该问的都问过了，这一轮收尾，不要提问。${wrapGuide(input.completeness.tips.length > 0)}`);
   }
   if (input.conflicts.length > 0) {
     lines.push("", "## 待用户确认的矛盾（系统已发出确认问句和按钮）");

@@ -687,9 +687,28 @@ export function computeCompleteness(profile: Profile, options: CompletenessOptio
   };
 }
 
+/** 必填基础项问完后，深挖和选填一共最多再问这么多项，到了就收尾。 */
+export const OPTIONAL_BUDGET = 6;
+
+/** 深挖和选填项的 key（占预算）；必填基础项、「有没有实习」和挖掘角度不占。 */
+export function isOptionalKey(key: string): boolean {
+  const [section, , field = ""] = key.split(":");
+  const spec = SECTION_BY_NAME[section as ProfileSection] as SectionSpec | undefined;
+  if (!spec || field.startsWith("probe_")) return false;
+  if (field === "_item") return spec.section === "awards";
+  const f = spec.fields.find((x) => x.field === field);
+  return !!f && (!f.required || !!f.depth);
+}
+
+export function optionalSpent(askCounts: Readonly<Record<string, number>> | undefined): number {
+  return Object.entries(askCounts ?? {}).filter(([key, n]) => n > 0 && isOptionalKey(key)).length;
+}
+
 export interface PickOptions extends CompletenessOptions {
   /** 每个字段已经追问过的次数，用于避免死缠烂打。 */
   askCounts?: Readonly<Record<string, number>>;
+  /** 铺开阶段之后最多再问几个深挖或选填项；不给就不设上限。 */
+  optionalBudget?: number;
   maxAsks?: number;
   /** 用户跳过或说没有的字段 key，永远不主动再问。 */
   skipped?: ReadonlySet<string>;
@@ -751,7 +770,8 @@ function isBreadth(m: MissingField): boolean {
 
 /**
  * 四个阶段：先按分区顺序把各分区铺开（每个分区取最重要的缺项；一段经历都没有时挖掘角度也在这里），
- * 再按条目顺序逐段深挖（技术栈 → 负责什么 → 难点 → 量化结果），然后换角度再挖一段经历，最后才问选填项。
+ * 再按条目顺序逐段深挖（技术栈 → 负责什么 → 难点 → 量化结果），然后换角度再挖一段经历，最后按权重问选填项。
+ * 深挖和选填项共用一份预算（`optionalBudget`），用完返回 null，由调用方收尾；挖掘角度是在找经历，不占预算。
  */
 export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot | null {
   const { missing } = computeCompleteness(profile, options);
@@ -771,25 +791,32 @@ export function pickNextSlot(profile: Profile, options: PickOptions = {}): Slot 
 
   const breadth = firstOfSection(askable.filter(isBreadth));
   if (breadth) return toSlot(breadth);
+  const overBudget =
+    options.optionalBudget !== undefined && optionalSpent(options.askCounts) >= options.optionalBudget;
 
   const itemOrder = (m: MissingField) => {
     const items = profile[m.section as "experiences" | "projects"] as { id: string }[];
     return items.findIndex((item) => item.id === m.itemId);
   };
-  const deep = askable
-    .filter((m) => m.depth && m.required)
-    .sort(
-      (a, b) =>
-        Number(b.itemId === options.focusItemId) - Number(a.itemId === options.focusItemId) ||
-        (order.get(a.section) ?? 0) - (order.get(b.section) ?? 0) ||
-        itemOrder(a) - itemOrder(b) ||
-        (a.depth ?? 0) - (b.depth ?? 0),
-    )[0];
+  const deep = overBudget
+    ? undefined
+    : askable
+        .filter((m) => m.depth && m.required)
+        .sort(
+          (a, b) =>
+            Number(b.itemId === options.focusItemId) - Number(a.itemId === options.focusItemId) ||
+            (order.get(a.section) ?? 0) - (order.get(b.section) ?? 0) ||
+            itemOrder(a) - itemOrder(b) ||
+            (a.depth ?? 0) - (b.depth ?? 0),
+        )[0];
   if (deep) return toSlot(deep);
 
   const probe = askable.filter((m) => m.kind === "probe").sort((a, b) => b.weight - a.weight)[0];
   if (probe) return toSlot(probe);
+  if (overBudget) return null;
 
-  const rest = firstOfSection(askable.filter((m) => !m.required && !isBreadth(m)));
+  const rest = askable
+    .filter((m) => !m.required && !isBreadth(m))
+    .sort((a, b) => b.weight - a.weight || (order.get(a.section) ?? 0) - (order.get(b.section) ?? 0))[0];
   return rest ? toSlot(rest) : null;
 }

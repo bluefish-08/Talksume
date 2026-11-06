@@ -92,6 +92,8 @@ export type TurnMeta = {
   about?: JobCard;
   tailor?: TailorCard;
   tools?: ToolRecord[];
+  /** 这条回复是收尾：之后不再主动提问，用户只回致谢时也不追问。 */
+  closed?: boolean;
   /** 这条用户消息是导入的简历原文，正文即抽取出的文字。 */
   resumeImport?: { fileName?: string; facts: number };
 };
@@ -131,6 +133,9 @@ export function createIntakeState(init: Partial<IntakeState> = {}): IntakeState 
     ...init,
   };
 }
+
+/** 下一步只由代码决定：问哪一项、首次收尾、已收尾（不再提问）、有待确认的矛盾（先不问也不收尾）。 */
+export type Plan = { kind: "ask"; slot: Slot } | { kind: "wrap" } | { kind: "closed" } | { kind: "hold" };
 
 export type AskKind = "followup" | "clarify" | "confirm";
 

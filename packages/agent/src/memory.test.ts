@@ -100,6 +100,12 @@ describe("跳过的项", () => {
   it("skip_field 记下后不再被选中，原话和时间写进账本", async () => {
     const state = gpaNextState();
     expect(nextSlotOf(state)?.field).toBe("gpa");
+    state.history.push({
+      id: "a1",
+      role: "assistant",
+      content: "GPA 方便说一下吗？",
+      meta: { slot: "education:edu_1:gpa" },
+    });
     const call = toolsFor(state, ["成绩就不说了"]);
     const text = await call("skip_field", { quote: "成绩就不说了" });
     expect(text).toContain("以后不会再问");
@@ -135,13 +141,19 @@ describe("跳过的项", () => {
 
   it("skip_field 校验原话和 key", async () => {
     const state = gpaNextState();
+    state.history.push({
+      id: "a1",
+      role: "assistant",
+      content: "GPA 方便说一下吗？",
+      meta: { slot: "education:edu_1:gpa" },
+    });
     const call = toolsFor(state, ["成绩就不说了"]);
     expect(await call("skip_field", { quote: "我没说过这句" })).toContain("不是用户说过的原话");
     expect(await call("skip_field", { key: "education:edu_1:school", quote: "成绩就不说了" })).toContain(
-      "不需要跳过",
+      "只能跳过上一轮问的那一项",
     );
-    expect(await call("skip_field", { key: "education:edu_9:gpa", quote: "成绩就不说了" })).toContain(
-      "找不到",
+    expect(await call("skip_field", { key: "nope", quote: "成绩就不说了" })).toContain(
+      "只能跳过上一轮问的那一项",
     );
     expect(state.skipped).toEqual([]);
   });

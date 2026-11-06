@@ -4,22 +4,24 @@ import { errorKindOf, isRetryableKind } from "@talksume/llm-gateway";
 import { computeCompleteness, SECTION_SPECS } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { createJobTools, withoutCards } from "./job-tools.ts";
-import { buildSystemPrompt } from "./prompt.ts";
+import { buildSystemPrompt, RESUME_HINT } from "./prompt.ts";
+import { cleanQuickReplies } from "./schemas.ts";
 import {
   answeredSlot,
   buildUserCorpus,
   completenessEvent,
   createIntakeTools,
-  fallbackQuestion,
+  isClosed,
+  isPleasantry,
   lastAskedKey,
   nextSlotOf,
   normalizeQuote,
   noteAsked,
+  planNext,
   type RunContext,
   settleConflict,
   skipDeclined,
-  skippableSlot,
-  skipSlot,
+  slotQuestion,
   wrapsUp,
 } from "./tools.ts";
 import type {
@@ -129,7 +131,7 @@ class EventQueue {
 const REPLAYED_INTAKE_TOOLS = new Set(["upsert_facts", "skip_field", "complete_section", "resolve_conflict"]);
 const REPLAY_RESULT_LIMIT = 400;
 /** 「下一个目标」和本轮提问的指引到了之后的轮次已经过时。 */
-const TURN_GUIDANCE = /\n?(?:下一个目标：|这一轮的回复|所有分区均已完成)[\s\S]*$/;
+const TURN_GUIDANCE = /\n?(?:下一个目标：|这一轮的回复)[\s\S]*$/;
 
 function renumberFacts(text: string, kept: number[]): string {
   return text.replace(/第 ([\d、]+) 条/g, (all, list: string) => {
@@ -306,20 +308,48 @@ function userWordsFor(userText: string, subject: string): string {
   return (best && score(best) > 0 ? best : subject).slice(0, 40);
 }
 
-function nudgeText(subjects: string[], asked: boolean, closed = false): string {
+function nudgeText(subjects: string[], asked: boolean, quiet: boolean): string {
   const what = subjects
     .filter(Boolean)
     .map((s) => `「${s}」`)
     .join("");
-  return `[系统提示，不是用户发言] 你在回复里说已经记下${what}，但画像里没有${what ? "这些内容" : "新写入的内容"}（没有调用 upsert_facts 或调用失败）。请现在用 upsert_facts 写入用户上一条消息里对应的信息（quote 逐字摘抄原话）。${asked || closed ? `${asked ? "问题已经发给用户" : "你已经在收尾"}，写完不要再输出文字，也不要再提问或调用 ask_user。` : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
+  return `[系统提示，不是用户发言] 你在回复里说已经记下${what}，但画像里没有${what ? "这些内容" : "新写入的内容"}（没有调用 upsert_facts 或调用失败）。请现在用 upsert_facts 写入用户上一条消息里对应的信息（quote 逐字摘抄原话）。${stopOrAsk(asked, quiet)}`;
 }
 
-function answerNudge(label: string, stop: boolean): string {
-  return `[系统提示，不是用户发言] 用户上一条在回答${label}，但这一轮没有写入任何内容。里面有能写进简历的（做法、难点、结果等），现在用 upsert_facts 写进对应条目的 highlights（quote 逐字摘抄原话）；用户其实是在说没有或不想说，就用 skip_field。${stop ? "写完不要再输出文字，也不要再提问或调用 ask_user。" : "写完用 ask_user 问下一个问题，不要重复前面的文字。"}`;
+function answerNudge(label: string, asked: boolean, quiet: boolean): string {
+  return `[系统提示，不是用户发言] 用户上一条在回答${label}，但这一轮没有写入任何内容。里面有能写进简历的（做法、难点、结果等），现在用 upsert_facts 写进对应条目的 highlights（quote 逐字摘抄原话）；用户其实是在说没有或不想说，就用 skip_field。${stopOrAsk(asked, quiet)}`;
+}
+
+/** 问不问由代码定：已经问了或这一轮不该问，写完就停；否则按返回的「下一个目标」问一句。 */
+function stopOrAsk(asked: boolean, quiet: boolean): string {
+  if (asked || quiet) return "写完不要再输出文字，也不要再提问或调用 ask_user。";
+  return "写完按返回的「下一个目标」问一句，用 ask_user 发出，不要重复前面的文字。";
 }
 
 const REPAIR_TEXT =
   "[系统提示，不是用户发言] 上面 upsert_facts 有条目被拒绝。问题已经发给用户，请按拒绝原因修正后只重新调用 upsert_facts，quote 逐字摘抄用户原话；改不了的就不写。不要再输出文字，也不要再调用 ask_user。";
+
+const CLOSED_REPLIES = [
+  "不客气～简历在右侧，想补充或修改随时告诉我。",
+  "好的，之后想补充经历或改哪里，随时跟我说。",
+  "不客气，祝求职顺利！有要补充的再来找我。",
+];
+
+/** 模型没写收尾说法时，由代码补上。 */
+function closingLine(thin: boolean): string {
+  return `${thin ? "目前能聊的先到这里，简历还比较单薄，简历页有「投递前可以补的东西」。" : "信息已经基本齐了。"}${RESUME_HINT}`;
+}
+
+/** 没带问号的请求（「介绍一下自己吧。」）也是在问，代码不再补一句同样的问题。 */
+const REQUEST = /说说|说一下|说下|讲讲|讲一下|聊聊|介绍一下|介绍下|告诉我|分享一下|补充一下/;
+
+/** 收尾里指向右侧简历的那句，说过它就算收尾说完了。 */
+const RESUME_POINTER = /右侧(?:的)?(?:预览|就是)|(?:可以|直接)导出/;
+
+const isQuestionText = (sentence: string) => /[？?]["”」』）)]*$/.test(sentence.trim());
+
+const SENTENCES = /[^。！!？?\n]*(?:[。！!？?]+|\n+|$)/g;
+const ELABORATION = /^(?:比如|例如|譬如|像是?|或者|还是|是不是|或是|你?是?怎么(?:解决|处理|做)的)/;
 
 function resumeText(shown: string): string {
   const seen = shown
@@ -399,6 +429,9 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let firstEventMs: number | undefined;
     const queue = new EventQueue();
     const asks: string[] = [];
+    // 用户实际看到的正文（被拦下的句子不在里面）和其中的问句数
+    let shown = "";
+    let questionsShown = 0;
     const changes: ProfileChange[] = [...(turn.seedChanges ?? [])];
     let quickReplies: string[] = [];
     let askedSlot: string | undefined;
@@ -423,7 +456,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           if (event.quickReplies) quickReplies = event.quickReplies;
           if (event.slot) askedSlot = event.slot.key;
           // 每条回复恰好带一个问题：正文已经问了就以正文为准，没问才用 ask_user 的 question
-          if (event.kind === "followup" && /[?？]/.test(assistantText)) {
+          if (event.kind === "followup" && questionsShown > 0) {
             queue.push({ ...event, inText: true });
             return;
           }
@@ -450,8 +483,27 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         queue.push(event);
       },
       flags,
-      spoken: () => assistantText,
+      spoken: () => shown + unsent,
+      ...(user ? { userText: user.text } : {}),
     };
+
+    if (user && isClosed(state) && isPleasantry(user.text)) {
+      const reply = CLOSED_REPLIES[user.text.length % CLOSED_REPLIES.length] ?? "";
+      firstTokenMs = since();
+      yield { type: "token", text: reply };
+      state.history.push({ id: user.id, role: "user", content: user.text });
+      state.history.push({ id: `${turn.id}:reply`, role: "assistant", content: reply });
+      deps.onMetrics?.({
+        totalMs: since(),
+        firstTokenMs,
+        firstEventMs: firstTokenMs,
+        modelCalls: [],
+        tools: [],
+        nudged: false,
+      });
+      yield completenessEvent(state);
+      return;
+    }
 
     const autoSkipped = user ? skipDeclined(state, user.text) : null;
     const answered = user && !autoSkipped ? answeredSlot(state, user.text) : undefined;
@@ -461,6 +513,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       profile: state.profile,
       completeness,
       slot: target,
+      closed: isClosed(state),
       ...(autoSkipped ? { autoSkipped } : {}),
       completedSections: state.completedSections,
       conflicts: state.conflicts,
@@ -471,7 +524,6 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       tailorTool: Boolean(deps.jobs && deps.tailor),
     });
 
-    let assistantText = "";
     let llmError: string | undefined;
     let failures = 0;
     let writeFailures = 0;
@@ -483,16 +535,40 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let resumed = false;
     // 正文按整句送出：断流时没说完的半句扣下，不让用户看到
     let unsent = "";
+    // 下一步由规划器定：不该问的时候（已收尾、要收尾、刚发了确认）问句拦下，还要问的时候自己写的收尾句拦下，一条回复只留一个问句
+    const isQuestion = isQuestionText;
+    // 收尾说过一次，这一轮后面的正文不再要：模型常在调用写入之前先收尾，写入返回后又收尾一遍
+    let closingShown = false;
+    const allowed = (sentence: string): boolean => {
+      const plain = sentence.trim();
+      if (!plain) return true;
+      const plan = planNext(state);
+      if (closingShown) return false;
+      if (isQuestion(plain)) {
+        if (plan.kind !== "ask" || flags.asked) return false;
+        return questionsShown === 0 || ELABORATION.test(plain);
+      }
+      if (plan.kind === "ask") return !wrapsUp(plain);
+      if (plan.kind === "wrap" && RESUME_POINTER.test(plain)) closingShown = true;
+      return true;
+    };
     const sendText = (all: boolean) => {
       const at = all ? unsent.length : Math.max(...[..."。！？!?…\n"].map((c) => unsent.lastIndexOf(c))) + 1;
       if (at <= 0) return;
-      const text = unsent.slice(0, at);
+      const chunk = unsent.slice(0, at);
       unsent = unsent.slice(at);
+      let text = "";
+      for (const x of chunk.match(SENTENCES) ?? []) {
+        if (!x || !allowed(x)) continue;
+        if (isQuestion(x)) questionsShown++;
+        text += x;
+      }
+      if (!text) return;
       if (/\S/.test(text)) firstTokenMs ??= since();
+      shown += text;
       queue.push({ type: "token", text });
     };
     let broken: { afterText: boolean; inTools: boolean } | undefined;
-    let skipFailed = false;
     let skipDone = false;
     const toolArgs = new Map<string, unknown>();
     const snapshot = () => JSON.stringify([state.profile, state.drafts]);
@@ -501,7 +577,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     // 用户没说过的词（「联系方式」「时间线」）是模型的概括，只看这一轮写没写、画像里有没有；用户原话里的具体内容要真在画像里
     const unrecorded = (): string[] => {
       const corpus = normalizeQuote(snapshot());
-      return claimedSubjects(assistantText).filter((s) =>
+      return claimedSubjects(shown).filter((s) =>
         s && mentioned(said, s) ? !mentioned(corpus, s) : !wrote && !(s && mentioned(corpus, s)),
       );
     };
@@ -537,7 +613,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
             nudged = true;
             agent.steer({
               role: "user",
-              content: nudgeText(missed, flags.asked, wrapsUp(assistantText)),
+              content: nudgeText(missed, flags.asked || questionsShown > 0, planNext(state).kind !== "ask"),
               timestamp: Date.now(),
             });
             return { action: "continue" };
@@ -546,7 +622,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
             nudged = true;
             agent.steer({
               role: "user",
-              content: answerNudge(answered, flags.asked || wrapsUp(assistantText)),
+              content: answerNudge(
+                answered,
+                flags.asked || questionsShown > 0,
+                planNext(state).kind !== "ask",
+              ),
               timestamp: Date.now(),
             });
             return { action: "continue" };
@@ -567,7 +647,6 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         case "message_update":
           if (event.assistantMessageEvent.type === "text_delta") {
             if (/\S/.test(event.assistantMessageEvent.delta)) callFirstToken ??= since();
-            assistantText += event.assistantMessageEvent.delta;
             unsent += event.assistantMessageEvent.delta;
             sendText(false);
           }
@@ -610,10 +689,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
             durationMs: since() - start,
             isError: event.isError,
           });
-          if (event.toolName === "skip_field") {
-            if (event.isError) skipFailed = true;
-            else skipDone = true;
-          }
+          if (event.toolName === "skip_field" && !event.isError) skipDone = true;
           if (event.toolName === "upsert_facts" && !event.isError) {
             if (beforeWrite.get(event.toolCallId) !== snapshot()) wrote = true;
           }
@@ -644,17 +720,16 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       const kind = llmError && errorKindOf(llmError);
       if (resumed || !broken?.afterText || !kind || !isRetryableKind(kind)) return false;
       if (options.signal?.aborted || modelTurns >= maxModelTurns) return false;
-      return broken.inTools || !(flags.asked || /[?？]/.test(assistantText));
+      return broken.inTools || !(flags.asked || questionsShown > 0);
     };
     const run = (async () => {
       await agent.prompt(turn.prompt);
       if (!resumable()) return;
       resumed = true;
-      assistantText = assistantText.slice(0, assistantText.length - unsent.length);
       unsent = "";
       llmError = undefined;
       broken = undefined;
-      agent.steer({ role: "user", content: resumeText(assistantText.trim()), timestamp: Date.now() });
+      agent.steer({ role: "user", content: resumeText(shown.trim()), timestamp: Date.now() });
       await agent.continue();
     })()
       .catch((error: unknown) => {
@@ -684,22 +759,25 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     }
     if (!about && cards.length > 0) yield { type: "jobs", source: cardSource, jobs: cards };
 
-    // 模型想跳过却没跳成：按上一轮问的（或本轮目标）字段替它跳过，免得下一轮又卡在同一处
-    if (user && skipFailed && !skipDone) {
-      const asked = lastAskedKey(state);
-      const slot = (asked && skippableSlot(state, asked)) || (target && skippableSlot(state, target.key));
-      if (slot) {
-        skipSlot(state, slot, user.text.trim().slice(0, 40));
-        flags.changed = true;
-      }
-    }
-
     // 问题已经说出口后才卡住的，用户拿到的回复是完整的，不再报错
-    const delivered = flags.asked || /[?？]/.test(assistantText);
+    const delivered = flags.asked || questionsShown > 0;
+    const plan = planNext(state);
     const missed = user && !llmError ? unrecorded() : [];
     const previous = state.history.findLast((t) => t.role === "assistant")?.meta?.clarified;
     const failedWords = lastFailedQuote ?? user?.text ?? "";
     let clarified: string | undefined;
+    let closed = false;
+    // 收尾由规划器定：该收尾而模型没写收尾说法，代码补上；这一轮刚问了问题就留到下一轮收尾
+    if (plan.kind === "wrap" && !llmError && !flags.jobs && !delivered) {
+      if (!wrapsUp(shown)) {
+        const { tips } = computeCompleteness(state.profile, { completedSections: state.completedSections });
+        const line = `${shown && !/\s$/.test(shown) ? "\n" : ""}${closingLine(tips.length > 0)}`;
+        shown += line;
+        firstTokenMs ??= since();
+        yield { type: "token", text: line };
+      }
+      closed = true;
+    }
     if (llmError && !delivered) {
       const kind = errorKindOf(llmError) ?? "unknown";
       yield {
@@ -712,9 +790,10 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       const words = [...new Set(missed.map((s) => userWordsFor(user.text, s)))]
         .map((w) => `「${w}」`)
         .join("");
-      const question = delivered
-        ? `刚才说的${words}其实还没记进简历，回头可以再具体说一下。`
-        : `刚才说的${words}还没记进简历，能再具体说一下吗？`;
+      const question =
+        delivered || plan.kind !== "ask"
+          ? `刚才说的${words}其实还没记进简历，回头可以再具体说一下。`
+          : `刚才说的${words}还没记进简历，能再具体说一下吗？`;
       asks.push(question);
       yield {
         type: "ask",
@@ -723,6 +802,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         ...(quickReplies.length > 0 ? { quickReplies } : {}),
       };
     } else if (
+      plan.kind === "ask" &&
       writeFailures > 0 &&
       failures >= 2 &&
       !flags.asked &&
@@ -733,34 +813,40 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       clarified = failedWords;
       askedSlot ??= lastAskedKey(state);
       yield { type: "ask", kind: "clarify", question };
-    } else if (!flags.asked && !flags.jobs) {
-      const slot = nextSlotOf(state);
-      const question = slot ? fallbackQuestion(assistantText, slot) : undefined;
-      if (slot && question) {
-        noteAsked(state, slot);
-        asks.push(question);
-        askedSlot = slot.key;
+    } else if (plan.kind === "ask" && !flags.asked && !flags.jobs) {
+      // 问哪一项是规划器定的：模型问了就记在这一项上，没问就由代码问
+      const { slot } = plan;
+      const replies = cleanQuickReplies(slot.replies);
+      noteAsked(state, slot);
+      askedSlot = slot.key;
+      const ref = {
+        key: slot.key,
+        section: slot.section,
+        field: slot.field,
+        ...(slot.itemId ? { itemId: slot.itemId } : {}),
+      };
+      const lastSentence = (shown.match(SENTENCES) ?? []).filter((x) => x.trim()).at(-1) ?? "";
+      if (questionsShown === 0 && !REQUEST.test(lastSentence)) {
+        const text = slotQuestion(slot);
+        asks.push(text);
         yield {
           type: "ask",
           kind: "followup",
-          question,
-          slot: {
-            key: slot.key,
-            section: slot.section,
-            field: slot.field,
-            ...(slot.itemId ? { itemId: slot.itemId } : {}),
-          },
+          question: text,
+          slot: ref,
+          ...(replies.length > 0 ? { quickReplies: replies } : {}),
         };
       }
     }
 
-    const shown = llmError ? withoutFragment(assistantText) : assistantText;
+    if (llmError) shown = withoutFragment(shown);
     const reply = [shown.trim(), ...asks].filter(Boolean).join("\n");
     const meta: TurnMeta = {
       ...(changes.length > 0 ? { changes } : {}),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
       ...(askedSlot ? { slot: askedSlot } : {}),
       ...(clarified ? { clarified } : {}),
+      ...(closed ? { closed } : {}),
       ...(about ? { about } : cards.length > 0 ? { jobs: cards } : {}),
       ...(tailored ? { tailor: tailored } : {}),
       ...(toolLog.length > 0 ? { tools: about ? withoutCards(toolLog) : toolLog } : {}),
@@ -822,7 +908,14 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
 
     const label = conflict.label;
     const chosen = String(accept ? conflict.proposed : conflict.previous);
-    const prompt = `[系统通知，不是用户发言] 用户确认${label}以「${chosen}」为准，画像已更新。没有新的信息需要写入，请直接用 ask_user 接着问当前目标字段的下一个问题。`;
+    const next = planNext(state);
+    const tail =
+      next.kind === "ask"
+        ? "没有新的信息需要写入，请直接用 ask_user 接着问当前目标字段的下一个问题。"
+        : next.kind === "wrap"
+          ? "没有新的信息需要写入，也没有要问的了，请按「当前目标字段」收尾。"
+          : "没有新的信息需要写入，回应一句就结束，不要提问。";
+    const prompt = `[系统通知，不是用户发言] 用户确认${label}以「${chosen}」为准，画像已更新。${tail}`;
     yield* runTurn(state, { id, prompt, seedChanges: changes }, options);
   }
 

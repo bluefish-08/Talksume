@@ -2,7 +2,6 @@ import { Profile } from "@talksume/core";
 import { describe, expect, it } from "vitest";
 import { applyFacts } from "./facts.ts";
 import type { FactInput } from "./schemas.ts";
-import { fallbackQuestion } from "./tools.ts";
 import { resumeWording, tidyWording, wordingProblems } from "./wording.ts";
 
 const QUOTE =
@@ -90,35 +89,6 @@ describe("applyFacts wording", () => {
     expect(project?.highlights?.[1]?.title).toBeUndefined();
     expect(project?.highlights?.[1]?.detail).toContain("负责成绩录入和查询");
     expect(result.reverted.map((r) => r.field)).toEqual(["highlights", "highlights", "role"]);
-  });
-});
-
-describe("fallbackQuestion", () => {
-  const slot = (extra: Record<string, unknown>) =>
-    ({
-      key: "k",
-      section: "projects",
-      field: "techStack",
-      label: "技术栈",
-      weight: 1,
-      required: true,
-      kind: "field",
-      question: "用了哪些技术？",
-      strategy: "",
-      ...extra,
-    }) as Parameters<typeof fallbackQuestion>[1];
-
-  it("asks the slot question when the model asked nothing", () => {
-    expect(fallbackQuestion("好的，记下了。", slot({ depth: 1 }))).toBe("用了哪些技术？");
-  });
-
-  it("does not tack a deep-dive question onto a wrap-up", () => {
-    expect(fallbackQuestion("那基本齐了。右侧预览就是你的简历。", slot({ depth: 1 }))).toBeUndefined();
-  });
-
-  it("still asks for a missing required basic field, joined to the wrap-up", () => {
-    const name = slot({ section: "basics", field: "name", question: "怎么称呼你？" });
-    expect(fallbackQuestion("基本齐了。", name)).toBe("不过还差一项：怎么称呼你？");
   });
 });
 

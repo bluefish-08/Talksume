@@ -7,6 +7,7 @@ import {
   isQuantified,
   isSkipped,
   type MissingField,
+  OPTIONAL_BUDGET,
   pickNextSlot,
   SECTION_BY_NAME,
   type Slot,
@@ -24,7 +25,7 @@ import {
   resolveConflict,
 } from "./facts.ts";
 import { liftSkips, type SkipEntry, sectionSkipEntry, skipEntryOf, skippedKeys } from "./memory.ts";
-import { describeSlot } from "./prompt.ts";
+import { describeSlot, wrapGuide } from "./prompt.ts";
 import {
   AskUserArgs,
   CompleteSectionArgs,
@@ -38,11 +39,13 @@ import {
   toolJsonSchema,
   UpsertFactsArgs,
 } from "./schemas.ts";
-import type { IntakeEvent, IntakeState, SlotRef } from "./types.ts";
+import type { IntakeEvent, IntakeState, Plan, SlotRef } from "./types.ts";
 
 export interface RunContext {
   state: IntakeState;
   messageId: string;
+  /** 本轮用户这句话；没有时（系统通知触发的一轮）不拦截 skip_field。 */
+  userText?: string;
   /** 所有用户发言归一化后的拼接，用于核对 quote 确为原话。 */
   userCorpus: string;
   verifyQuote: boolean;
@@ -140,9 +143,43 @@ export function nextSlotOf(state: IntakeState): Slot | null {
   return pickNextSlot(state.profile, {
     completedSections: state.completedSections,
     askCounts: state.askCounts,
+    optionalBudget: OPTIONAL_BUDGET,
     skipped,
     ...(focusItemId ? { focusItemId } : {}),
   });
+}
+
+/** 收尾之后用户只回的致谢或客套，不需要模型。 */
+const PLEASANTRY =
+  /^(?:好的?|好嘞|嗯|哦|噢|行|可以|ok|okay|谢谢|谢了|多谢|感谢|辛苦|收到|明白|了解|知道|拜拜|再见|晚安|太好了|不错|很好|棒|没问题|你|您|啦|呀|啊|哈|了|的|吧|呢|哇|真|太|非常|很)+$/i;
+
+export const isPleasantry = (text: string): boolean => PLEASANTRY.test(normalizeQuote(text));
+
+export function isClosed(state: IntakeState): boolean {
+  return state.history.some((t) => t.role === "assistant" && t.meta?.closed);
+}
+
+/** 下一步只由这里决定：已收尾不再问，有下一项就问，没有下一项就收尾（有待确认的矛盾时先等着）。 */
+export function planNext(state: IntakeState): Plan {
+  if (isClosed(state)) return { kind: "closed" };
+  const slot = nextSlotOf(state);
+  if (slot) return { kind: "ask", slot };
+  return state.conflicts.length > 0 ? { kind: "hold" } : { kind: "wrap" };
+}
+
+/** 给模型的本轮指令，系统提示和每个工具的返回都用它。 */
+export function planGuidance(state: IntakeState, plan: Plan): string {
+  if (plan.kind === "ask") {
+    return `下一个目标：\n${describeSlot(plan.slot)}\n这一轮只问这一项，写成一句话，不要换成别的问题，也不要收尾。`;
+  }
+  if (plan.kind === "wrap") {
+    const { tips } = computeCompleteness(state.profile, { completedSections: state.completedSections });
+    return `下一个目标：无，本轮收尾。${wrapGuide(tips.length > 0)}这一轮不要提问。`;
+  }
+  if (plan.kind === "closed") {
+    return "下一个目标：无，已经收尾过了。回应完用户这一句就结束，不要提问，也不要再总结收尾。";
+  }
+  return "下一个目标：无，有待确认的矛盾，系统已发起确认。本轮不要追问其他内容。";
 }
 
 const NO_NUMBERS =
@@ -151,6 +188,11 @@ const NOTHING_TO_SAY =
   /没(?:有)?遇到|没(?:有)?(?:什么|啥)?(?:特别|太|很)?(?:难|挑战|问题|可说|好说)|没有|没(?:有)?(?:做|参加|干|弄|写|学|用)过|记不(?:清|得|太清)|不记得|忘了|想不起来|说不上来|跳过|不想说/;
 /** 超过这个长度或带了英文、数字的回答多半含有内容，交给模型去写。 */
 const SHORT_DECLINE = 12;
+
+const DECLINE = /没|无|不(?:想|愿|方便|用|要|太|打算|清楚|知道|记得|填|写|说)|算了|跳过|忘了|想不起|pass/i;
+
+/** 这句话里有没有拒答的字眼；闲聊和没有信息的消息没有，不能据此跳过任何字段。 */
+export const declines = (text: string): boolean => DECLINE.test(text);
 
 /** 上一轮追问的字段 key。 */
 export function lastAskedKey(state: IntakeState): string | undefined {
@@ -218,18 +260,6 @@ function alreadySettled(state: IntakeState, key: string): boolean {
   return !skippableSlot(state, key);
 }
 
-function skippableKeys(state: IntakeState): string[] {
-  const skipped = skippedKeys(state);
-  const draft = draftSlot(state, skipped);
-  const { missing } = computeCompleteness(state.profile, { completedSections: state.completedSections });
-  return [
-    ...(draft ? [`${draft.key}（${draft.label}）`] : []),
-    ...missing
-      .filter((m) => m.kind !== "new_item" && !isSkipped(m, skipped))
-      .map((m) => `${m.key}（${m.itemLabel ? `${m.itemLabel}-` : ""}${m.label}）`),
-  ].slice(0, 10);
-}
-
 const PROBE_ANSWERED = 99;
 
 /** 实习和项目条目数，含暂存的。 */
@@ -294,16 +324,12 @@ export function unconfirmedValues(
 const WRAP_UP =
   /(?:基本|差不多|都)(?:就)?齐了|右侧(?:的)?(?:预览|就是)|(?:可以|直接)导出|(?:基本|比较|已经)(?:收集)?完整|先到这里|就到这里/;
 
-export const wrapsUp = (assistantText: string) => WRAP_UP.test(assistantText);
+/** 一句话是不是收尾说法；还要问下一项时，模型自己写的收尾句会被拦下。 */
+export const wrapsUp = (sentence: string) => WRAP_UP.test(sentence);
 
-/**
- * 模型这一轮没提问时，替它补上目标字段的问题；它已经在收尾，就只补还缺的必填基础项，
- * 深挖、挖掘角度这类可选追问不再拼在「基本齐了」后面。
- */
-export function fallbackQuestion(assistantText: string, slot: Slot): string | undefined {
-  if (/[?？]/.test(assistantText)) return undefined;
-  if (!WRAP_UP.test(assistantText)) return slot.question;
-  return slot.kind === "field" && slot.required && !slot.depth ? `不过还差一项：${slot.question}` : undefined;
+/** 代码选好的目标，模型没问出口时由代码替它问；有条目名就带上，免得问得像没头没尾。 */
+export function slotQuestion(slot: Slot): string {
+  return slot.itemLabel && slot.kind !== "field" ? `「${slot.itemLabel}」：${slot.question}` : slot.question;
 }
 
 export function noteAsked(state: IntakeState, slot: Slot | null): void {
@@ -380,14 +406,13 @@ export function tool(
 export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
   const { state } = ctx;
 
-  // 正文里已经问过或已经收尾时还给「下一个目标」，模型会照着再问一遍
-  const nextTarget = (fallback = "下一个目标：无，信息已基本完整。"): string => {
-    const said = ctx.spoken?.() ?? "";
-    if (/[?？]/.test(said))
+  // 这一轮已经问过，再给「下一个目标」模型会照着再问一遍
+  const nextTarget = (): string => {
+    const plan = planNext(state);
+    if (plan.kind === "ask" && /[?？]/.test(ctx.spoken?.() ?? "")) {
       return "这一轮的回复里已经提过问题了：写完就结束，不要再输出文字，也不要换个说法再问；需要快捷回答就调用 ask_user，question 照抄正文里那句。";
-    if (wrapsUp(said)) return "这一轮的回复已经在收尾：写完就结束，不要再输出文字，也不要再提问。";
-    const next = nextSlotOf(state);
-    return next ? `下一个目标：\n${describeSlot(next)}` : fallback;
+    }
+    return planGuidance(state, plan);
   };
 
   const upsertFacts = tool(
@@ -488,16 +513,19 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
 
   const askUser = tool("ask_user", "追问", AskUserArgs, (args: z.infer<typeof AskUserArgs>) => {
     if (ctx.flags.asked) return { ...text("本轮已经向用户提问，不要重复提问。"), terminate: true };
-    const slot = nextSlotOf(state);
+    const plan = planNext(state);
+    if (plan.kind !== "ask")
+      return { ...text("这一轮不再提问：直接结束，不要再输出文字。"), terminate: true };
+    const { slot } = plan;
     ctx.flags.asked = true;
     noteAsked(state, slot);
     const given = cleanQuickReplies(args.quickReplies);
-    const quickReplies = given.length > 0 ? given : cleanQuickReplies(slot?.replies);
+    const quickReplies = given.length > 0 ? given : cleanQuickReplies(slot.replies);
     ctx.emit({
       type: "ask",
       kind: "followup",
       question: args.question,
-      ...(slot ? { slot: slotRef(slot) } : {}),
+      slot: slotRef(slot),
       ...(quickReplies.length > 0 ? { quickReplies } : {}),
     });
     return { ...text("问题已发送给用户，等待回答。"), terminate: true };
@@ -513,6 +541,9 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
       if (args.reason === "user_skipped") {
         if (!args.quote || (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, args.quote))) {
           return text("user_skipped 必须附带用户表示没有/不想提供的原话 quote。", true);
+        }
+        if (ctx.userText !== undefined && !declines(ctx.userText)) {
+          return text("用户这条消息没有表示没有或不想提供，不能把整个分区记为跳过。", true);
         }
       } else {
         const skipped = skippedKeys(state);
@@ -541,7 +572,7 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
         const entry = sectionSkipEntry(section, args.quote);
         state.skipped = [...state.skipped.filter((e) => e.key !== entry.key), entry];
       }
-      return text(`已完成「${label}」。\n${nextTarget("所有分区均已完成。")}`);
+      return text(`已完成「${label}」。\n${nextTarget()}`);
     },
   );
 
@@ -549,28 +580,24 @@ export function createIntakeTools(ctx: RunContext): AgentTool<TSchema>[] {
     if (ctx.verifyQuote && !quoteInCorpus(ctx.userCorpus, args.quote)) {
       return text(`quote「${args.quote}」不是用户说过的原话，请逐字摘抄用户表示没有/不想说的那句话。`, true);
     }
-    const asked = lastAskedKey(state);
-    const askedSlot = asked ? skippableSlot(state, asked) : null;
-    if (!args.key) {
-      const slot = askedSlot ?? nextSlotOf(state);
-      if (!slot) return text("当前没有待补的字段。", true);
-      return skipped(skipSlot(state, slot, args.quote));
-    }
-    const exact = skippableSlot(state, args.key);
-    if (exact) return skipped(skipSlot(state, exact, args.quote));
-    if (alreadySettled(state, args.key)) {
-      return text(`key=${args.key} 已有内容或所在分区已完成，不需要跳过，直接回应用户并问下一个问题。`);
-    }
-    // 模型常把 key 抄错（漏了条目 id、写成条目名），字段名对得上就按上一轮问的那项处理
-    const slot = askedSlot?.field === args.key.split(":").at(-1) ? askedSlot : null;
-    if (!slot) {
-      const keys = skippableKeys(state);
+    if (ctx.userText !== undefined && !declines(ctx.userText)) {
       return text(
-        `找不到 key=${args.key} 的待补字段。${keys.length > 0 ? `可用的 key：\n${keys.join("\n")}` : "当前没有待补的字段。"}`,
+        "用户这条消息没有拒答（没说没有、不想说、记不清），不能跳过任何字段：回应这一句，再按本轮的目标继续。",
         true,
       );
     }
-    return skipped(skipSlot(state, slot, args.quote), `key=${args.key} 不存在，已按上一轮问的字段处理。`);
+    const asked = lastAskedKey(state);
+    const slot = asked ? skippableSlot(state, asked) : null;
+    if (!slot) {
+      if (asked && alreadySettled(state, asked)) {
+        return text("上一轮问的字段已有内容或已跳过，不需要跳过，直接回应用户。");
+      }
+      return text("只能跳过上一轮问过、用户拒答的那一项，现在没有这样的字段。", true);
+    }
+    if (args.key && args.key !== slot.key && args.key.split(":").at(-1) !== slot.field) {
+      return text(`只能跳过上一轮问的那一项：key=${slot.key}（${slot.label}）。`, true);
+    }
+    return skipped(skipSlot(state, slot, args.quote));
   });
 
   function skipped(entry: SkipEntry, note = ""): AgentToolResult<unknown> {

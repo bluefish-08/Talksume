@@ -11,6 +11,7 @@ import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
 import { createIntakeController, replayRecord, splitAtQuestion, type TurnMetrics } from "./controller.ts";
 import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
+import { nextSlotOf, skipSlot } from "./tools.ts";
 import type { IntakeEvent } from "./types.ts";
 import { createIntakeState } from "./types.ts";
 
@@ -1293,28 +1294,29 @@ describe("intake controller: declining a deep-dive question", () => {
     expect(asks(events).map((a) => a.kind)).toEqual(["followup"]);
   });
 
-  it("skips the target itself after two bad skip_field calls instead of a clarify loop", async () => {
-    const prompts: string[] = [];
-    const { core, controller } = fake(
-      [
-        toolTurn(skip("challenge", "没遇到特别难的")),
-        toolTurn(skip("江城闲置:challenge", "没遇到特别难的")),
-        fauxAssistantMessage([fauxText("应届生一页就够了。"), ask("这个项目最后效果怎么样？")], {
-          stopReason: "toolUse",
-        }),
-      ],
-      prompts,
-    );
-    const state = seeded();
-    const e1 = await collect(controller.handleUserMessage(state, { id: "m1", text: "没遇到特别难的" }));
+  it("resolves a wrongly keyed skip_field to the slot asked on the previous turn", async () => {
+    const { core, controller } = fake([
+      toolTurn(skip("江城闲置:challenge", "没遇到特别难的")),
+      fauxAssistantMessage([fauxText("好的。"), ask("这个项目最后效果怎么样？")], { stopReason: "toolUse" }),
+    ]);
+    const state = seeded(CHALLENGE);
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "没遇到特别难的" }));
     expect(core.state.callCount).toBe(2);
-    expect(asks(e1).map((a) => [a.kind, a.slot?.key])).toEqual([["followup", "projects:prj_1:impact"]]);
-    expect(state.skipped).toEqual([expect.objectContaining({ key: CHALLENGE, quote: "没遇到特别难的" })]);
+    expect(state.skipped).toEqual([expect.objectContaining({ key: CHALLENGE })]);
+    expect(asks(events).map((a) => [a.kind, a.slot?.key])).toEqual([["followup", "projects:prj_1:impact"]]);
+  });
 
-    const e2 = await collect(controller.handleUserMessage(state, { id: "m2", text: "简历一般写几页？" }));
-    expect(prompts.slice(2).map(target)).not.toContain(CHALLENGE);
-    expect(asks(e2).some((a) => a.kind === "clarify")).toBe(false);
-    expect(state.history.at(-1)?.content).toContain("一页就够了");
+  it("blocks skip_field on chit-chat and asks the same target again", async () => {
+    const { controller } = fake([
+      toolTurn(skip(CHALLENGE, "你是真人吗")),
+      fauxAssistantMessage([fauxText("我是 AI 助手。"), ask("做的过程中遇到过什么难点？")], {
+        stopReason: "toolUse",
+      }),
+    ]);
+    const state = seeded(CHALLENGE);
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "你是真人吗" }));
+    expect(state.skipped).toEqual([]);
+    expect(asks(events).map((a) => a.slot?.key)).toEqual([CHALLENGE]);
   });
 
   it("asks the user to clarify the same failed words only once", async () => {
@@ -1445,7 +1447,7 @@ describe("replayRecord", () => {
       replayRecord(
         "complete_section",
         { section: "awards", reason: "done" },
-        "已完成「奖项」。\n所有分区均已完成。",
+        "已完成「奖项」。\n下一个目标：无，本轮收尾。先用一句话回应用户。这一轮不要提问。",
         false,
       ),
     ).toEqual({
@@ -1474,5 +1476,144 @@ describe("splitAtQuestion", () => {
       tail: "",
     });
     expect(splitAtQuestion("你的邮箱是哪个？")).toEqual({ lead: "", tail: "你的邮箱是哪个？" });
+  });
+});
+
+describe("intake controller: one planner decides the next question", () => {
+  const settled = () => {
+    const state = createIntakeState({
+      profile: Profile.parse({
+        basics: { name: "李明", phone: "13800001111", email: "liming@example.com" },
+        education: [{ id: "edu_1", school: "江城大学", degree: "bachelor", major: "软件工程" }],
+        projects: [{ id: "prj_1", name: "江城闲置", role: "后端", techStack: ["Java"] }],
+        skills: ["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, name })),
+        intention: { roles: ["后端开发"], cities: ["江城"], jobType: "campus" },
+      }),
+      completedSections: ["experiences", "awards"],
+    });
+    for (let guard = 0; guard < 40; guard++) {
+      const slot = nextSlotOf(state);
+      if (!slot) break;
+      skipSlot(state, slot, "没有");
+    }
+    return state;
+  };
+  const wrapped = () => {
+    const state = settled();
+    state.history.push(
+      { id: "m0", role: "user", content: "没有了" },
+      { id: "m0:reply", role: "assistant", content: "信息已经基本齐了。", meta: { closed: true } },
+    );
+    return state;
+  };
+
+  it("wraps when the planner has nothing left, drops the model's own question and marks it closed", async () => {
+    const { controller } = fake([fauxAssistantMessage("好的。还有别的想补充的吗？")]);
+    const state = settled();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "没有了" }));
+    expect(asks(events)).toEqual([]);
+    const reply = state.history.at(-1);
+    expect(reply?.content).not.toMatch(/[？?]/);
+    expect(reply?.content).toContain("右侧预览就是简历");
+    expect(reply?.meta?.closed).toBe(true);
+  });
+
+  it("leaves the wrap-up to the next turn when this turn spent the last budget on a question", async () => {
+    const { controller } = fake([fauxAssistantMessage("好的。这个项目里你具体负责哪一块？", {})]);
+    const state = settled();
+    state.skipped = [];
+    for (const key of [
+      "basics:_:city",
+      "basics:_:summary",
+      "basics:_:links",
+      "education:edu_1:gpa",
+      "education:edu_1:courses",
+    ]) {
+      state.askCounts[key] = 1;
+    }
+    for (const f of ["probe_course", "probe_selfmade", "probe_campus", "probe_work"])
+      state.askCounts[`projects:_:${f}`] = 2;
+    expect(nextSlotOf(state)).toMatchObject({ field: "duty" });
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "好的" }));
+    expect(tokens(events)).not.toContain("右侧预览");
+    expect(state.history.at(-1)?.meta?.closed).toBeUndefined();
+    expect(nextSlotOf(state)).toBeNull();
+    expect(events.length).toBeGreaterThan(0);
+  });
+
+  it("does not append the slot question after the model asked in a statement without a question mark", async () => {
+    const { controller } = fake([fauxAssistantMessage("好的。用一句话介绍一下自己吧，比如你的专业方向。")]);
+    const state = createIntakeState({
+      profile: Profile.parse({
+        basics: { name: "李明", phone: "13800001111", email: "liming@example.com", city: "江城" },
+        education: [{ id: "edu_1", school: "江城大学", degree: "bachelor", major: "软件工程" }],
+        projects: [{ id: "prj_1", name: "江城闲置", role: "后端", techStack: ["Java"] }],
+        skills: ["Java", "MySQL", "Git"].map((name, i) => ({ id: `skl_${i}`, name })),
+        intention: { roles: ["后端开发"], cities: ["江城"], jobType: "campus" },
+      }),
+      completedSections: ["experiences", "awards"],
+    });
+    for (const f of ["probe_course", "probe_selfmade", "probe_campus", "probe_work"])
+      state.askCounts[`projects:_:${f}`] = 2;
+    for (const f of ["duty", "challenge", "impact"]) state.askCounts[`projects:prj_1:${f}`] = 2;
+    expect(nextSlotOf(state)).toMatchObject({ field: "summary" });
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "好的" }));
+    expect(asks(events)).toEqual([]);
+    expect(state.askCounts["basics:_:summary"]).toBe(1);
+    expect(state.history.at(-1)?.content).toBe("好的。用一句话介绍一下自己吧，比如你的专业方向。");
+  });
+
+  it("keeps only the first wrap-up when the model wraps up again after the write returns", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage(
+        [
+          fauxText("好的，信息都齐了。右侧预览就是简历，可以直接导出。"),
+          upsert([{ section: "basics", payload: { city: "江城" }, quote: "我在江城" }]),
+        ],
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("城市也补上了。右侧预览就是简历，可以直接导出。"),
+    ]);
+    const state = settled();
+    state.profile.basics.city = "";
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "我在江城" }));
+    expect(tokens(events).match(/右侧预览/g)).toHaveLength(1);
+    expect(state.profile.basics.city).toBe("江城");
+  });
+
+  it("answers thanks after wrapping without calling the model or asking", async () => {
+    const { core, controller } = fake([]);
+    const state = wrapped();
+    const events = await collect(controller.handleUserMessage(state, { id: "m2", text: "好的谢谢" }));
+    expect(core.state.callCount).toBe(0);
+    expect(asks(events)).toEqual([]);
+    expect(tokens(events)).not.toMatch(/[？?]/);
+    expect(state.history.at(-1)?.content).toBeTruthy();
+  });
+
+  it("writes new facts after wrapping and never follows up with a question", async () => {
+    const { controller } = fake([
+      toolTurn(upsert([{ section: "awards", payload: { name: "校一等奖学金" }, quote: "拿过校一等奖学金" }])),
+      fauxAssistantMessage("好的，奖学金已经加进简历了。你是哪一年拿的呢？"),
+    ]);
+    const state = wrapped();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "m2", text: "我拿过校一等奖学金" }),
+    );
+    expect(state.profile.awards).toHaveLength(1);
+    expect(asks(events)).toEqual([]);
+    expect(state.history.at(-1)?.content).not.toMatch(/[？?]/);
+  });
+
+  it("keeps only the first question and drops its own wrap-up while the planner still has a target", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage("好的。基本齐了，右侧预览就是简历。你学的是什么专业？还想补充别的吗？"),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "m1", text: "你好" }));
+    expect(tokens(events)).not.toContain("右侧预览");
+    expect(tokens(events).match(/[？?]/g)).toHaveLength(1);
+    expect(asks(events).map((a) => a.kind)).toEqual([]);
+    expect(state.askCounts["basics:_:name"]).toBe(1);
   });
 });

@@ -125,7 +125,7 @@ export async function loadConversation(
     id: m.id,
     role: m.role,
     content: m.content,
-    ...(m.meta.tools || m.meta.slot || m.meta.clarified
+    ...(m.meta.tools || m.meta.slot || m.meta.clarified || m.meta.closed
       ? {
           meta: {
             ...(m.meta.tools ? { tools: m.meta.tools } : {}),
@@ -133,6 +133,7 @@ export async function loadConversation(
             ...(m.meta.jobs ? { jobs: m.meta.jobs } : {}),
             ...(m.meta.slot ? { slot: m.meta.slot } : {}),
             ...(m.meta.clarified ? { clarified: m.meta.clarified } : {}),
+            ...(m.meta.closed ? { closed: true } : {}),
           },
         }
       : {}),
@@ -164,7 +165,7 @@ export async function createConversation(
   db: Db,
   userId: string,
   state: IntakeState,
-  greeting: { id: string; text: string },
+  greeting: { id: string; text: string; slot?: string },
   ledgerBefore: Ledger,
 ): Promise<string> {
   return db.transaction(async (tx) => {
@@ -174,9 +175,13 @@ export async function createConversation(
       .values({ userId, intakeState: intakeOf(state) })
       .returning({ id: conversations.id });
     if (!conv) throw new Error("创建会话失败");
-    await tx
-      .insert(messages)
-      .values({ id: greeting.id, conversationId: conv.id, role: "assistant", content: greeting.text });
+    await tx.insert(messages).values({
+      id: greeting.id,
+      conversationId: conv.id,
+      role: "assistant",
+      content: greeting.text,
+      ...(greeting.slot ? { metadata: { slot: greeting.slot } } : {}),
+    });
     return conv.id;
   });
 }
