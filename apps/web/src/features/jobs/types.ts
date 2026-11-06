@@ -103,3 +103,29 @@ export interface CreatedApplication {
   nextAction: "manual_apply" | null;
   submitError?: string;
 }
+
+export type CoverageStatus = "have" | "partial" | "missing";
+
+export interface KeywordItem {
+  name: string;
+  status: CoverageStatus;
+  source?: string;
+  jd: string;
+}
+
+/** 与 packages/matching 的 MatchExplanation 保持一致：纯规则的匹配解释。 */
+export interface MatchExplanation {
+  score: number;
+  components: {
+    key: string;
+    label: string;
+    score: number;
+    weight: number;
+    applicable: boolean;
+    note: string;
+  }[];
+  required: KeywordItem[];
+  bonus: KeywordItem[];
+  concepts: KeywordItem[];
+  responsibilities: string[];
+}

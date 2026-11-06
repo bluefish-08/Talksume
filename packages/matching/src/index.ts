@@ -1,6 +1,7 @@
 export * from "./dedupe.ts";
 export * from "./dimensions.ts";
 export * from "./embedder.ts";
+export * from "./explain.ts";
 export * from "./filters.ts";
 export * from "./import.ts";
 export * from "./jobs-db.ts";

@@ -11,6 +11,7 @@ import type {
   ImportResult,
   JobDetail,
   JobList,
+  MatchExplanation,
   MatchList,
   RefreshResult,
   ReportStatus,
@@ -160,5 +161,19 @@ export function useOptimizeResume() {
         },
       });
     },
+  });
+}
+
+export function useMatchExplanation(jobId: string) {
+  return useQuery({
+    queryKey: [...qk.matches, "explain", jobId],
+    queryFn: ({ signal }) =>
+      api
+        .get<{ jobId: string; explanation: MatchExplanation }>(
+          `${API}/browse/jobs/${encodeURIComponent(jobId)}/explain`,
+          signal,
+        )
+        .then((r) => r.explanation),
+    retry: false,
   });
 }

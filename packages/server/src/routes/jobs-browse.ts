@@ -233,6 +233,21 @@ export const jobsBrowseRoutes: RouteModule = (root, deps) => {
       return { company, city, type, degree };
     });
 
+    app.get<{ Params: { id: string } }>("/api/v1/browse/jobs/:id/explain", async (req, reply) => {
+      const uid = req.userId;
+      const [profileRow] = await db.select().from(schema.profiles).where(eq(schema.profiles.userId, uid));
+      if (!profileRow) {
+        return fail(reply, 409, "profile_not_found", "还没有简历画像，先和助手聊一聊再来看匹配解释");
+      }
+      const parsed = Profile.safeParse(profileRow.data);
+      if (!parsed.success) return fail(reply, 422, "profile_invalid", "简历画像格式不正确");
+      const explanation = (await matching.explainMatches(uid, parsed.data, [req.params.id])).get(
+        req.params.id,
+      );
+      if (!explanation) return fail(reply, 404, "job_not_found", "岗位不存在");
+      return { jobId: req.params.id, explanation };
+    });
+
     app.post<{ Params: { id: string } }>("/api/v1/browse/jobs/:id/match", async (req, reply) => {
       const uid = req.userId;
       const found = await loadJob(db, uid, req.params.id);

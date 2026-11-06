@@ -273,3 +273,41 @@ describe("按需匹配", () => {
     expect(hidden.status).toBe(404);
   });
 });
+
+describe("匹配解释", () => {
+  it("给出已有和缺失的关键词、必备和加分覆盖、可解释的分数", async () => {
+    await new JobRepo(handle.db).upsertMany([
+      {
+        ...job(0),
+        id: "fake:explain",
+        sourceJobId: "explain",
+        title: "后端开发实习生",
+        jdText: "岗位职责：\n1. 负责后端服务开发\n任职要求：\n熟悉 Java、MySQL、Kafka\n加分项：了解 Docker",
+      },
+    ]);
+    const user = await newUser(internProfile);
+    const { status, body } = await get("/api/v1/browse/jobs/fake%3Aexplain/explain", user.headers);
+    expect(status).toBe(200);
+    const e = body.explanation;
+    const names = (items: { name: string; status: string }[], st: string) =>
+      items.filter((i) => i.status === st).map((i) => i.name);
+    expect(names(e.required, "have")).toEqual(expect.arrayContaining(["Java", "MySQL"]));
+    expect(names(e.required, "missing")).toContain("Kafka");
+    expect(names(e.bonus, "missing")).toContain("Docker");
+    expect(e.responsibilities).toEqual(["负责后端服务开发"]);
+    expect(e.score).toBeGreaterThan(0);
+    expect(e.components.reduce((sum: number, c: { weight: number }) => sum + c.weight, 0)).toBeCloseTo(1, 2);
+  });
+
+  it("没有画像返回 409，岗位不可见返回 404", async () => {
+    const none = await get("/api/v1/browse/jobs/fake%3Afit/explain", (await newUser()).headers);
+    expect(none).toMatchObject({ status: 409 });
+    const user = await newUser(internProfile);
+    expect((await get("/api/v1/browse/jobs/nope/explain", user.headers)).status).toBe(404);
+    const hidden = await get(
+      `/api/v1/browse/jobs/${encodeURIComponent("user_import:someone:x")}/explain`,
+      user.headers,
+    );
+    expect(hidden.status).toBe(404);
+  });
+});

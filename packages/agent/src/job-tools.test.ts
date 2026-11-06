@@ -171,6 +171,47 @@ describe("岗位工具", () => {
     expect(meta?.tools?.[0]?.result).toContain("没有高并发项目");
   });
 
+  it("解读时把已有、缺失的关键词和规则分交给模型，推荐结果带关键词", async () => {
+    const { jobs } = fakeJobs({
+      recommend: async () => ({
+        jobs: [{ ...(JOBS[0] as JobCard), matchKeywords: { have: ["Java"], missing: ["Kafka"] } }],
+        total: 1,
+      }),
+      explain: async () => ({
+        job: JOBS[0] as JobCard,
+        strengths: [],
+        gaps: [],
+        dims: [],
+        breakdown: {
+          score: 64,
+          components: [],
+          required: [
+            { name: "Java", status: "have" },
+            { name: "Kafka", status: "missing" },
+          ],
+          bonus: [{ name: "Docker", status: "missing" }],
+          concepts: [],
+        },
+      }),
+    });
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("recommend_jobs", {})),
+        toolTurn(fauxToolCall("explain_job", { jobId: "demo:1" })),
+        fauxAssistantMessage([fauxText("Java 有，缺 Kafka。")]),
+      ],
+      jobs,
+    );
+    const state = createIntakeState();
+    await collect(controller.handleUserMessage(state, { id: "u1", text: "推荐并说说第一个" }));
+    const tools = state.history.at(-1)?.meta?.tools;
+    expect(tools?.[0]?.result).toContain("已有关键词：Java");
+    expect(tools?.[0]?.result).toContain("缺少关键词：Kafka");
+    expect(tools?.[1]?.result).toContain("规则匹配分 64");
+    expect(tools?.[1]?.result).toContain("必备技能：已有 Java；缺少 Kafka");
+    expect(tools?.[1]?.result).toContain("加分技能：已有 无；缺少 Docker");
+  });
+
   it("为了拿 jobId 先搜再解读：搜索结果不出卡片，标签沿用搜索时的匹配度，落库结果改口", async () => {
     const { jobs } = fakeJobs({
       explain: async () => {

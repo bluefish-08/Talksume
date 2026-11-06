@@ -1,4 +1,4 @@
-import type { ResumeContent, TailorChange } from "@talksume/core";
+import type { ResumeContent, TailorChange, TailorLevel } from "@talksume/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client.ts";
 
@@ -55,7 +55,10 @@ export function useTailorActions(jobId: string) {
     void client.invalidateQueries({ queryKey: [...tailoringsKey, "adopted"] });
   };
   return {
-    generate: useMutation({ mutationFn: () => api.post<TailoringView>(urlOf(jobId)), onSuccess }),
+    generate: useMutation({
+      mutationFn: (level: TailorLevel) => api.post<TailoringView>(urlOf(jobId), { level }),
+      onSuccess,
+    }),
     adopt: useMutation({
       mutationFn: (changeIds: string[]) =>
         api.post<TailoringView & { adopted: number; rejected: number }>(`${urlOf(jobId)}/adopt`, {

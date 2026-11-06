@@ -1,5 +1,6 @@
 import {
   applyTailoring,
+  DEFAULT_TAILOR_LEVEL,
   polishItemKey,
   polishSourceHash,
   type ResumeContent,
@@ -9,10 +10,12 @@ import {
   TAILOR_ITEM_SECTIONS,
   type TailorChange,
   type TailorItemSection,
+  type TailorLevel,
   ungroundedTokens,
 } from "@talksume/core";
 import { z } from "zod";
 import type { StructuredLlm } from "./polish-llm.ts";
+import { LEVEL_RULES, levelViolations, tagAllowed } from "./tailor-levels.ts";
 
 export interface TailorJob {
   id: string;
@@ -92,8 +95,16 @@ const SECTION_LABEL: Record<TailorItemSection, string> = {
   campus: "校园经历",
 };
 
-function promptOf(job: TailorJob, resume: ResumeContent, index: IndexedItem[], note?: string): string {
+function promptOf(
+  job: TailorJob,
+  resume: ResumeContent,
+  index: IndexedItem[],
+  level: TailorLevel,
+  note?: string,
+): string {
   const lines = [
+    LEVEL_RULES[level].guidance,
+    "",
     "## 目标岗位",
     `${job.company} · ${job.title}${job.tags.length > 0 ? `（标签：${job.tags.join("、")}）` : ""}`,
     job.jdText.slice(0, JD_LIMIT),
@@ -140,13 +151,25 @@ async function callLlm(
 }
 
 /** JD 标签里有、原文里没有的词出现在定制结果里，视为把岗位要求当成了自己的经历。 */
-function jdOnlyTerms(job: TailorJob, grounding: string, text: string): string[] {
+function jdOnlyTerms(job: TailorJob, grounding: string, text: string, level: TailorLevel): string[] {
   const lower = grounding.toLowerCase();
-  return job.tags.filter((t) => t.trim().length >= 2 && text.includes(t) && !lower.includes(t.toLowerCase()));
+  return job.tags.filter(
+    (t) =>
+      t.trim().length >= 2 &&
+      text.includes(t) &&
+      !lower.includes(t.toLowerCase()) &&
+      !tagAllowed(level, grounding, t),
+  );
 }
 
-function violationsOf(job: TailorJob, grounding: string, text: string): string[] {
-  return [...new Set([...ungroundedTokens(grounding, text), ...jdOnlyTerms(job, grounding, text)])];
+function violationsOf(job: TailorJob, grounding: string, text: string, level: TailorLevel): string[] {
+  return [
+    ...new Set([
+      ...ungroundedTokens(grounding, text),
+      ...jdOnlyTerms(job, grounding, text, level),
+      ...levelViolations(level, grounding, text),
+    ]),
+  ];
 }
 
 /** 模型给的顺序只取本条目已有的 id，漏掉的按原顺序补在后面，保证是原内容的重排。 */
@@ -178,9 +201,11 @@ function textCandidates(
   resume: ResumeContent,
   index: IndexedItem[],
   quotes: readonly string[],
+  level: TailorLevel,
 ): TextCandidate[] {
   const result: TextCandidate[] = [];
-  const summary = out.summary?.text.trim();
+  const rule = LEVEL_RULES[level];
+  const summary = rule.summary ? out.summary?.text.trim() : undefined;
   if (summary && summary !== resume.basics.summary?.trim()) {
     const grounding = [resumeText(resume), ...quotes].join("\n");
     result.push({
@@ -192,11 +217,11 @@ function textCandidates(
         ...(resume.basics.summary && { before: resume.basics.summary }),
         after: summary,
         ...(out.summary?.reason && { reason: out.summary.reason }),
-        violations: violationsOf(job, grounding, summary),
+        violations: violationsOf(job, grounding, summary, level),
       },
     });
   }
-  for (const rewrite of out.rewrites) {
+  for (const rewrite of out.rewrites.slice(0, rule.maxRewrites)) {
     const owner = index.find((i) => i.bullets.some((b) => b.id === rewrite.id));
     const bullet = owner?.bullets.find((b) => b.id === rewrite.id);
     if (!owner || !bullet || rewrite.text.trim() === bullet.text.trim()) continue;
@@ -217,7 +242,10 @@ function textCandidates(
         before: bullet.text,
         after: rewrite.text.trim(),
         ...(rewrite.reason && { reason: rewrite.reason }),
-        violations: [...violationsOf(job, grounding, rewrite.text), ...absorbed(owner, bullet, rewrite.text)],
+        violations: [
+          ...violationsOf(job, grounding, rewrite.text, level),
+          ...absorbed(owner, bullet, rewrite.text),
+        ],
       },
     });
   }
@@ -295,12 +323,13 @@ export async function tailorWithLlm(
   llm: StructuredLlm,
   job: TailorJob,
   resume: ResumeContent,
-  options: { quotes?: readonly string[]; signal?: AbortSignal } = {},
+  options: { quotes?: readonly string[]; signal?: AbortSignal; level?: TailorLevel } = {},
 ): Promise<TailorDraft> {
   const quotes = options.quotes ?? [];
+  const level = options.level ?? DEFAULT_TAILOR_LEVEL;
   const index = indexResume(resume);
-  const first = await callLlm(llm, promptOf(job, resume, index), 0.3, options.signal);
-  const texts = textCandidates(first.value, job, resume, index, quotes);
+  const first = await callLlm(llm, promptOf(job, resume, index, level), 0.3, options.signal);
+  const texts = textCandidates(first.value, job, resume, index, quotes, level);
   let model = first.model;
 
   const failed = texts.filter((t) => t.change.violations.length > 0);
@@ -308,11 +337,11 @@ export async function tailorWithLlm(
     const note = `上一版这些地方出现了这条要点原文里没有的内容（或照搬了另一条要点），必须删掉，只用这条原文已有的信息重写（只需返回这几处，其余给空）：\n${failed
       .map((f) => `${f.key}「${f.change.after}」里的 ${f.change.violations.join("、")}`)
       .join("\n")}`;
-    const second = await callLlm(llm, promptOf(job, resume, index, note), 0.2, options.signal).catch(
+    const second = await callLlm(llm, promptOf(job, resume, index, level, note), 0.2, options.signal).catch(
       () => undefined,
     );
     if (second) {
-      const retried = textCandidates(second.value, job, resume, index, quotes);
+      const retried = textCandidates(second.value, job, resume, index, quotes, level);
       for (const f of failed) {
         const fix = retried.find((r) => r.key === f.key);
         if (fix && fix.change.violations.length < f.change.violations.length) {

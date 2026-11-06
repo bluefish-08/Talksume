@@ -1,0 +1,143 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.scoreNum {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreLabel {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.parts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  font-size: 12.5px;
+}
+
+.part {
+  display: contents;
+}
+
+.partLabel {
+  color: var(--text-2);
+}
+
+.partNote {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.partValue {
+  text-align: right;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.part[data-na] .partLabel,
+.part[data-na] .partNote,
+.part[data-na] .partValue {
+  color: var(--muted);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.groupHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.6;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.chip[data-status="have"] {
+  background: var(--accent-soft, #e8f1fe);
+  border-color: transparent;
+  color: var(--accent-strong);
+}
+
+.chip[data-status="partial"] {
+  border-style: dashed;
+  color: var(--accent-strong);
+}
+
+.chip[data-status="missing"] {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border);
+}
+
+.foot,
+.state {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

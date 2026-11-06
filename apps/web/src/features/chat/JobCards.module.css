@@ -139,3 +139,32 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.keywords {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kw {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.6;
+  border: 1px solid var(--border);
+}
+
+.kw[data-status="have"] {
+  background: var(--accent-soft, #e8f1fe);
+  border-color: transparent;
+  color: var(--accent-strong);
+}
+
+.kw[data-status="missing"] {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border);
+}

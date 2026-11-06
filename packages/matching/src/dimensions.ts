@@ -54,7 +54,7 @@ export function extractJdSkills(job: Pick<Job, "title" | "jdText">): JdSkill[] {
   return [...found.values()];
 }
 
-interface Owned {
+export interface Owned {
   credit: number;
   source: string;
 }
@@ -99,7 +99,7 @@ export function collectProfileSkills(profile: Profile): Map<string, Owned> {
   return owned;
 }
 
-function creditFor(name: string, owned: Map<string, Owned>): Owned | undefined {
+export function creditFor(name: string, owned: Map<string, Owned>): Owned | undefined {
   const own = owned.get(name);
   if (own && own.credit >= 0.7) return own;
   let best: Owned | undefined = own;

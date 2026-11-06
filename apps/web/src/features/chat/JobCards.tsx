@@ -42,6 +42,22 @@ export function JobCards({ jobs }: { jobs: JobCard[] }) {
               )}
             </div>
             {job.reason && <p className={styles.reason}>{job.reason}</p>}
+            {job.matchKeywords && (
+              <ul className={styles.keywords} aria-label="关键词匹配">
+                {job.matchKeywords.have.map((k) => (
+                  <li key={`h-${k}`} className={styles.kw} data-status="have">
+                    <span className="sr-only">已有：</span>
+                    {k}
+                  </li>
+                ))}
+                {job.matchKeywords.missing.map((k) => (
+                  <li key={`m-${k}`} className={styles.kw} data-status="missing">
+                    <span className="sr-only">缺少：</span>
+                    {k}
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className={styles.actions}>
               <Link className={`${styles.btn} ${styles.primary}`} to={href}>
                 看详情

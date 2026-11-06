@@ -29,6 +29,7 @@ export interface JobCard {
   jobType?: "internship" | "campus" | "experienced";
   score?: number;
   reason?: string;
+  matchKeywords?: { have: string[]; missing: string[] };
 }
 
 /** 与 packages/agent 的 TailorCard 保持一致：助手生成的定制简历草稿。 */

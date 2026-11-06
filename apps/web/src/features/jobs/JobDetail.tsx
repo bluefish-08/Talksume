@@ -13,6 +13,7 @@ import {
   sourceLabel,
 } from "./format.ts";
 import styles from "./JobDetail.module.css";
+import { MatchExplain } from "./MatchExplain.tsx";
 import type { ApplicationRef, JobSummary, MatchItem } from "./types.ts";
 import { isOfficialJob } from "./useApplyFlow.tsx";
 
@@ -159,6 +160,8 @@ export function JobDetail(props: DetailProps) {
                 ))}
               </div>
             </section>
+
+            <MatchExplain jobId={job.id} />
 
             {(strengths.length > 0 || gaps.length > 0) && (
               <ul className={styles.points}>

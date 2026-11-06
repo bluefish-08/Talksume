@@ -4,6 +4,17 @@ import type { ResumeContent, ResumeItem } from "./resume.ts";
 export const TAILOR_ITEM_SECTIONS = ["experiences", "projects", "campus"] as const;
 export type TailorItemSection = (typeof TAILOR_ITEM_SECTIONS)[number];
 
+/** 定制档位：逐档放宽措辞自由度，三档共用出处校验。 */
+export const TAILOR_LEVELS = ["light", "keywords", "deep"] as const;
+export type TailorLevel = (typeof TAILOR_LEVELS)[number];
+export const DEFAULT_TAILOR_LEVEL: TailorLevel = "light";
+
+export const TAILOR_LEVEL_LABELS: Record<TailorLevel, { name: string; hint: string }> = {
+  light: { name: "微调", hint: "只调整顺序和措辞，不加关键词" },
+  keywords: { name: "嵌入关键词", hint: "把你已有的技能换成岗位 JD 的说法" },
+  deep: { name: "深度改写", hint: "重写措辞更贴近岗位，仍不新增事实" },
+};
+
 interface ChangeBase {
   id: string;
   reason?: string;

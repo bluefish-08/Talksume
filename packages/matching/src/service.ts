@@ -4,6 +4,7 @@ import { type Job, Profile } from "@talksume/core";
 import { type Db, JobRepo, schema } from "@talksume/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Embedder } from "./embedder.ts";
+import { explainMatch, type MatchExplanation } from "./explain.ts";
 import { applyHardFilters, FILTER_HINTS } from "./filters.ts";
 import { extractJobFields } from "./import.ts";
 import {
@@ -628,8 +629,17 @@ export function createMatchingService(db: Db, options: MatchingServiceOptions = 
     };
   }
 
+  /** 规则匹配解释，纯代码现算；岗位不可见或不存在的 id 不在结果里。 */
+  async function explainMatches(userId: string, profile: Profile, jobIds: readonly string[]) {
+    const found = await Promise.all(jobIds.map((id) => loadJob(db, userId, id)));
+    const out = new Map<string, MatchExplanation>();
+    for (const hit of found) if (hit) out.set(hit.job.id, explainMatch(profile, hit.job));
+    return out;
+  }
+
   return {
     refresh,
+    explainMatches,
     listMatches,
     recommendFor,
     searchFor,

@@ -182,7 +182,7 @@ describe("按岗位定制简历", () => {
     await boot(llm);
     const main = (await call("GET", "/api/v1/resume")).body.resume as ResumeContent;
 
-    const generated = await call("POST", tailorUrl(MEITUAN));
+    const generated = await call("POST", tailorUrl(MEITUAN), { level: "deep" });
     expect(generated.status).toBe(200);
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).toContain("负责高并发后端服务开发");
@@ -231,6 +231,46 @@ describe("按岗位定制简历", () => {
     expect(listed.body.items).toMatchObject([
       { jobId: MEITUAN, company: "美团", resumeVersionId: versionId },
     ]);
+  });
+
+  it("默认微调档：不写摘要，不允许新增技能词；校验沿用同一套出处检查", async () => {
+    const { llm, prompts } = fakeLlm((prompt) => ({
+      summary: { text: "后端开发实习经历，熟悉 Java 与 Redis" },
+      rewrites: [
+        { id: idOf(prompt, CACHE_TEXT), text: "用 Redis 缓存热点数据，接口耗时从 200ms 降到 80ms" },
+        { id: idOf(prompt, ORDER_TEXT), text: `${ORDER_TEXT}，使用 Kafka 解耦` },
+      ],
+    }));
+    await boot(llm);
+    const changes = (await call("POST", tailorUrl(MEITUAN))).body.tailoring.changes as TailorChange[];
+    expect(prompts[0]).toContain("本次档位：微调");
+    expect(changes.some((c) => c.kind === "summary")).toBe(false);
+    expect(changes.find((c) => c.kind === "bullet" && c.before === CACHE_TEXT)?.violations).toEqual([]);
+    expect(changes.find((c) => c.kind === "bullet" && c.before === ORDER_TEXT)?.violations).toEqual(
+      expect.arrayContaining(["Kafka", "新增技能「Kafka」"]),
+    );
+  });
+
+  it("嵌入关键词档：已有技能可换成 JD 的上位说法，原文没有的技能仍被拦下", async () => {
+    const { llm, prompts } = fakeLlm((prompt) => ({
+      rewrites: [
+        { id: idOf(prompt, CACHE_TEXT), text: "用 Redis 缓存数据库热点数据，接口耗时从 200ms 降到 80ms" },
+        { id: idOf(prompt, ORDER_TEXT), text: "负责订单查询接口开发，基于 Kafka" },
+      ],
+    }));
+    await boot(llm);
+    const changes = (await call("POST", tailorUrl(MEITUAN), { level: "keywords" })).body.tailoring
+      .changes as TailorChange[];
+    expect(prompts[0]).toContain("本次档位：嵌入关键词");
+    expect(changes.find((c) => c.kind === "bullet" && c.before === CACHE_TEXT)?.violations).toEqual([]);
+    const bad = changes.find((c) => c.kind === "bullet" && c.before === ORDER_TEXT);
+    expect(bad?.violations).toContain("新增技能「Kafka」");
+  });
+
+  it("档位不正确返回 400", async () => {
+    const { llm } = fakeLlm(() => ({}));
+    await boot(llm);
+    expect((await call("POST", tailorUrl(MEITUAN), { level: "extreme" })).status).toBe(400);
   });
 
   it("重试时模型删掉了越界内容就用新的一版", async () => {
@@ -370,7 +410,7 @@ describe("对话里定制简历", () => {
     const { llm } = fakeLlm(tailorResponder(false));
     const { id, events } = await chat(
       [
-        toolTurn(fauxToolCall("tailor_resume", { jobId: MEITUAN })),
+        toolTurn(fauxToolCall("tailor_resume", { jobId: MEITUAN, level: "deep" })),
         (context) => {
           toolResult = JSON.stringify(context.messages.at(-1));
           return fauxAssistantMessage([fauxText("给美团这个岗位生成了定制版草稿，放在右边的简历里了。")]);

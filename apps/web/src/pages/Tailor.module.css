@@ -148,6 +148,10 @@
   color: var(--muted);
 }
 
+.regen {
+  padding-top: 8px;
+}
+
 .foot {
   position: sticky;
   bottom: 0;

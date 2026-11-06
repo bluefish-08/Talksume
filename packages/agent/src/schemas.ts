@@ -11,6 +11,7 @@ import {
   type ProfileSection,
   Project,
   Skill,
+  TAILOR_LEVELS,
   THEME_ALIGNS,
   THEME_BULLETS,
   THEME_DENSITIES,
@@ -179,6 +180,12 @@ export const TailorResumeArgs = z.object({
     .trim()
     .min(1)
     .describe("岗位 id，取自之前 recommend_jobs / search_jobs / explain_job 返回的 jobId"),
+  level: z
+    .enum(TAILOR_LEVELS)
+    .optional()
+    .describe(
+      "定制档位：light 微调（默认，只调顺序和措辞）；keywords 嵌入关键词（把已有技能换成岗位的说法）；deep 深度改写（重写措辞）。用户没明确说就不要填。",
+    ),
 });
 export type TailorResumeArgs = z.infer<typeof TailorResumeArgs>;
 
@@ -311,7 +318,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   {
     name: "tailor_resume",
     description:
-      "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。用户说「帮我针对这个岗位改一下简历」「让简历更适配美团那个」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。草稿会在右侧简历面板打开，要用户在面板里采用后才生效。",
+      "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。有三档：微调（默认）、嵌入关键词、深度改写，用户提到才选，不确定就用默认。用户说「帮我针对这个岗位改一下简历」「让简历更适配美团那个」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。草稿会在右侧简历面板打开，要用户在面板里采用后才生效。",
     schema: TailorResumeArgs,
   },
   {

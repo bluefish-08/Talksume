@@ -1,5 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
-import { applyTailoring, type Profile, profileToResume, type TailorChange } from "@talksume/core";
+import {
+  applyTailoring,
+  type Profile,
+  profileToResume,
+  type TailorChange,
+  type TailorLevel,
+} from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
 import { visibleTo } from "@talksume/matching";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
@@ -51,7 +57,7 @@ export async function generateTailoring(
   llm: StructuredLlm,
   userId: string,
   jobId: string,
-  options: { profile?: Profile; quotes?: readonly string[]; signal?: AbortSignal } = {},
+  options: { profile?: Profile; quotes?: readonly string[]; signal?: AbortSignal; level?: TailorLevel } = {},
 ) {
   const job = await loadTailorJob(db, userId, jobId);
   if (!job) throw new TailorError("job_not_found", "岗位不存在");
@@ -62,6 +68,7 @@ export async function generateTailoring(
   const draft = await tailorWithLlm(llm, job, base, {
     quotes,
     ...(options.signal && { signal: options.signal }),
+    ...(options.level && { level: options.level }),
   });
   await db
     .insert(resumeTailorings)

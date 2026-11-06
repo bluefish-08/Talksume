@@ -1,16 +1,25 @@
+import type { TailorLevel } from "@talksume/core";
+import { DEFAULT_TAILOR_LEVEL } from "@talksume/core";
 import { ArrowLeft } from "lucide-react";
+import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useToast } from "../components/Toast.tsx";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
 import { Diff, errorText, titleOf, useTailorDraft } from "../features/tailor/changes.tsx";
+import { LevelPicker } from "../features/tailor/LevelPicker.tsx";
 import { type TailoringView, useTailorActions, useTailoring } from "../features/tailor/queries.ts";
 import styles from "./Tailor.module.css";
 
 type Draft = NonNullable<TailoringView["tailoring"]>;
 
-function Review({ view, draft }: { view: TailoringView; draft: Draft }) {
+interface LevelState {
+  level: TailorLevel;
+  setLevel: (level: TailorLevel) => void;
+}
+
+function Review({ view, draft, level, setLevel }: { view: TailoringView; draft: Draft } & LevelState) {
   const toast = useToast();
   const { style } = useResumeStyle();
   const { generate, adopt, revoke } = useTailorActions(view.job.id);
@@ -81,12 +90,13 @@ function Review({ view, draft }: { view: TailoringView; draft: Draft }) {
           })}
         </ul>
 
+        <div className={styles.regen}>
+          <LevelPicker value={level} onChange={setLevel} disabled={busy} />
+        </div>
         <div className={styles.foot}>
           <Button
             disabled={busy || !view.available}
-            onClick={() =>
-              generate.mutate(undefined, { onError: (e) => toast(errorText(e), { tone: "error" }) })
-            }
+            onClick={() => generate.mutate(level, { onError: (e) => toast(errorText(e), { tone: "error" }) })}
           >
             {generate.isPending && <Spinner label="生成中" />}重新生成
           </Button>
@@ -120,6 +130,7 @@ export function TailorPage() {
   const toast = useToast();
   const query = useTailoring(jobId);
   const { generate } = useTailorActions(jobId);
+  const [level, setLevel] = useState<TailorLevel>(DEFAULT_TAILOR_LEVEL);
   const view = query.data;
 
   return (
@@ -131,7 +142,7 @@ export function TailorPage() {
         </Link>
         <h1 className={styles.h1}>定制简历{view && `：${view.job.company} · ${view.job.title}`}</h1>
         <p className={styles.sub}>
-          只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实；主简历不变，采用后只用于这个岗位。
+          按你选的档位调整要点顺序和措辞，三档都不新增任何事实；主简历不变，采用后只用于这个岗位。
         </p>
       </header>
 
@@ -147,11 +158,14 @@ export function TailorPage() {
             ? "生成后可以逐条查看和原版的差异，确认后再采用。"
             : "还没有配置模型，暂时不能定制。"}
           <div className={styles.emptyActions}>
+            <LevelPicker value={level} onChange={setLevel} disabled={generate.isPending} />
+          </div>
+          <div className={styles.emptyActions}>
             <Button
               variant="primary"
               disabled={!view.available || generate.isPending}
               onClick={() =>
-                generate.mutate(undefined, { onError: (e) => toast(errorText(e), { tone: "error" }) })
+                generate.mutate(level, { onError: (e) => toast(errorText(e), { tone: "error" }) })
               }
             >
               {generate.isPending && <Spinner label="生成中" />}生成定制版
@@ -159,7 +173,15 @@ export function TailorPage() {
           </div>
         </EmptyState>
       )}
-      {view?.tailoring && <Review key={view.tailoring.updatedAt} view={view} draft={view.tailoring} />}
+      {view?.tailoring && (
+        <Review
+          key={view.tailoring.updatedAt}
+          view={view}
+          draft={view.tailoring}
+          level={level}
+          setLevel={setLevel}
+        />
+      )}
     </div>
   );
 }

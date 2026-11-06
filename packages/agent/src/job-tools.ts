@@ -11,7 +11,7 @@ import {
   type ToolName,
 } from "./schemas.ts";
 import { type RunContext, text, tool } from "./tools.ts";
-import type { JobCard, JobTools, ResumeTailor, ToolRecord } from "./types.ts";
+import type { JobCard, JobTools, MatchKeyword, ResumeTailor, ToolRecord } from "./types.ts";
 
 const JOB_TYPE_LABEL = { internship: "实习", campus: "校招", experienced: "社招" } as const;
 
@@ -38,6 +38,8 @@ export function describeCard(card: JobCard, index?: number): string {
     card.jobType && JOB_TYPE_LABEL[card.jobType],
     card.score !== undefined && `匹配度 ${Math.round(card.score)}`,
     card.reason && `理由：${card.reason}`,
+    card.matchKeywords?.have.length && `已有关键词：${card.matchKeywords.have.join("、")}`,
+    card.matchKeywords?.missing.length && `缺少关键词：${card.matchKeywords.missing.join("、")}`,
   ].filter(Boolean);
   return `${index === undefined ? "" : `${index + 1}. `}${parts.join("｜")}`;
 }
@@ -136,6 +138,23 @@ export function createJobTools(
       if (insight.summary) lines.push(`总结：${insight.summary}`);
       if (insight.strengths.length > 0) lines.push("优势：", ...insight.strengths.map((s) => `- ${s}`));
       if (insight.gaps.length > 0) lines.push("短板：", ...insight.gaps.map((s) => `- ${s}`));
+      const b = insight.breakdown;
+      if (b) {
+        const names = (items: MatchKeyword[], status: MatchKeyword["status"]) =>
+          items.filter((i) => i.status === status).map((i) => i.name);
+        const row = (label: string, items: MatchKeyword[]) =>
+          items.length === 0
+            ? []
+            : [
+                `- ${label}：已有 ${names(items, "have").join("、") || "无"}；缺少 ${names(items, "missing").join("、") || "无"}${names(items, "partial").length > 0 ? `；相近 ${names(items, "partial").join("、")}` : ""}`,
+              ];
+        lines.push(
+          `规则匹配分 ${b.score}（技能、方向词、岗位名、简历完整度加权，不调模型）：`,
+          ...row("必备技能", b.required),
+          ...row("加分技能", b.bonus),
+          ...row("方向关键词", b.concepts),
+        );
+      }
       lines.push(
         "各维度（0–100）：",
         ...insight.dims.map((d) => `- ${d.label} ${d.score}${d.evidence[0] ? `：${d.evidence[0]}` : ""}`),
@@ -156,7 +175,7 @@ export function createJobTools(
     (args: z.infer<typeof TailorResumeArgs>) =>
       run("tailor_resume", args, async () => {
         if (!tailor) throw new Error("定制服务未开启");
-        const outcome = await tailor.tailor(state.profile, state.facts, args.jobId);
+        const outcome = await tailor.tailor(state.profile, state.facts, args.jobId, args.level);
         if (!outcome) {
           return `找不到 jobId=${args.jobId} 的岗位，定制没有进行。用之前岗位结果里的 jobId，或先用 search_jobs 搜到再定制；不要说已经改好。`;
         }

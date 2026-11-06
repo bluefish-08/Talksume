@@ -1,3 +1,4 @@
+import { TAILOR_LEVELS } from "@talksume/core";
 import type { FastifyReply } from "fastify";
 import { z } from "zod";
 import type { RouteModule } from "../app.ts";
@@ -11,6 +12,7 @@ import {
   tailoringView,
 } from "../tailor-store.ts";
 
+const GenerateBody = z.object({ level: z.enum(TAILOR_LEVELS).optional() }).optional();
 const AdoptBody = z.object({ changeIds: z.array(z.string()).min(1).max(100) });
 
 const STATUS: Record<TailorError["code"], number> = {
@@ -43,10 +45,14 @@ export const tailorRoutes: RouteModule = (app, { db, resumeLlm }) => {
   app.post("/api/v1/jobs/:id/tailoring", async (req, reply) => {
     if (!llm) return sendError(reply, 503, "llm_unavailable", "还没有配置模型，暂时不能定制");
     if (busy.has(req.userId)) return sendError(reply, 409, "tailor_busy", "上一次定制还没完成", true);
+    const body = GenerateBody.safeParse(req.body ?? undefined);
+    if (!body.success) return sendError(reply, 400, "invalid_request", "定制档位不正确");
     const jobId = jobIdOf(req.params);
     busy.add(req.userId);
     try {
-      await generateTailoring(db, llm, req.userId, jobId);
+      await generateTailoring(db, llm, req.userId, jobId, {
+        ...(body.data?.level && { level: body.data.level }),
+      });
     } catch (error) {
       if (error instanceof TailorError) return failWith(reply, error);
       req.log.error({ err: error }, "resume tailor failed");

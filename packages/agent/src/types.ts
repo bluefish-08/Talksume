@@ -5,6 +5,7 @@ import {
   type ProfileSection,
   type ResumeStyle,
   type ResumeThemePatch,
+  type TailorLevel,
 } from "@talksume/core";
 import type { Completeness, Slot } from "./completeness.ts";
 import type { Conflict, Draft, ProfileChange } from "./facts.ts";
@@ -20,10 +21,28 @@ export interface JobCard {
   /** 0–100。 */
   score?: number;
   reason?: string;
+  /** 画像里已有和缺失的 JD 关键词，各取前几个。 */
+  matchKeywords?: { have: string[]; missing: string[] };
+}
+
+export interface MatchKeyword {
+  name: string;
+  status: "have" | "partial" | "missing";
+  source?: string;
+}
+
+/** 纯规则的匹配解释：技能、方向词和加权分，不含模型判断。 */
+export interface MatchBreakdown {
+  score: number;
+  components: { label: string; score: number; weight: number; applicable: boolean; note: string }[];
+  required: MatchKeyword[];
+  bonus: MatchKeyword[];
+  concepts: MatchKeyword[];
 }
 
 export interface JobInsight {
   job: JobCard;
+  breakdown?: MatchBreakdown;
   summary?: string;
   strengths: string[];
   gaps: string[];
@@ -75,7 +94,12 @@ export interface TailorOutcome {
 
 /** 服务端注入的按岗位定制简历；找不到岗位返回 null。 */
 export interface ResumeTailor {
-  tailor(profile: Profile, facts: readonly Fact[], jobId: string): Promise<TailorOutcome | null>;
+  tailor(
+    profile: Profile,
+    facts: readonly Fact[],
+    jobId: string,
+    level?: TailorLevel,
+  ): Promise<TailorOutcome | null>;
 }
 
 /** 渲染预览后的版式自检，给模型对照参考图时一并参考。 */

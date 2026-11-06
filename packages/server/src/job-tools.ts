@@ -1,4 +1,4 @@
-import type { JobCard, JobTools, ResumeTailor } from "@talksume/agent";
+import type { JobCard, JobInsight, JobTools, ResumeTailor } from "@talksume/agent";
 import type { TailorChange } from "@talksume/core";
 import type { Db } from "@talksume/db";
 import {
@@ -6,12 +6,20 @@ import {
   DIMENSIONS,
   type JobSummary,
   type MatchDims,
+  type MatchExplanation,
   type MatchingService,
+  summarizeKeywords,
 } from "@talksume/matching";
 import type { StructuredLlm } from "./polish-llm.ts";
 import { generateTailoring, TailorError, usable } from "./tailor-store.ts";
 
-function toCard(job: JobSummary, score: number, reason: string | undefined): JobCard {
+function toCard(
+  job: JobSummary,
+  score: number,
+  reason: string | undefined,
+  explanation?: MatchExplanation,
+): JobCard {
+  const matchKeywords = explanation && summarizeKeywords(explanation);
   return {
     id: job.id,
     title: job.title,
@@ -20,6 +28,8 @@ function toCard(job: JobSummary, score: number, reason: string | undefined): Job
     ...(job.jobType && { jobType: job.jobType }),
     score: Math.round(score),
     ...(reason && { reason }),
+    ...(matchKeywords &&
+      (matchKeywords.have.length > 0 || matchKeywords.missing.length > 0) && { matchKeywords }),
   };
 }
 
@@ -51,12 +61,40 @@ export function reasonFromDims(dims: MatchDims): string | undefined {
   return evidence && stripQuotes(evidence);
 }
 
+function breakdownOf(e: MatchExplanation): NonNullable<JobInsight["breakdown"]> {
+  const keyword = ({ name, status, source }: MatchExplanation["required"][number]) => ({
+    name,
+    status,
+    ...(source && { source }),
+  });
+  return {
+    score: e.score,
+    components: e.components.map(({ label, score, weight, applicable, note }) => ({
+      label,
+      score,
+      weight,
+      applicable,
+      note,
+    })),
+    required: e.required.map(keyword),
+    bonus: e.bonus.map(keyword),
+    concepts: e.concepts.map(keyword),
+  };
+}
+
 export function matchingJobTools(service: MatchingService, userId: string): JobTools {
   return {
     async recommend(profile, query) {
       const r = await service.recommendFor(userId, profile, query);
+      const ex = await service.explainMatches(
+        userId,
+        profile,
+        r.items.map((m) => m.jobId),
+      );
       return {
-        jobs: r.items.map((m) => toCard(m.job, m.score, m.report.summary ?? reasonFromDims(m.dims))),
+        jobs: r.items.map((m) =>
+          toCard(m.job, m.score, m.report.summary ?? reasonFromDims(m.dims), ex.get(m.jobId)),
+        ),
         total: r.total,
         ...(r.hint && { hint: r.hint }),
       };
@@ -70,16 +108,29 @@ export function matchingJobTools(service: MatchingService, userId: string): JobT
         ...(query.jobType && { jobType: query.jobType }),
         limit: query.limit,
       });
-      return { jobs: r.items.map((i) => toCard(i.job, i.score, reasonFromDims(i.dims))), total: r.total };
+      const ex = await service.explainMatches(
+        userId,
+        profile,
+        r.items.map((i) => i.job.id),
+      );
+      return {
+        jobs: r.items.map((i) => toCard(i.job, i.score, reasonFromDims(i.dims), ex.get(i.job.id))),
+        total: r.total,
+      };
     },
 
     async explain(profile, jobId) {
-      const r = await service.explainFor(userId, profile, jobId);
+      const [r, ex] = await Promise.all([
+        service.explainFor(userId, profile, jobId),
+        service.explainMatches(userId, profile, [jobId]),
+      ]);
       if (!r) return null;
+      const explanation = ex.get(jobId);
       const dims = coreDims(r.dims);
       const evidenceOf = (d: (typeof dims)[number]) => (d.evidence?.[0] ? [stripQuotes(d.evidence[0])] : []);
       return {
-        job: toCard(r.job, r.score, r.report?.summary),
+        job: toCard(r.job, r.score, r.report?.summary, explanation),
+        ...(explanation && { breakdown: breakdownOf(explanation) }),
         ...(r.report?.summary && { summary: r.report.summary }),
         strengths: r.report?.strengths ?? dims.filter((d) => d.score >= STRONG).flatMap(evidenceOf),
         gaps: r.report?.gaps ?? dims.filter((d) => d.score < WEAK).flatMap(evidenceOf),
@@ -113,14 +164,16 @@ export function describeTailorChange(change: TailorChange): string {
 
 export function storeResumeTailor(db: Db, llm: StructuredLlm, userId: string): ResumeTailor {
   return {
-    async tailor(profile, facts, jobId) {
+    async tailor(profile, facts, jobId, level) {
       const quotes = facts.map((f) => f.quote).filter(Boolean);
-      const result = await generateTailoring(db, llm, userId, jobId, { profile, quotes }).catch(
-        (error: unknown) => {
-          if (error instanceof TailorError && error.code === "job_not_found") return null;
-          throw error;
-        },
-      );
+      const result = await generateTailoring(db, llm, userId, jobId, {
+        profile,
+        quotes,
+        ...(level && { level }),
+      }).catch((error: unknown) => {
+        if (error instanceof TailorError && error.code === "job_not_found") return null;
+        throw error;
+      });
       if (!result) return null;
       const ok = result.changes.filter(usable);
       return {
