@@ -4,6 +4,7 @@ import { close } from "@talksume/resume-render";
 import type { FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.ts";
+import { loadResumeStyle, storeResumeStyler } from "../resume-style.ts";
 import type { TemplateAdvisor } from "../template-advisor.ts";
 import { profileDigest } from "../template-advisor.ts";
 
@@ -229,4 +230,57 @@ describe("智能推荐模板", () => {
       expect(digest).not.toContain(secret);
     }
   });
+});
+
+describe("对话定制样式", () => {
+  const theme = {
+    name: "稳重深绿",
+    accent: "#166534",
+    bodyFont: "sans",
+    headingFont: "serif",
+    header: "rule",
+    headerAlign: "left",
+    headingStyle: "underline",
+    layout: "sidebar",
+    bullet: "square",
+    skills: "line",
+    density: "auto",
+  };
+
+  it("PUT 带主题时校验并归一化，带多余字段的拒绝", async () => {
+    await seedProfile();
+    const bad = await app.inject({
+      method: "PUT",
+      url: "/api/v1/resume/style",
+      headers,
+      payload: { template: "tech", accent: "teal", theme: { ...theme, css: "h2{}" } },
+    });
+    expect(bad.statusCode).toBe(400);
+    const ok = await app.inject({
+      method: "PUT",
+      url: "/api/v1/resume/style",
+      headers,
+      payload: { template: "tech", accent: "teal", theme: { ...theme, accent: "#FDE047" } },
+    });
+    expect(ok.statusCode).toBe(200);
+    const style = (await app.inject({ method: "GET", url: "/api/v1/resume/style", headers })).json().style;
+    expect(style.theme.layout).toBe("sidebar");
+    expect(style.theme.accent).not.toBe("#fde047");
+  });
+
+  it("工具端口合并保存、reset 回到预设；导出默认按主题", async () => {
+    await seedProfile();
+    const userId = headers["x-talksume-user"] ?? "";
+    const styler = storeResumeStyler(handle.db, userId);
+    const { style } = await styler.design({ accent: "#166534", layout: "sidebar" });
+    expect(style).toMatchObject({ template: "tech", accent: "teal", theme: { layout: "sidebar" } });
+    expect((await loadResumeStyle(handle.db, userId)).theme?.accent).toBe("#166534");
+
+    const pdf = await app.inject({ method: "GET", url: "/api/v1/resume/export?format=pdf", headers });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
+
+    expect(await styler.reset()).toEqual({ template: "tech", accent: "teal" });
+    expect((await loadResumeStyle(handle.db, userId)).theme).toBeUndefined();
+  }, 30_000);
 });

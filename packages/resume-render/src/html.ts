@@ -2,6 +2,7 @@
 import {
   ACCENT_INFO,
   DEFAULT_RESUME_STYLE,
+  fallbackPreset,
   RESUME_ACCENTS,
   RESUME_TEMPLATES,
   type ResumeBullet,
@@ -11,9 +12,11 @@ import {
   type ResumeSection,
   type ResumeStyle,
   type ResumeTemplate,
+  type ResumeTheme,
+  sanitizeTheme,
   templateUsesAccent,
 } from "@talksume/core";
-import { type Layout, layoutFor } from "./layout.ts";
+import { type Layout, layoutFor, layoutForTheme, SIDEBAR, SIDEBAR_KINDS } from "./layout.ts";
 import { richSpans, typeset } from "./text.ts";
 import { FONT_STACK_CSS, type RenderOptions, SERIF_STACK_CSS } from "./types.ts";
 
@@ -37,8 +40,10 @@ export function resolveRenderStyle(options: RenderOptions = {}): ResumeStyle {
   return { template, accent };
 }
 
+type SkillsMode = "line" | "tags";
+
 interface TemplateSpec {
-  skills: "line" | "tags";
+  skills: SkillsMode;
   css: string;
 }
 
@@ -79,6 +84,15 @@ const BASE_CSS = `
 .resume .skill-line + .skill-line { margin-top: calc(var(--li-gap) + 1pt); }
 .resume .skill-line .item-title { font-size: 1em; }
 .resume .lvl { color: var(--muted); }
+`;
+
+const TAGS_CSS = `
+.skill-line { display: flex; align-items: baseline; gap: 6pt; }
+.skill-line .item-title { flex: none; min-width: 4.2em; }
+.tags { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2.5pt 3pt; }
+.tag { padding: 0 4pt; border-radius: 2pt; background: var(--accent-soft); color: #1f2937; font-size: 0.92em; line-height: 1.5; }
+.tags .lvl { font-size: 0.92em; }
+.tags .lvl:not(:first-child) { margin-left: 4pt; }
 `;
 
 const dot = (size: string, color: string, radius = "50%") =>
@@ -141,13 +155,7 @@ h2 { font-size: 1.02em; line-height: var(--lh); color: var(--accent); letter-spa
 .sec-body { padding-left: 4mm; border-left: 0.75pt solid var(--rule); }
 .item-stack .stack { font-family: ${MONO_STACK}; font-size: 0.95em; }
 ${dot("2.5pt", "var(--accent)")}
-.skill-line { display: flex; align-items: baseline; gap: 6pt; }
-.skill-line .item-title { flex: none; min-width: 4.2em; }
-.tags { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2.5pt 3pt; }
-.tag { padding: 0 4pt; border-radius: 2pt; background: var(--accent-soft); color: #1f2937; font-size: 0.92em; line-height: 1.5; }
-.tags .lvl { font-size: 0.92em; }
-.tags .lvl:not(:first-child) { margin-left: 4pt; }
-`,
+${TAGS_CSS}`,
   },
 };
 
@@ -241,9 +249,9 @@ function renderSkillTags(item: ResumeItem, at: string): string {
   return `<p class="skill-line" data-item="${at}">${head}<span class="tags">${tags}</span></p>`;
 }
 
-function renderSection(section: ResumeSection, index: number, spec: TemplateSpec): string {
+function renderSection(section: ResumeSection, index: number, mode: SkillsMode): string {
   if (section.items.length === 0) return "";
-  const skills = spec.skills === "tags" ? renderSkillTags : renderSkillLine;
+  const skills = mode === "tags" ? renderSkillTags : renderSkillLine;
   const plain = section.kind === "education";
   const items = section.items
     .map((item, i) =>
@@ -266,11 +274,7 @@ export interface ResumeFragment {
   layout: Layout;
 }
 
-/** 不含 html/body 的简历片段：PDF 包成整页文档，网页预览直接挂进 shadow DOM，两边同源。 */
-export function renderFragment(content: ResumeContent, options: RenderOptions = {}): ResumeFragment {
-  const style = resolveRenderStyle(options);
-  const spec = TEMPLATES[style.template];
-  const layout = layoutFor(content, style.template, options.density);
+function headHtml(content: ResumeContent): string {
   const { name, headline, contacts, links = [], summary } = content.basics;
   const contactItems = [...contacts.map(text), ...links.map((l) => escapeHtml(linkText(l)))];
   const contactHtml = contactItems.length
@@ -278,19 +282,125 @@ export function renderFragment(content: ResumeContent, options: RenderOptions = 
     : "";
   const headlineHtml = headline ? `<p class="headline">${text(headline)}</p>` : "";
   const summaryHtml = summary ? `<p class="summary">${text(summary)}</p>` : "";
-  const sections = content.sections.map((s, i) => renderSection(s, i, spec)).join("\n");
-  const accent = templateUsesAccent(style.template) ? ACCENT_INFO[style.accent].hex : "#111111";
-  const vars = [
-    `--accent: ${accent}`,
+  return `<header class="head"><div class="head-main"><h1>${escapeHtml(name)}</h1>${headlineHtml}</div>${contactHtml}${summaryHtml}</header>`;
+}
+
+function layoutVars(layout: Layout): string[] {
+  return [
     `--fs: ${layout.fs}pt`,
     `--lh: ${layout.lh}`,
     `--name: ${layout.name}pt`,
     `--sec-gap: ${layout.secGap}pt`,
     `--item-gap: ${layout.itemGap}pt`,
     `--li-gap: ${layout.liGap}pt`,
+  ];
+}
+
+const FONT = { sans: FONT_STACK_CSS, serif: SERIF_STACK_CSS } as const;
+
+const THEME_HEADER: Record<ResumeTheme["header"], string> = {
+  plain: `
+.headline { color: var(--accent); }
+.contacts span + span::before { content: "·"; margin: 0 0.6em; color: var(--faint); }`,
+  rule: `
+.head { padding-bottom: 6pt; border-bottom: 1.25pt solid var(--accent); }
+.headline { color: var(--accent); }
+.contacts span + span::before { content: "/"; margin: 0 0.6em; color: var(--faint); }`,
+  band: `
+.head { background: var(--accent); border-radius: 3pt; padding: 12pt 15pt 11pt; }
+.head h1, .headline, .contacts, .summary { color: #fff; }
+.contacts { opacity: 0.9; }
+.contacts span + span::before { content: "·"; margin: 0 0.6em; opacity: 0.7; }`,
+};
+
+const THEME_HEADING: Record<ResumeTheme["headingStyle"], string> = {
+  underline: `
+h2 { font-size: 1.12em; line-height: 1.4; color: var(--heading); letter-spacing: 0.08em; padding-bottom: 1.5pt; border-bottom: 0.75pt solid var(--accent); margin-bottom: 4pt; }`,
+  bar: `
+h2 { display: flex; align-items: center; gap: 6pt; font-size: 1.12em; line-height: 1.4; color: var(--heading); letter-spacing: 0.06em; margin-bottom: 3.5pt; }
+h2::before { content: ""; flex: none; width: 3.5pt; height: 1.05em; border-radius: 1.5pt; background: var(--accent); }
+h2::after { content: ""; flex: 1; height: 0.75pt; background: var(--rule); }`,
+  block: `
+h2 { font-size: 1.04em; line-height: 1.6; color: #fff; background: var(--heading); padding: 0 6pt; border-radius: 2pt; letter-spacing: 0.12em; margin-bottom: 4pt; }`,
+  plain: `
+h2 { font-size: 1.12em; line-height: 1.4; color: var(--heading); letter-spacing: 0.14em; margin-bottom: 3pt; }`,
+};
+
+const THEME_BULLET: Record<ResumeTheme["bullet"], string> = {
+  dot: dot("3pt", "var(--accent)"),
+  square: dot("3.5pt", "var(--accent)", "0.5pt"),
+  dash: `li::before { content: ""; position: absolute; left: 0.1em; top: calc(var(--lh) * 0.5em); width: 0.5em; height: 0.75pt; background: var(--accent); }`,
+};
+
+const SIDEBAR_CSS = `
+.cols { display: grid; grid-template-columns: ${SIDEBAR.width}mm minmax(0, 1fr); column-gap: ${SIDEBAR.gap}mm; margin-top: var(--sec-gap); }
+.cols section:first-child { margin-top: 0; }
+.side { padding-right: ${SIDEBAR.gap / 2}mm; border-right: 0.75pt solid var(--rule); }
+.side .item-head { flex-wrap: wrap; column-gap: 6pt; }
+.side .item-aside { white-space: normal; }
+.side .skill-line { display: block; }
+.side .skill-line .item-title { display: block; }`;
+
+/** 主题 CSS 只由上面的常量片段拼成；唯一的变量是已校验的 hex 颜色，放在内联 CSS 变量里。 */
+function themeCss(theme: ResumeTheme): string {
+  return [
+    `.resume { font-family: ${FONT[theme.bodyFont]}; }`,
+    `h1, h2 { font-family: ${FONT[theme.headingFont]}; }`,
+    theme.headingFont === "serif" ? "h1 { letter-spacing: 0.14em; }" : "h1 { letter-spacing: 0.06em; }",
+    theme.headerAlign === "center"
+      ? ".head { text-align: center; } .summary { text-align: center; text-wrap: balance; }"
+      : "",
+    THEME_HEADER[theme.header],
+    THEME_HEADING[theme.headingStyle],
+    THEME_BULLET[theme.bullet],
+    ".lead { color: var(--accent-deep); }",
+    theme.skills === "tags" ? TAGS_CSS : "",
+    theme.layout === "sidebar" ? SIDEBAR_CSS : "",
+  ].join("\n");
+}
+
+function renderThemed(content: ResumeContent, theme: ResumeTheme, options: RenderOptions): ResumeFragment {
+  const layout = layoutForTheme(content, theme, options.density);
+  const sections = content.sections.map((s, i) => ({ s, html: renderSection(s, i, theme.skills) }));
+  const side = sections.filter((x) => SIDEBAR_KINDS.includes(x.s.kind) && x.html);
+  const main = sections.filter((x) => !SIDEBAR_KINDS.includes(x.s.kind) && x.html);
+  const join = (xs: typeof sections) => xs.map((x) => x.html).join("\n");
+  // DOM 先侧栏后正文，文本抽取是「教育、技能 → 经历」整块读出，不会左右交错
+  const body =
+    theme.layout === "sidebar" && side.length > 0 && main.length > 0
+      ? `<div class="cols"><aside class="side">${join(side)}</aside><div class="main">${join(main)}</div></div>`
+      : join(sections);
+  const vars = [
+    `--accent: ${theme.accent}`,
+    `--heading: ${theme.headingColor ?? theme.accent}`,
+    ...layoutVars(layout),
   ].join("; ");
+  const html = `<div class="resume th l-${theme.layout} d-${layout.density}" style="${vars}">
+${headHtml(content)}
+${body}
+</div>`;
+  const preset = options.template && options.accent ? resolveRenderStyle(options) : fallbackPreset(theme);
+  return {
+    css: BASE_CSS + scopeCss(themeCss(theme)),
+    html,
+    margin: `${layout.margin.y}mm ${layout.margin.x}mm`,
+    style: { ...preset, theme },
+    layout,
+  };
+}
+
+/** 不含 html/body 的简历片段：PDF 包成整页文档，网页预览直接挂进 shadow DOM，两边同源。 */
+export function renderFragment(content: ResumeContent, options: RenderOptions = {}): ResumeFragment {
+  const theme = options.theme ? sanitizeTheme(options.theme)?.theme : undefined;
+  if (theme) return renderThemed(content, theme, options);
+  const style = resolveRenderStyle(options);
+  const spec = TEMPLATES[style.template];
+  const layout = layoutFor(content, style.template, options.density);
+  const sections = content.sections.map((s, i) => renderSection(s, i, spec.skills)).join("\n");
+  const accent = templateUsesAccent(style.template) ? ACCENT_INFO[style.accent].hex : "#111111";
+  const vars = [`--accent: ${accent}`, ...layoutVars(layout)].join("; ");
   const html = `<div class="resume t-${style.template} d-${layout.density}" style="${vars}">
-<header class="head"><div class="head-main"><h1>${escapeHtml(name)}</h1>${headlineHtml}</div>${contactHtml}${summaryHtml}</header>
+${headHtml(content)}
 ${sections}
 </div>`;
   const margin = `${layout.margin.y}mm ${layout.margin.x}mm`;

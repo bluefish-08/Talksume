@@ -1,4 +1,11 @@
-import { type ResumeContent, type ResumeItem, type ResumeTemplate, skillLine } from "@talksume/core";
+import {
+  type ResumeContent,
+  type ResumeItem,
+  type ResumeSection,
+  type ResumeTemplate,
+  type ResumeTheme,
+  skillLine,
+} from "@talksume/core";
 import { plainText } from "./text.ts";
 
 export type Density = "roomy" | "loose" | "normal" | "compact" | "tight";
@@ -140,8 +147,8 @@ export function tierLayout(g: Geometry, tier: (typeof TIERS)[number]): Layout {
 }
 
 /** 粗估排版后的高度（pt），只用来挑密度档位，不追求精确。 */
-export function estimateHeight(content: ResumeContent, g: Geometry, l: Layout): number {
-  const width = (PAGE.w - 2 * l.margin.x - g.side) * PT_PER_MM;
+export function estimateHeight(content: ResumeContent, g: Geometry, l: Layout, widthMm?: number): number {
+  const width = (widthMm ?? PAGE.w - 2 * l.margin.x - g.side) * PT_PER_MM;
   const perLine = (indentEm: number) => width / l.fs - indentEm;
   const line = l.fs * l.lh;
   const { basics } = content;
@@ -180,7 +187,9 @@ export function estimateHeight(content: ResumeContent, g: Geometry, l: Layout): 
 const available = (l: Layout) => (PAGE.h - 2 * l.margin.y) * PT_PER_MM;
 
 /** 选定档位后还有余量时，把行距和段距放大一些去填，放大有上限，内容很少时仍会留白。 */
-function stretch(content: ResumeContent, g: Geometry, l: Layout): Layout {
+type Estimate = (l: Layout) => number;
+
+function stretch(estimate: Estimate, g: Geometry, l: Layout): Layout {
   const target = available(l) * FILL;
   const at = (k: number): Layout => ({
     ...l,
@@ -189,11 +198,11 @@ function stretch(content: ResumeContent, g: Geometry, l: Layout): Layout {
     itemGap: round(l.itemGap * (1 + 0.5 * k), 0.5),
     liGap: round(l.liGap * (1 + 0.5 * k), 0.25),
   });
-  if (estimateHeight(content, g, at(g.maxStretch)) <= target) return at(g.maxStretch);
+  if (estimate(at(g.maxStretch)) <= target) return at(g.maxStretch);
   let [lo, hi] = [0, g.maxStretch];
   for (let i = 0; i < 8; i++) {
     const mid = (lo + hi) / 2;
-    if (estimateHeight(content, g, at(mid)) <= target) lo = mid;
+    if (estimate(at(mid)) <= target) lo = mid;
     else hi = mid;
   }
   return at(lo);
@@ -204,13 +213,49 @@ const FIT = 0.97;
 const FILL = 0.96;
 
 /** 从最宽松的档位开始试，第一档估得下一页的就用它并按余量拉伸；都放不下用最紧的一档，超出部分进第二页。 */
-export function layoutFor(content: ResumeContent, template: ResumeTemplate, density?: Density): Layout {
-  const g = GEOMETRY[template];
+function pick(g: Geometry, estimate: Estimate, density?: Density): Layout {
   const layouts = TIERS.slice(TIERS.findIndex((t) => t.density === g.loosest)).map((tier) =>
     tierLayout(g, tier),
   );
   const forced = layouts.find((l) => l.density === density);
   if (forced) return forced;
-  const fitting = layouts.find((l) => estimateHeight(content, g, l) <= available(l) * FIT);
-  return fitting ? stretch(content, g, fitting) : (layouts[layouts.length - 1] as Layout);
+  const fitting = layouts.find((l) => estimate(l) <= available(l) * FIT);
+  return fitting ? stretch(estimate, g, fitting) : (layouts[layouts.length - 1] as Layout);
+}
+
+export function layoutFor(content: ResumeContent, template: ResumeTemplate, density?: Density): Layout {
+  const g = GEOMETRY[template];
+  return pick(g, (l) => estimateHeight(content, g, l), density);
+}
+
+export const SIDEBAR = { width: 52, gap: 6 } as const;
+export const SIDEBAR_KINDS: readonly ResumeSection["kind"][] = ["education", "skills", "awards"];
+
+export function themeGeometry(theme: ResumeTheme): Geometry {
+  const base = GEOMETRY.campus;
+  return {
+    ...base,
+    headPad: theme.header === "band" ? GEOMETRY.modern.headPad : theme.header === "rule" ? 10 : base.headPad,
+    titleExtra: theme.headingStyle === "block" ? 6 : theme.headingStyle === "underline" ? 7 : 5,
+  };
+}
+
+/** 两栏时抬头通栏，下面两栏取较高的一栏。 */
+export function layoutForTheme(content: ResumeContent, theme: ResumeTheme, density?: Density): Layout {
+  const g = themeGeometry(theme);
+  const forced = density ?? (theme.density === "auto" ? undefined : theme.density);
+  if (theme.layout === "single") return pick(g, (l) => estimateHeight(content, g, l), forced);
+  const side = content.sections.filter((s) => SIDEBAR_KINDS.includes(s.kind));
+  const main = content.sections.filter((s) => !SIDEBAR_KINDS.includes(s.kind));
+  const empty: ResumeContent["basics"] = { name: "", contacts: [] };
+  const body = (sections: ResumeSection[], l: Layout, w: number) =>
+    estimateHeight({ basics: empty, sections }, g, l, w) - (l.name * 1.3 + g.headPad);
+  const estimate = (l: Layout) => {
+    const mainW = PAGE.w - 2 * l.margin.x - SIDEBAR.width - SIDEBAR.gap;
+    return (
+      estimateHeight({ ...content, sections: [] }, g, l) +
+      Math.max(body(main, l, mainW), body(side, l, SIDEBAR.width))
+    );
+  };
+  return pick(g, estimate, forced);
 }

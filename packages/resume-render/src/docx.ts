@@ -1,10 +1,12 @@
 import {
   ACCENT_INFO,
+  fallbackPreset,
   type ResumeBullet,
   type ResumeContent,
   type ResumeItem,
   type ResumeSection,
   type ResumeTemplate,
+  sanitizeTheme,
   templateUsesAccent,
 } from "@talksume/core";
 import {
@@ -112,11 +114,17 @@ const halfPoints = (pt: number) => Math.round(pt * 2);
 const twips = (mm: number) => Math.round(mm * MM);
 
 export async function renderDocx(content: ResumeContent, options: RenderOptions = {}): Promise<Uint8Array> {
-  const style = resolveRenderStyle(options);
+  const custom = options.theme ? sanitizeTheme(options.theme)?.theme : undefined;
+  const style = custom && !options.template ? fallbackPreset(custom) : resolveRenderStyle(options);
   const theme = THEMES[style.template];
   const layout = layoutFor(content, style.template, options.density);
-  const mono = !templateUsesAccent(style.template);
-  const accent = mono ? "111111" : ACCENT_INFO[style.accent].hex.slice(1).toUpperCase();
+  // DOCX 只用主题的颜色，版式回落到最接近的预设
+  const mono = !custom && !templateUsesAccent(style.template);
+  const accent = custom
+    ? custom.accent.slice(1).toUpperCase()
+    : mono
+      ? "111111"
+      : ACCENT_INFO[style.accent].hex.slice(1).toUpperCase();
   const ink = mono ? "111111" : "111827";
   const body = mono ? "333333" : "374151";
   const muted = mono ? "666666" : "6B7280";

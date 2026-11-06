@@ -252,3 +252,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.custom {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}

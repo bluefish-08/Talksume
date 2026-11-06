@@ -1,4 +1,4 @@
-import type { ResumeAccent, ResumeTemplate } from "@talksume/core";
+import type { ResumeAccent, ResumeTemplate, ResumeTheme } from "@talksume/core";
 import type { Density } from "./layout.ts";
 
 export type TemplateName = ResumeTemplate;
@@ -6,6 +6,8 @@ export type TemplateName = ResumeTemplate;
 export interface RenderOptions {
   template?: ResumeTemplate;
   accent?: ResumeAccent;
+  /** 对话里定制的主题；校验不过时回落到 template/accent。 */
+  theme?: ResumeTheme | undefined;
   /** 不传时按内容量自动选档。 */
   density?: Density;
 }

@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import type { Fact, Profile } from "@talksume/core";
 import type { Gateway } from "@talksume/llm-gateway";
 import type { TurnMetrics } from "../../src/index.ts";
-import { fakeJobs, fakeTailor } from "../lib/fake-jobs.ts";
+import { fakeJobs, fakeStyler, fakeTailor } from "../lib/fake-jobs.ts";
 import { agentGateway, MODEL, toolGateway, Usage } from "../lib/llm.ts";
 import {
   bootstrapDiff,
@@ -95,6 +95,7 @@ export async function runConversation(opts: {
     model: opts.agentGw.primaryModel,
     jobs: fakeJobs,
     tailor: fakeTailor,
+    styles: fakeStyler,
     onMetrics: (m) => metrics.push(m),
   });
   const state = target.agent.createIntakeState({ profile: target.core.Profile.parse({}) });

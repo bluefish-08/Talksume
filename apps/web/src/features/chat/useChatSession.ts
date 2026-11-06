@@ -1,3 +1,4 @@
+import type { ResumeStyle } from "@talksume/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { ApiError } from "../../api/client.ts";
@@ -5,7 +6,7 @@ import { qk } from "../../api/queries.ts";
 import { postSse } from "../../api/sse.ts";
 import type { Completeness, ProfileSection, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
-import { factsKey } from "../resume/queries.ts";
+import { factsKey, resumeStyleKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
 import { useModelChoice } from "./modelChoice.ts";
 import type {
@@ -134,6 +135,9 @@ export function useChatSession(detail: ConversationDetail) {
               break;
             case "tailor":
               patch(replyKey, (m) => ({ ...m, tailor: data.tailor as TailorCard }));
+              break;
+            case "resume_style":
+              client.setQueryData(resumeStyleKey, data.style as ResumeStyle);
               break;
             case "ask": {
               const question = String(data.question ?? "");

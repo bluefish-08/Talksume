@@ -1,4 +1,5 @@
-import type { JobCard, JobInsight, JobTools, ResumeTailor } from "../../src/index.ts";
+import { applyThemePatch, DEFAULT_RESUME_STYLE } from "@talksume/core";
+import type { JobCard, JobInsight, JobTools, ResumeStyler, ResumeTailor } from "../../src/index.ts";
 
 /** 虚构岗位库：让提示词和工具集与线上一致（线上总带岗位工具），结果固定。 */
 const CATALOG: (JobCard & { keywords: string[] })[] = [
@@ -82,3 +83,13 @@ export const fakeJobs: JobTools = {
 };
 
 export const fakeTailor: ResumeTailor = { tailor: async () => null };
+
+/** 线上总带样式工具；评测里不落库，每次都在默认样式上合并。 */
+export const fakeStyler: ResumeStyler = {
+  async design(patch) {
+    const change = applyThemePatch(DEFAULT_RESUME_STYLE, patch);
+    if (!change) throw new Error("样式参数不合法");
+    return change;
+  },
+  reset: async () => DEFAULT_RESUME_STYLE,
+};

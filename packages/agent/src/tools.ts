@@ -52,7 +52,7 @@ export interface RunContext {
   genId: (prefix: string) => string;
   emit(event: IntakeEvent): void;
   /** rejected：本轮有 upsert_facts 条目被拒，等待模型修正。 */
-  flags: { asked: boolean; changed: boolean; jobs?: boolean; rejected?: boolean };
+  flags: { asked: boolean; changed: boolean; jobs?: boolean; rejected?: boolean; styled?: boolean };
   /** 本轮已经说出口的正文。 */
   spoken?: () => string;
 }

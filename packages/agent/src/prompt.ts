@@ -20,6 +20,8 @@ export interface PromptInput {
   jobTools?: boolean;
   /** 是否开放按岗位定制简历，依赖岗位工具。 */
   tailorTool?: boolean;
+  /** 是否开放对话定制简历样式。 */
+  styleTool?: boolean;
 }
 
 function stripIds(value: unknown): unknown {
@@ -71,6 +73,15 @@ const TAILOR_LINES = [
   "- 用户想加的内容简历里本来没有（如岗位要的某项技能），定制补不上：先如实说明，再问用户有没有相关经历，有就照常用 upsert_facts 记下，之后再定制。",
 ];
 
+const STYLE_LINES = [
+  "",
+  "## 简历样式",
+  "- 用户对简历外观提要求（「更稳重一点」「标题换成深绿」「做成两栏」「排紧凑点」「换个风格」）时调用 design_resume_style。这只改外观，不改任何内容，这些话也不要用 upsert_facts 记。",
+  "- 把用户的说法翻译成具体字段，只填这次要改的，其余沿用当前样式；颜色给具体色值，太浅的颜色系统会自动加深。",
+  "- 只有 design_resume_style 返回「已保存简历样式」或「已恢复为预设模板」时，才能说样式已经换好；失败或还没调用时不要说已经改了。用户要回到原来的模板时填 reset=true。",
+  "- 改完样式可以自然地顺带问一个画像里的缺口，不要强行拉回建档；用户这条消息里同时说了个人信息，照常先用 upsert_facts 写入。",
+];
+
 const DIG_LINES = [
   "",
   "## 经历少的同学怎么挖",
@@ -103,7 +114,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}${input.styleTool ? "；样式工具：design_resume_style 定制简历外观" : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -155,6 +166,9 @@ export function buildSystemPrompt(input: PromptInput): string {
   if (input.jobTools) {
     const jobLines = input.tailorTool ? [...JOB_LINES, ...TAILOR_LINES] : JOB_LINES;
     lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...jobLines);
+  }
+  if (input.styleTool) {
+    lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...STYLE_LINES);
   }
   if (input.drafts && input.drafts.length > 0) {
     lines.push("", "## 暂存中（还没写进画像）");

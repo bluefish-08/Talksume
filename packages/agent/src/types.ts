@@ -1,4 +1,11 @@
-import { type Fact, type JobType, Profile, type ProfileSection } from "@talksume/core";
+import {
+  type Fact,
+  type JobType,
+  Profile,
+  type ProfileSection,
+  type ResumeStyle,
+  type ResumeThemePatch,
+} from "@talksume/core";
 import type { Completeness, Slot } from "./completeness.ts";
 import type { Conflict, Draft, ProfileChange } from "./facts.ts";
 import type { SkipEntry, SummaryNote } from "./memory.ts";
@@ -69,6 +76,12 @@ export interface TailorOutcome {
 /** 服务端注入的按岗位定制简历；找不到岗位返回 null。 */
 export interface ResumeTailor {
   tailor(profile: Profile, facts: readonly Fact[], jobId: string): Promise<TailorOutcome | null>;
+}
+
+/** 服务端注入的简历样式存取：校验、归一化和落库都在实现里做。 */
+export interface ResumeStyler {
+  design(patch: ResumeThemePatch): Promise<{ style: ResumeStyle; notes: string[] }>;
+  reset(): Promise<ResumeStyle>;
 }
 
 /** 落库的工具调用，下一轮重放进模型上下文，便于追问「第二个怎么样」。 */
@@ -162,5 +175,6 @@ export type IntakeEvent =
   | { type: "jobs"; source: "recommend" | "search"; jobs: JobCard[] }
   | { type: "about_job"; job: JobCard }
   | { type: "tailor"; tailor: TailorCard }
+  | { type: "resume_style"; style: ResumeStyle }
   | { type: "completeness"; completeness: Completeness; nextSlot: Slot | null }
   | { type: "error"; code: string; message: string; recoverable: boolean };

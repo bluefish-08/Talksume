@@ -6,6 +6,7 @@ import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { createJobTools, withoutCards } from "./job-tools.ts";
 import { buildSystemPrompt, RESUME_HINT } from "./prompt.ts";
 import { cleanQuickReplies } from "./schemas.ts";
+import { createStyleTools } from "./style-tools.ts";
 import {
   answeredSlot,
   buildUserCorpus,
@@ -29,6 +30,7 @@ import type {
   IntakeState,
   JobCard,
   JobTools,
+  ResumeStyler,
   ResumeTailor,
   TailorCard,
   ToolRecord,
@@ -49,6 +51,8 @@ export interface IntakeDeps {
   jobs?: JobTools;
   /** 按岗位定制简历；需同时提供 jobs。 */
   tailor?: ResumeTailor;
+  /** 对话里定制简历样式；不传则不开放 design_resume_style。 */
+  styles?: ResumeStyler;
   /** 每轮结束时回报耗时，时间都相对本轮开始，单位毫秒。 */
   onMetrics?: (metrics: TurnMetrics) => void;
 }
@@ -255,6 +259,8 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
 /** 只认已完成的说法，「简历上写上 GPA 更好」这类建议不算。 */
 const CLAIMS_RECORDED =
   /已(?:经)?(?:记(?:下|录|上|好)|写(?:入|进|上|好)|补(?:上|进|好)|录入|保存)|(?:记|写|补|存)(?:下|好|上|到|进|入)(?:来|去)?(?:了|啦|咯)|记录(?:好)?了/;
+/** 「样式已保存」说的是外观，不是画像里的内容。 */
+const STYLE_WORDS = /样式|风格|颜色|配色|主色|字体|版式|排版|模板|两栏|单栏|标题|抬头/;
 const CLAIM_FILLER =
   /^(?:好的?|嗯|明白了?|收到|了解|ok)|你说的|刚才(?:说)?的|帮你|给你|已经|这边|这些|这个|这条|这段|[我已也都先就把那了的]/gi;
 /** 「技能记下了」「学历也记上了」这类泛指说法，只要这一轮确实写入了就算数。 */
@@ -522,6 +528,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(state.summaries ? { summaries: state.summaries } : {}),
       jobTools: Boolean(deps.jobs),
       tailorTool: Boolean(deps.jobs && deps.tailor),
+      styleTool: Boolean(deps.styles),
     });
 
     let llmError: string | undefined;
@@ -577,9 +584,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     // 用户没说过的词（「联系方式」「时间线」）是模型的概括，只看这一轮写没写、画像里有没有；用户原话里的具体内容要真在画像里
     const unrecorded = (): string[] => {
       const corpus = normalizeQuote(snapshot());
-      return claimedSubjects(shown).filter((s) =>
-        s && mentioned(said, s) ? !mentioned(corpus, s) : !wrote && !(s && mentioned(corpus, s)),
-      );
+      return claimedSubjects(shown)
+        .filter((s) => !(flags.styled && STYLE_WORDS.test(s)))
+        .filter((s) =>
+          s && mentioned(said, s) ? !mentioned(corpus, s) : !wrote && !(s && mentioned(corpus, s)),
+        );
     };
 
     const agent = new Agent({
@@ -590,6 +599,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         tools: [
           ...createIntakeTools(ctx),
           ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog, deps.tailor) : []),
+          ...(deps.styles ? createStyleTools(ctx, deps.styles, toolLog) : []),
         ],
         messages: historyToMessages(state, deps.model, historyLimit),
       },

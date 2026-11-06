@@ -1,5 +1,6 @@
+import { hue } from "@talksume/core";
 import { exhaustPlanner, type Script, type ScriptTurn } from "./builder.ts";
-import { C, type Check, entityNames, has, projectWith } from "./checks.ts";
+import { C, type Check, entityNames, has, type Observation, projectWith } from "./checks.ts";
 
 export interface Probe {
   id: string;
@@ -171,6 +172,9 @@ const LM: ScriptTurn[] = [
 
 const upTo = (turns: ScriptTurn[], n: number, last?: Partial<ScriptTurn>) =>
   turns.slice(0, n).map((t, i) => (i === n - 1 && last ? { ...t, ...last } : t));
+
+const styleArgs = (o: Observation) =>
+  o.after.tools.findLast((t) => t.name === "design_resume_style" && t.result.startsWith("已保存"))?.args;
 
 const CORRECTION = "哦对了，刚才说错了，我是 2026 年 7 月毕业，不是 6 月";
 
@@ -362,5 +366,25 @@ export const PROBES: Probe[] = [
     script: { turns: LM.slice(0, 10) },
     message: "哈哈你回得好快，你是真人还是 AI 啊",
     checks: [C.noWrite(), C.noSkip(), C.maxQuestions(1), C.questions(1, false)],
+  },
+  {
+    id: "style-request",
+    title: "对话定制简历样式",
+    note: "建档中途用户提简历外观要求。应调用 design_resume_style：两栏、标题或主色是深绿；不写画像，最多一个问句。",
+    script: { turns: LM.slice(0, 8) },
+    message: "对了，简历能不能更稳重一点？标题用深绿，做成两栏",
+    checks: [
+      C.custom("styleTool", "调用 design_resume_style 并保存", (o) => styleArgs(o) !== undefined),
+      C.custom("style:sidebar", "layout=sidebar", (o) => styleArgs(o)?.layout === "sidebar"),
+      C.custom("style:green", "标题或主色是深绿", (o) => {
+        const args = styleArgs(o);
+        const color = String(args?.headingColor ?? args?.accent ?? "");
+        if (!/^#[0-9a-f]{6}$/i.test(color)) return false;
+        const { h, l } = hue(color);
+        return h >= 85 && h <= 170 && l < 0.4;
+      }),
+      C.noWrite(),
+      C.maxQuestions(1),
+    ],
   },
 ];

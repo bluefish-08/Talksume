@@ -55,8 +55,9 @@ export function TemplatePicker({
     };
   }, [open]);
 
-  const pickTemplate = (template: ResumeTemplate) => save.mutate({ ...style, template });
-  const pickAccent = (accent: ResumeAccent) => save.mutate({ ...style, accent });
+  const { theme, ...preset } = style;
+  const pickTemplate = (template: ResumeTemplate) => save.mutate({ ...preset, template });
+  const pickAccent = (accent: ResumeAccent) => save.mutate({ ...preset, accent });
   const runRecommend = () => {
     setAdvice(null);
     recommend.mutate(undefined, {
@@ -80,10 +81,10 @@ export function TemplatePicker({
       >
         <span
           className={styles.dot}
-          style={{ background: accentOn ? ACCENT_INFO[style.accent].hex : "#111" }}
+          style={{ background: theme ? theme.accent : accentOn ? ACCENT_INFO[style.accent].hex : "#111" }}
           aria-hidden="true"
         />
-        {TEMPLATE_INFO[style.template].label}
+        {theme ? `AI 定制 · ${theme.name}` : TEMPLATE_INFO[style.template].label}
         <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
       </button>
 
@@ -114,6 +115,11 @@ export function TemplatePicker({
               {advice.reason}
             </p>
           )}
+          <p className={styles.custom}>
+            {theme
+              ? `当前是对话里定制的样式「${theme.name}」。选任一预设模板即可换回。`
+              : "也可以直接在对话里说想要的风格，比如「稳重一点，标题用深绿，做成两栏」。"}
+          </p>
           {recommend.isError && (
             <p className={`${styles.advice} ${styles.adviceError}`} role="alert">
               {failure}
@@ -122,7 +128,7 @@ export function TemplatePicker({
 
           <fieldset className={styles.grid} aria-label="模板">
             {RESUME_TEMPLATES.map((template) => {
-              const selected = template === style.template;
+              const selected = !theme && template === style.template;
               return (
                 <button
                   key={template}
@@ -160,7 +166,7 @@ export function TemplatePicker({
                 <button
                   key={accent}
                   type="button"
-                  aria-pressed={accent === style.accent}
+                  aria-pressed={!theme && accent === style.accent}
                   aria-label={ACCENT_INFO[accent].label}
                   title={ACCENT_INFO[accent].label}
                   className={styles.swatch}

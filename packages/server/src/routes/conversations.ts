@@ -28,6 +28,7 @@ import {
 import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
 import { matchingJobTools, storeResumeTailor } from "../job-tools.ts";
+import { storeResumeStyler } from "../resume-style.ts";
 import { matchingServiceFor } from "./matching.ts";
 import { resumeRoutes } from "./resume.ts";
 import { resumeImportRoutes } from "./resume-import.ts";
@@ -66,6 +67,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   const chatTools = (userId: string) => ({
     jobs: matchingJobTools(jobService, userId),
     ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId) }),
+    styles: storeResumeStyler(db, userId),
   });
 
   const snapshotOf = (state: ReturnType<typeof createIntakeState>) => ({

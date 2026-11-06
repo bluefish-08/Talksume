@@ -6,5 +6,6 @@ export * from "./memory.ts";
 export * from "./prompt.ts";
 export * from "./resume-import.ts";
 export * from "./schemas.ts";
+export * from "./style-tools.ts";
 export * from "./tools.ts";
 export * from "./types.ts";

@@ -7,7 +7,7 @@ import type { RouteModule } from "../app.ts";
 import { latestCompletedSections, listFacts, loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
 import { polishedResume } from "../polish-store.ts";
-import { loadResumeStyle } from "../resume-style.ts";
+import { loadResumeStyle, saveResumeStyle } from "../resume-style.ts";
 
 const FORMATS = {
   pdf: { mime: "application/pdf", render: renderPdf },
@@ -47,14 +47,12 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
 
   app.put("/api/v1/resume/style", async (req, reply) => {
     const parsed = ResumeStyle.safeParse(req.body);
-    if (!parsed.success) return sendError(reply, 400, "invalid_request", "模板或强调色不在可选范围内");
-    const updated = await db
-      .update(schema.users)
-      .set({ resumeStyle: parsed.data })
-      .where(eq(schema.users.id, req.userId))
-      .returning({ id: schema.users.id });
-    if (updated.length === 0) return sendError(reply, 404, "user_not_found", "用户不存在");
-    return { style: parsed.data };
+    if (!parsed.success) return sendError(reply, 400, "invalid_request", "模板、强调色或定制样式不合法");
+    const style = resolveResumeStyle(parsed.data);
+    if (!(await saveResumeStyle(db, req.userId, style))) {
+      return sendError(reply, 404, "user_not_found", "用户不存在");
+    }
+    return { style };
   });
 
   app.post("/api/v1/resume/style/recommend", async (req, reply) => {
@@ -113,10 +111,11 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
       return sendError(reply, 409, "profile_empty", "还没有可导出的内容，先和助手聊几句吧");
     }
     const saved = await loadResumeStyle(db, req.userId);
-    const style = resolveResumeStyle({
-      template: template ?? saved.template,
-      accent: accent ?? saved.accent,
-    });
+    // 显式指定预设时按预设导出，否则用保存的样式（含对话定制的主题）
+    const style =
+      template || accent
+        ? resolveResumeStyle({ template: template ?? saved.template, accent: accent ?? saved.accent })
+        : saved;
     const target = FORMATS[format];
     try {
       const file = await target.render(resume, style);

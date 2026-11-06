@@ -245,8 +245,11 @@ export function ResumePreview({
 }: Props) {
   const host = useRef<HTMLElement>(null);
   const idPrefix = useId().replace(/:/g, "");
-  const { template, accent } = resumeStyle;
-  const fragment = useMemo(() => renderFragment(resume, { template, accent }), [resume, template, accent]);
+  const { template, accent, theme } = resumeStyle;
+  const fragment = useMemo(
+    () => renderFragment(resume, { template, accent, theme }),
+    [resume, template, accent, theme],
+  );
   const highlightKey = [...(highlightTexts ?? [])].join("\u0000");
   const factsKey = JSON.stringify(facts ?? {});
   const placeholdersKey = placeholders.join("\u0000");

@@ -1,5 +1,5 @@
 import type { Fact, Profile } from "@talksume/core";
-import type { IntakeState } from "../../src/index.ts";
+import type { IntakeState, ToolRecord } from "../../src/index.ts";
 import type { TurnOutcome } from "../lib/turn.ts";
 
 export interface Snapshot {
@@ -11,6 +11,8 @@ export interface Snapshot {
   /** 暂存条目的分区和名字。 */
   draftItems: { section: string; name: string }[];
   completed: string[];
+  /** 最后一条助手回复落库的工具调用。 */
+  tools: ToolRecord[];
 }
 
 export function snapshot(state: IntakeState): Snapshot {
@@ -25,6 +27,7 @@ export function snapshot(state: IntakeState): Snapshot {
       name: String(d.item.name ?? d.item.company ?? d.item.school ?? ""),
     })),
     completed: [...state.completedSections],
+    tools: state.history.findLast((t) => t.role === "assistant")?.meta?.tools ?? [],
   });
 }
 

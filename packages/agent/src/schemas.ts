@@ -3,11 +3,20 @@ import {
   Basics,
   Education,
   Experience,
+  HexColor,
   Intention,
   PROFILE_SECTIONS,
   type ProfileSection,
   Project,
   Skill,
+  THEME_ALIGNS,
+  THEME_BULLETS,
+  THEME_DENSITIES,
+  THEME_FONTS,
+  THEME_HEADERS,
+  THEME_HEADINGS,
+  THEME_LAYOUTS,
+  THEME_SKILLS,
 } from "@talksume/core";
 import { z } from "zod";
 
@@ -171,6 +180,45 @@ export const TailorResumeArgs = z.object({
 });
 export type TailorResumeArgs = z.infer<typeof TailorResumeArgs>;
 
+export const DesignResumeStyleArgs = z.object({
+  name: z.string().trim().min(1).max(12).optional().describe("这套样式的短名字，如「稳重深绿」「清爽蓝」"),
+  accent: HexColor.optional().describe(
+    "主色 #rrggbb，用于标题、线条、色块。用户说的颜色换成具体色值，如深绿 #166534、藏青 #1e3a5f、酒红 #9f1239、墨黑 #1f2937",
+  ),
+  headingColor: HexColor.optional().describe("分区标题文字色；用户单独指定标题颜色且和主色不同时才填"),
+  bodyFont: z
+    .enum(THEME_FONTS)
+    .optional()
+    .describe("正文字体：sans 黑体（现代清爽），serif 宋体（传统稳重）"),
+  headingFont: z
+    .enum(THEME_FONTS)
+    .optional()
+    .describe("姓名和分区标题字体：sans 黑体，serif 宋体（稳重、正式）"),
+  header: z
+    .enum(THEME_HEADERS)
+    .optional()
+    .describe("抬头：plain 无装饰，rule 底部细线，band 主色色块白字（醒目活泼）"),
+  headerAlign: z.enum(THEME_ALIGNS).optional().describe("抬头对齐：left 左对齐，center 居中"),
+  headingStyle: z
+    .enum(THEME_HEADINGS)
+    .optional()
+    .describe(
+      "分区标题：underline 下划线（经典），bar 左侧色条（现代），block 色块白字（醒目），plain 只变色（极简）",
+    ),
+  layout: z
+    .enum(THEME_LAYOUTS)
+    .optional()
+    .describe("single 单栏（网申系统读取最稳），sidebar 两栏（左栏放教育、技能、奖项）"),
+  bullet: z.enum(THEME_BULLETS).optional().describe("项目符号：dot 圆点，square 方块，dash 短横"),
+  skills: z.enum(THEME_SKILLS).optional().describe("技能展示：line 文字行，tags 标签"),
+  density: z
+    .enum(THEME_DENSITIES)
+    .optional()
+    .describe("疏密：auto 自动排满一页，roomy 宽松，normal 标准，compact 紧凑（内容多、想压到一页）"),
+  reset: z.boolean().optional().describe("用户要回到原来的预设模板时填 true，其他字段都不填"),
+});
+export type DesignResumeStyleArgs = z.infer<typeof DesignResumeStyleArgs>;
+
 export type ToolName =
   | "upsert_facts"
   | "ask_user"
@@ -180,7 +228,8 @@ export type ToolName =
   | "recommend_jobs"
   | "search_jobs"
   | "explain_job"
-  | "tailor_resume";
+  | "tailor_resume"
+  | "design_resume_style";
 
 export const JOB_TOOL_NAMES: readonly ToolName[] = [
   "recommend_jobs",
@@ -248,6 +297,12 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description:
       "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。用户说「帮我针对这个岗位改一下简历」「让简历更适配美团那个」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。草稿会在右侧简历面板打开，要用户在面板里采用后才生效。",
     schema: TailorResumeArgs,
+  },
+  {
+    name: "design_resume_style",
+    description:
+      "按用户对简历外观的要求定制简历样式（配色、字体、抬头和分区标题样式、单栏或两栏、疏密），只改外观不改内容，预览和导出的 PDF 都会按它来。只填用户这次要改的字段，其余沿用当前样式。模糊说法这样翻译：「稳重/正式」→ 标题用 serif、underline 或 plain 标题、深色主色；「活泼/现代」→ band 抬头、bar 标题；「简洁」→ plain 抬头和标题；「紧凑/压到一页」→ compact。",
+    schema: DesignResumeStyleArgs,
   },
 ];
 
