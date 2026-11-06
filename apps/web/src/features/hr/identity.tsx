@@ -1,8 +1,6 @@
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import { apiAs } from "../../api/client.ts";
-
-const ID_KEY = "talksume.hrUserId";
-const PROFILE_KEY = "talksume.hrProfile";
+import { api } from "../../api/client.ts";
+import { getExtensions } from "../../extensions.ts";
 
 export interface HrIdentity {
   userId: string;
@@ -10,56 +8,32 @@ export interface HrIdentity {
   company: string;
 }
 
-export function loadIdentity(): HrIdentity | null {
-  try {
-    const userId = localStorage.getItem(ID_KEY);
-    if (!userId) return null;
-    const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "{}") as Partial<HrIdentity>;
-    return { userId, displayName: profile.displayName ?? "HR", company: profile.company ?? "" };
-  } catch {
-    return null;
-  }
-}
-
-export function saveIdentity(identity: HrIdentity): void {
-  try {
-    localStorage.setItem(ID_KEY, identity.userId);
-    localStorage.setItem(
-      PROFILE_KEY,
-      JSON.stringify({ displayName: identity.displayName, company: identity.company }),
-    );
-  } catch {
-    // 无痕模式下存不了：本次会话内仍可用
-  }
-}
-
-export function clearIdentity(): void {
-  try {
-    localStorage.removeItem(ID_KEY);
-    localStorage.removeItem(PROFILE_KEY);
-  } catch {
-    // 同上
-  }
-}
-
 interface HrContextValue {
   identity: HrIdentity;
-  client: ReturnType<typeof apiAs>;
-  signOut: () => void;
+  client: typeof api;
+  /** 没有登录系统（本地版）时为空，页面不显示退出按钮。 */
+  signOut: (() => void) | undefined;
 }
 
 const HrContext = createContext<HrContextValue | null>(null);
 
-export function HrProvider({
-  identity,
-  signOut,
-  children,
-}: {
-  identity: HrIdentity;
-  signOut: () => void;
-  children: ReactNode;
-}) {
-  const value = useMemo(() => ({ identity, signOut, client: apiAs(identity.userId) }), [identity, signOut]);
+/** HR 身份来自部署版注册的登录态；本地版没有登录，用固定的本机身份。 */
+export function HrProvider({ children }: { children: ReactNode }) {
+  const { useAccount, useLogout } = getExtensions();
+  const account = useAccount?.() ?? null;
+  const logout = useLogout?.();
+  const value = useMemo<HrContextValue>(
+    () => ({
+      identity: {
+        userId: account?.id ?? "local",
+        displayName: account?.displayName ?? account?.email ?? "本机用户",
+        company: "",
+      },
+      client: api,
+      signOut: logout,
+    }),
+    [account, logout],
+  );
   return <HrContext.Provider value={value}>{children}</HrContext.Provider>;
 }
 

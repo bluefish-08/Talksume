@@ -8,6 +8,7 @@
     "start": "node src/main.ts"
   },
   "dependencies": {
+    "@talksume/cloud-auth": "workspace:*",
     "@talksume/db": "workspace:*",
     "@talksume/llm-gateway": "workspace:*",
     "@talksume/matching": "workspace:*",

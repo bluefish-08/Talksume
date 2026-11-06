@@ -1,3 +1,4 @@
+import { createCloudIdentity, createRedisRateLimiter, migrateCloudAuth } from "@talksume/cloud-auth";
 import { createDb, migrate } from "@talksume/db";
 import { createGateway, type LlmCallLog, loadGatewayConfig } from "@talksume/llm-gateway";
 import { createEmbedderFromEnv, embedPendingJobs, seedJobsIfEmpty } from "@talksume/matching";
@@ -17,6 +18,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const database = databaseUrl ? await createDb({ url: databaseUrl }) : undefined;
 if (database) {
   await migrate(database);
+  await migrateCloudAuth(database);
   const seeded = await seedJobsIfEmpty(database.db);
   if (seeded > 0) console.log(`已写入 ${seeded} 条种子岗位`);
   const embedder = createEmbedderFromEnv();
@@ -35,12 +37,23 @@ const gateway = process.env.LLM_API_KEY
 const redisUrl = process.env.REDIS_URL;
 const redis = redisUrl ? await createRedisNotifier(redisUrl) : undefined;
 const notifier: NotificationBus = redis?.notifier ?? new InProcessNotifier();
+const rateLimit = redisUrl ? await createRedisRateLimiter(redisUrl) : undefined;
+
+const trustProxy = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+const identity = database
+  ? createCloudIdentity(database.db, {
+      log: (line) => console.log(line),
+      ...(rateLimit && { limiter: rateLimit.limiter }),
+    })
+  : undefined;
 
 const app = buildApp({
   edition: "cloud",
   version: process.env.APP_VERSION ?? "dev",
   logger: true,
   flow: { notifier },
+  ...(identity && { identity }),
+  ...(trustProxy > 0 && { trustProxy }),
   ...(database && { db: database.db }),
   ...(gateway && {
     llm: gatewayLlm(gateway),
@@ -73,6 +86,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         clearInterval(sweepTimer);
         await app.close();
         await redis?.close();
+        rateLimit?.close();
         await database?.close();
         process.exit(0);
       })(),

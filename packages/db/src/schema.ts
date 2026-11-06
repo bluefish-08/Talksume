@@ -53,12 +53,15 @@ export type ConversationIntakeState = {
   drafts?: unknown[];
 };
 
+export type UserRole = "seeker" | "hr" | "admin";
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash"),
   displayName: text("display_name"),
-  role: text("role").$type<"candidate" | "hr" | "admin">().notNull().default("candidate"),
+  role: text("role").$type<UserRole>().notNull().default("seeker"),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   resumeStyle: jsonb("resume_style").$type<ResumeStyle>(),
   createdAt: createdAt(),
 });

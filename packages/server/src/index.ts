@@ -10,6 +10,16 @@ export {
 export { type ConversationSummarizer, gatewaySummarizer } from "./conversation-memory.ts";
 export { type ConversationTitler, gatewayTitler } from "./conversation-title.ts";
 export { ConnectorRegistry } from "./flow/channels.ts";
+export { HttpError, installErrorHandler, isUniqueViolation, parse, parseId } from "./flow/http.ts";
+export {
+  devHeaderIdentity,
+  type Identity,
+  type IdentityProvider,
+  installIdentity,
+  localUserIdentity,
+  REPLIED,
+  requireRole,
+} from "./identity.ts";
 export { gatewayLlm } from "./llm.ts";
 export {
   createRedisNotifier,

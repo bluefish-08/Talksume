@@ -3,7 +3,7 @@ import { createDb, type DbHandle, JobRepo, migrate, schema } from "@talksume/db"
 import { dedupeJobs } from "@talksume/matching";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { registerDevAuth } from "../auth.ts";
+import { devHeaderIdentity, installIdentity } from "../identity.ts";
 import { jobsBrowseRoutes } from "./jobs-browse.ts";
 import { createMatchingRoutes } from "./matching.ts";
 
@@ -50,7 +50,7 @@ beforeAll(async () => {
   await migrate(handle);
   await new JobRepo(handle.db).upsertMany(JOBS);
   app = Fastify();
-  registerDevAuth(app, handle.db);
+  installIdentity(app, devHeaderIdentity(handle.db));
   const deps = { edition: "cloud" as const, version: "t", db: handle.db };
   jobsBrowseRoutes(app, deps);
   createMatchingRoutes({ llm: null, embedder: null })(app, deps);

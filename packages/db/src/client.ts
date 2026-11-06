@@ -40,11 +40,24 @@ export async function createDb(options: DbOptions): Promise<DbHandle> {
   };
 }
 
-export async function migrate(handle: DbHandle): Promise<void> {
-  const config = { migrationsFolder: MIGRATIONS_FOLDER };
+export interface MigrateFolderOptions {
+  folder: string;
+  /** 迁移记录表名；扩展包用自己的表，避免和主迁移记录混在一起。 */
+  table?: string;
+}
+
+export async function migrateFolder(
+  handle: DbHandle,
+  { folder, table }: MigrateFolderOptions,
+): Promise<void> {
+  const config = { migrationsFolder: folder, ...(table && { migrationsTable: table }) };
   if (handle.driver === "pglite") {
     await migratePglite(handle.db as Parameters<typeof migratePglite>[0], config);
   } else {
     await migrateNodePg(handle.db as Parameters<typeof migrateNodePg>[0], config);
   }
+}
+
+export function migrate(handle: DbHandle): Promise<void> {
+  return migrateFolder(handle, { folder: MIGRATIONS_FOLDER });
 }

@@ -26,9 +26,6 @@
       "path": "packages/jobs-ingest"
     },
     {
-      "path": "cloud/server"
-    },
-    {
       "path": "apps/web"
     }
   ]

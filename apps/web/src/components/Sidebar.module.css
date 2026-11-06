@@ -170,12 +170,25 @@
   font-weight: 500;
 }
 
-.userName {
+.userText {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.userName,
+.userEmail {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.userEmail {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .confirmText {

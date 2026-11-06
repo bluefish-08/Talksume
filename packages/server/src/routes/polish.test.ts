@@ -3,7 +3,7 @@ import { createDb, type DbHandle, migrate, schema } from "@talksume/db";
 import { eq } from "drizzle-orm";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { registerDevAuth } from "../auth.ts";
+import { devHeaderIdentity, installIdentity } from "../identity.ts";
 import type { StructuredLlm } from "../polish-llm.ts";
 import { createPolishRoutes } from "./polish.ts";
 import { resumeRoutes } from "./resume.ts";
@@ -60,7 +60,7 @@ afterEach(() => handle.close());
 
 function appWith(llm: StructuredLlm | null): FastifyInstance {
   const app = Fastify();
-  registerDevAuth(app, handle.db);
+  installIdentity(app, devHeaderIdentity(handle.db));
   const deps = { edition: "cloud" as const, version: "t", db: handle.db };
   createPolishRoutes({ llm })(app, deps);
   resumeRoutes(app, deps);

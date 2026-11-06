@@ -1,13 +1,4 @@
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { App } from "./App.tsx";
+import { mountApp } from "./mount.tsx";
 import "./styles/global.css";
 
-const root = document.getElementById("root");
-if (!root) throw new Error("缺少 #root 挂载点");
-
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+mountApp();

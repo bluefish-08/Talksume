@@ -24,6 +24,17 @@ export function toApiError(status: number, body: unknown): ApiError {
   return new ApiError(status, code, message, b.retryable === true || status >= 500);
 }
 
+let onUnauthorized: () => void = () => {};
+
+/** 业务接口返回 401（会话过期、被踢下线）时，由登录态容器接手跳转登录页。 */
+export function setUnauthorizedHandler(fn: () => void): void {
+  onUnauthorized = fn;
+}
+
+export function reportStatus(status: number, path: string): void {
+  if (status === 401 && !path.startsWith("/api/v1/auth/")) onUnauthorized();
+}
+
 export async function request<T>(
   method: string,
   path: string,
@@ -40,7 +51,10 @@ export async function request<T>(
   const res = await fetch(path, init);
   const text = await res.text();
   const data: unknown = text ? JSON.parse(text) : undefined;
-  if (!res.ok) throw toApiError(res.status, data);
+  if (!res.ok) {
+    reportStatus(res.status, path);
+    throw toApiError(res.status, data);
+  }
   return data as T;
 }
 
@@ -56,6 +70,3 @@ function client(headers: Record<string, string> = {}) {
 }
 
 export const api = client();
-
-/** 开发期身份：HR 工作台用另一个用户身份请求（服务端 dev auth 读 x-talksume-user）。 */
-export const apiAs = (userId: string) => client({ "x-talksume-user": userId });

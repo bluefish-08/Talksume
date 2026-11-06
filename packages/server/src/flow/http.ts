@@ -6,12 +6,14 @@ import type { z } from "zod";
 export class HttpError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly retryAfterSec: number | undefined;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, retryAfterSec?: number) {
     super(message);
     this.name = "HttpError";
     this.status = status;
     this.code = code;
+    this.retryAfterSec = retryAfterSec;
   }
 }
 
@@ -35,7 +37,13 @@ export function installErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err, req, reply) => {
     const send = (status: number, code: string, message: string) =>
       reply.status(status).send({ error: code, message });
-    if (err instanceof HttpError) return send(err.status, err.code, err.message);
+    if (err instanceof HttpError) {
+      if (err.retryAfterSec === undefined) return send(err.status, err.code, err.message);
+      return reply
+        .header("retry-after", err.retryAfterSec)
+        .status(err.status)
+        .send({ error: err.code, message: err.message, retryAfterSec: err.retryAfterSec });
+    }
     if (err instanceof InvalidTransitionError) return send(409, "invalid_transition", err.message);
     if (err instanceof ConcurrentTransitionError) return send(409, "concurrent_modification", err.message);
     if (err instanceof ApplicationNotFoundError) return send(404, "not_found", err.message);

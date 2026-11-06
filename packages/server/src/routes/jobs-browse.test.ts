@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../app.ts";
-import { registerDevAuth } from "../auth.ts";
+import { devHeaderIdentity, installIdentity } from "../identity.ts";
 import { jobsBrowseRoutes } from "./jobs-browse.ts";
 
 let handle: DbHandle;
@@ -52,7 +52,7 @@ beforeAll(async () => {
   ]);
   await handle.db.update(schema.jobs).set({ status: "closed" }).where(eq(schema.jobs.id, "fake:closed"));
   app = Fastify();
-  registerDevAuth(app, handle.db);
+  installIdentity(app, devHeaderIdentity(handle.db));
   jobsBrowseRoutes(app, { edition: "cloud", version: "t", db: handle.db });
 }, 60_000);
 afterAll(() => handle.close());

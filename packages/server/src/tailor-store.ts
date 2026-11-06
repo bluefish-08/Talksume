@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { applyTailoring, type Profile, profileToResume, type TailorChange } from "@talksume/core";
 import { type Db, schema } from "@talksume/db";
+import { visibleTo } from "@talksume/matching";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { listFacts, loadProfile } from "./conversation-store.ts";
 import type { StructuredLlm } from "./polish-llm.ts";
@@ -21,11 +22,11 @@ export class TailorError extends Error {
   }
 }
 
-export async function loadTailorJob(db: Db, jobId: string): Promise<TailorJob | null> {
+export async function loadTailorJob(db: Db, userId: string, jobId: string): Promise<TailorJob | null> {
   const [job] = await db
     .select({ id: jobs.id, company: jobs.company, title: jobs.title, jdText: jobs.jdText, tags: jobs.tags })
     .from(jobs)
-    .where(eq(jobs.id, jobId));
+    .where(and(eq(jobs.id, jobId), visibleTo(userId)));
   return job ?? null;
 }
 
@@ -52,7 +53,7 @@ export async function generateTailoring(
   jobId: string,
   options: { profile?: Profile; quotes?: readonly string[]; signal?: AbortSignal } = {},
 ) {
-  const job = await loadTailorJob(db, jobId);
+  const job = await loadTailorJob(db, userId, jobId);
   if (!job) throw new TailorError("job_not_found", "岗位不存在");
   const base = await mainResume(db, userId, options.profile);
   const tailorable = base.sections.some((s) => s.kind !== "education" && s.items.length > 0);
@@ -120,7 +121,7 @@ export async function adoptedVersionFor(db: Db, userId: string, jobId: string): 
 }
 
 export async function tailoringView(db: Db, userId: string, jobId: string) {
-  const job = await loadTailorJob(db, jobId);
+  const job = await loadTailorJob(db, userId, jobId);
   if (!job) throw new TailorError("job_not_found", "岗位不存在");
   const row = await loadRow(db, userId, jobId);
   const summary = { id: job.id, company: job.company, title: job.title };

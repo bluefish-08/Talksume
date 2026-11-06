@@ -9,6 +9,7 @@ import {
   useRestoreConversation,
 } from "../api/queries.ts";
 import type { ConversationSummary } from "../api/types.ts";
+import { getExtensions } from "../extensions.ts";
 import { Modal } from "../features/jobs/Modal.tsx";
 import { NotificationsBell } from "../features/notifications/NotificationsBell.tsx";
 import { Logo } from "./Logo.tsx";
@@ -22,13 +23,15 @@ const NAV = [
   { to: "/applications", label: "投递进度", icon: ListChecks },
 ] as const;
 
-const linkClass = ({ isActive }: { isActive: boolean }) =>
+export const linkClass = ({ isActive }: { isActive: boolean }) =>
   [styles.link, isActive && styles.active].filter(Boolean).join(" ");
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const conversations = useConversations();
   const profile = useProfile();
-  const name = profile.data?.profile.basics.name || "我";
+  const { SidebarLinks, SidebarAccount, useAccount } = getExtensions();
+  const account = useAccount?.();
+  const name = profile.data?.profile.basics.name || account?.displayName || "我";
 
   return (
     <nav aria-label="侧边栏" className={styles.sidebar}>
@@ -61,12 +64,22 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </div>
 
+      {SidebarLinks && (
+        <div className={styles.group}>
+          <SidebarLinks onNavigate={onNavigate} />
+        </div>
+      )}
+
       <div className={styles.user}>
         <span className={styles.avatar} aria-hidden="true">
           {name.slice(0, 1)}
         </span>
-        <span className={styles.userName}>{name}</span>
+        <span className={styles.userText}>
+          <span className={styles.userName}>{name}</span>
+          {account && <span className={styles.userEmail}>{account.email}</span>}
+        </span>
         <NotificationsBell />
+        {SidebarAccount && <SidebarAccount />}
       </div>
     </nav>
   );

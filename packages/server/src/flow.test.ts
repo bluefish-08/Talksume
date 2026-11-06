@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "./app.ts";
 import { ConnectorRegistry } from "./flow/channels.ts";
+import { localUserIdentity } from "./identity.ts";
 import { InProcessNotifier, type NotificationBus } from "./notifications/bus.ts";
 import { runReminderSweep } from "./notifications/reminders.ts";
 
@@ -381,33 +382,16 @@ describe("权限", () => {
     expect(restyled.body.items[0].resume).toMatchObject({ template: "tech", accent: "teal" });
   });
 
-  it("TALKSUME_DEMO=1 时生产环境也开放演示 HR 接口", async () => {
-    const previous = { env: process.env.NODE_ENV, demo: process.env.TALKSUME_DEMO };
-    process.env.NODE_ENV = "production";
-    process.env.TALKSUME_DEMO = "1";
-    try {
-      const prod = buildApp({ edition: "cloud", version: "t", db: handle.db });
-      const res = await prod.inject({ method: "POST", url: "/api/v1/dev/hr", payload: {} });
-      expect(res.statusCode).toBe(200);
-      await prod.close();
-    } finally {
-      process.env.NODE_ENV = previous.env;
-      if (previous.demo === undefined) delete process.env.TALKSUME_DEMO;
-      else process.env.TALKSUME_DEMO = previous.demo;
-    }
-  });
-
-  it("生产环境不注册开发用的 HR 接口", async () => {
-    const previous = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
-    try {
-      const prod = buildApp({ edition: "cloud", version: "t", db: handle.db });
-      const res = await prod.inject({ method: "POST", url: "/api/v1/dev/hr", payload: {} });
-      expect(res.statusCode).toBe(404);
-      await prod.close();
-    } finally {
-      process.env.NODE_ENV = previous;
-    }
+  it("非开发身份不注册开发用的 HR 接口", async () => {
+    const prod = buildApp({
+      edition: "cloud",
+      version: "t",
+      db: handle.db,
+      identity: localUserIdentity(handle.db),
+    });
+    const res = await prod.inject({ method: "POST", url: "/api/v1/dev/hr", payload: {} });
+    expect(res.statusCode).toBe(404);
+    await prod.close();
   });
 });
 

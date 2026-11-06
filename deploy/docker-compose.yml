@@ -46,7 +46,18 @@ services:
       RERANK_MODEL: ${RERANK_MODEL:-}
       RERANK_API_KEY: ${RERANK_API_KEY:-}
       RERANK_TOP_K: ${RERANK_TOP_K:-}
-      TALKSUME_DEMO: ${TALKSUME_DEMO:-1}
+      NODE_ENV: ${NODE_ENV:-production}
+      AUTH_EMAIL_ENABLED: ${AUTH_EMAIL_ENABLED:-false}
+      APP_URL: ${APP_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

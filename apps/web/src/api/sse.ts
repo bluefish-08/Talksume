@@ -1,4 +1,4 @@
-import { toApiError } from "./client.ts";
+import { reportStatus, toApiError } from "./client.ts";
 
 export interface SseMessage {
   event: string;
@@ -20,6 +20,7 @@ export async function* postSse(
   const res = await fetch(path, init);
   if (!res.ok || !res.body) {
     const text = await res.text();
+    reportStatus(res.status, path);
     throw toApiError(res.status, text ? JSON.parse(text) : undefined);
   }
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();

@@ -10,6 +10,7 @@ import {
   type StatusSource,
 } from "@talksume/core";
 import { schema, type TransitionOptions } from "@talksume/db";
+import { visibleTo } from "@talksume/matching";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { polishedResume } from "../polish-store.ts";
 import { loadResumeStyle } from "../resume-style.ts";
@@ -146,7 +147,10 @@ async function snapshotResume(ctx: FlowContext, userId: string): Promise<string 
 }
 
 export async function createApplication(ctx: FlowContext, userId: string, input: CreateApplicationInput) {
-  const [job] = await ctx.db.select().from(jobs).where(eq(jobs.id, input.jobId));
+  const [job] = await ctx.db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, input.jobId), visibleTo(userId)));
   if (!job) throw new HttpError(404, "job_not_found", "职位不存在");
   if (job.status !== "open") throw new HttpError(409, "job_closed", "职位已关闭");
 

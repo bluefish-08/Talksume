@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src", "drizzle.config.ts"],
+  "references": [
+    {
+      "path": "../../packages/server"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/matching"
+    }
+  ]
+}

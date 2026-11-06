@@ -10,10 +10,13 @@
     "dev:server": "pnpm --filter @talksume/cloud-server dev",
     "dev:web": "pnpm --filter @talksume/web dev",
     "build": "pnpm -r --if-present build",
-    "typecheck": "tsc -b",
+    "typecheck": "node scripts/typecheck.mjs",
     "test": "vitest run",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "check:boundary": "node scripts/open-boundary.ts",
+    "verify:open-build": "node scripts/verify-open-build.ts",
+    "dev:cloud-web": "pnpm --filter @talksume/cloud-web dev"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",

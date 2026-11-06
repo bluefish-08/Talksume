@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "cloud/auth"
+    },
+    {
+      "path": "cloud/server"
+    },
+    {
+      "path": "cloud/web"
+    }
+  ]
+}

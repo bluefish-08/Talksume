@@ -1,55 +1,27 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { ApiError } from "../api/client.ts";
 import { Logo } from "../components/Logo.tsx";
 import { useToast } from "../components/Toast.tsx";
 import { Button } from "../components/ui.tsx";
 import { HrApplicationDrawer } from "../features/hr/HrApplicationDrawer.tsx";
 import { HrApplicationsPane } from "../features/hr/HrApplicationsPane.tsx";
 import { HrJobsPane } from "../features/hr/HrJobsPane.tsx";
-import { HrSetup } from "../features/hr/HrSetup.tsx";
-import {
-  clearIdentity,
-  type HrIdentity,
-  HrProvider,
-  loadIdentity,
-  saveIdentity,
-  useHr,
-} from "../features/hr/identity.tsx";
+import { HrProvider, useHr } from "../features/hr/identity.tsx";
 import { JobFormDialog } from "../features/hr/JobFormDialog.tsx";
 import { useHrApplications, useHrJobs } from "../features/hr/queries.ts";
 import styles from "./Hr.module.css";
 
 export function HrPage() {
-  const [identity, setIdentity] = useState<HrIdentity | null>(loadIdentity);
-
-  const signOut = useCallback(() => {
-    clearIdentity();
-    setIdentity(null);
-  }, []);
-
   return (
     <div className={styles.page}>
-      {identity ? (
-        <HrProvider identity={identity} signOut={signOut}>
-          <Workspace />
-        </HrProvider>
-      ) : (
-        <>
-          <Header />
-          <HrSetup
-            onDone={(next) => {
-              saveIdentity(next);
-              setIdentity(next);
-            }}
-          />
-        </>
-      )}
+      <HrProvider>
+        <Workspace />
+      </HrProvider>
     </div>
   );
 }
 
-function Header({ who }: { who?: { name: string; company: string; signOut: () => void } }) {
+function Header({ who }: { who?: { name: string; company: string; signOut: (() => void) | undefined } }) {
   return (
     <header className={styles.header}>
       <div className={styles.brand}>
@@ -63,9 +35,11 @@ function Header({ who }: { who?: { name: string; company: string; signOut: () =>
             {who.name}
             {who.company && <span className={styles.company}> · {who.company}</span>}
           </span>
-          <Button size="sm" variant="ghost" onClick={who.signOut}>
-            切换身份
-          </Button>
+          {who.signOut && (
+            <Button size="sm" variant="ghost" onClick={who.signOut}>
+              退出登录
+            </Button>
+          )}
         </div>
       )}
     </header>
@@ -97,20 +71,6 @@ function Workspace() {
       },
       { replace },
     );
-
-  if (jobs.error instanceof ApiError && (jobs.error.status === 403 || jobs.error.status === 401)) {
-    return (
-      <>
-        <Header />
-        <div className={styles.expired}>
-          <p>这个 HR 身份已经失效了。</p>
-          <Button variant="dark" onClick={signOut}>
-            重新创建身份
-          </Button>
-        </div>
-      </>
-    );
-  }
 
   return (
     <>

@@ -4,7 +4,7 @@ import { type StructuredLlm, seedJobsIfEmpty } from "@talksume/matching";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../app.ts";
-import { registerDevAuth } from "../auth.ts";
+import { devHeaderIdentity, installIdentity } from "../identity.ts";
 import { createMatchingRoutes } from "./matching.ts";
 
 let handle: DbHandle;
@@ -20,7 +20,7 @@ function appWith(
   options: Parameters<typeof createMatchingRoutes>[0] = { llm: null, embedder: null, reranker: null },
 ) {
   const app = Fastify();
-  registerDevAuth(app, handle.db);
+  installIdentity(app, devHeaderIdentity(handle.db));
   createMatchingRoutes(options)(app, { edition: "cloud", version: "t", db: handle.db });
   return app;
 }

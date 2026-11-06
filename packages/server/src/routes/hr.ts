@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { FlowContext } from "../flow/context.ts";
 import { HttpError, parse, parseId } from "../flow/http.ts";
 import { applicationColumns, loadTimeline, move } from "../flow/service.ts";
+import { requireRole } from "../identity.ts";
 
 const { applications, jobs, resumeVersions, users } = schema;
 
@@ -39,11 +40,6 @@ const ListQuery = z.object({
 });
 
 export function registerHrRoutes(app: FastifyInstance, ctx: FlowContext): void {
-  const requireHr = async (req: { userId: string }) => {
-    const [user] = await ctx.db.select({ role: users.role }).from(users).where(eq(users.id, req.userId));
-    if (user?.role !== "hr") throw new HttpError(403, "forbidden", "需要 HR 身份");
-  };
-
   const hrSelect = {
     application: applicationColumns,
     job: { id: jobs.id, title: jobs.title, company: jobs.company, ownerId: jobs.ownerId },
@@ -81,7 +77,7 @@ export function registerHrRoutes(app: FastifyInstance, ctx: FlowContext): void {
   }
 
   app.register(async (hr) => {
-    hr.addHook("preHandler", requireHr);
+    hr.addHook("preHandler", requireRole("hr", "admin"));
 
     hr.post("/api/v1/hr/jobs", async (req, reply) => {
       const body = parse(JobBody, req.body);

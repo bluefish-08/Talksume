@@ -6,7 +6,14 @@ import { parseArgs } from "node:util";
 import { createDb, migrate, schema } from "@talksume/db";
 import { createGateway, type LlmCallLog, loadGatewayConfig } from "@talksume/llm-gateway";
 import { createEmbedderFromEnv, embedPendingJobs, seedJobsIfEmpty } from "@talksume/matching";
-import { buildApp, gatewayLlm, gatewaySummarizer, gatewayTitler, type TurnReport } from "../src/index.ts";
+import {
+  buildApp,
+  devHeaderIdentity,
+  gatewayLlm,
+  gatewaySummarizer,
+  gatewayTitler,
+  type TurnReport,
+} from "../src/index.ts";
 
 const { values } = parseArgs({
   options: {
@@ -71,6 +78,7 @@ const app = buildApp({
   edition: "cloud",
   version: "bench",
   db: handle.db,
+  identity: devHeaderIdentity(handle.db),
   llm: gatewayLlm(gateway),
   titler: gatewayTitler(gateway),
   summarizer: gatewaySummarizer(gateway),
