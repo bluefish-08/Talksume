@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError } from "../../api/client.ts";
 import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
+import { PrepareInterviewButton } from "../interview/PrepareButton.tsx";
 import styles from "./ApplicationDrawer.module.css";
 import { cityText, JOB_TYPE_LABELS } from "./format.ts";
 import { Modal } from "./Modal.tsx";
@@ -72,6 +73,9 @@ function Body({ detail }: { detail: ApplicationDetail }) {
             已记录，但还没有投出去：记得在官网完成投递，再回来点「我已在官网投递」。
           </p>
         )}
+        <div>
+          <PrepareInterviewButton jobId={job.id} size="sm" />
+        </div>
         {job.url && (
           <a className={styles.link} href={job.url} target="_blank" rel="noreferrer">
             查看职位原文

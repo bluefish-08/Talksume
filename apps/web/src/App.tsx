@@ -8,6 +8,7 @@ import { ApplicationsPage } from "./pages/Applications.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { HomePage } from "./pages/Home.tsx";
 import { HrPage } from "./pages/Hr.tsx";
+import { InterviewPage } from "./pages/Interview.tsx";
 import { JobsPage } from "./pages/Jobs.tsx";
 import { ResumePage } from "./pages/Resume.tsx";
 import { TailorPage } from "./pages/Tailor.tsx";
@@ -40,6 +41,7 @@ function buildRouter(ext: WebExtensions) {
             { path: "jobs", element: <JobsPage /> },
             { path: "applications", element: <ApplicationsPage /> },
             { path: "tailor/:jobId", element: <TailorPage /> },
+            { path: "interview/:jobId", element: <InterviewPage /> },
             ...(ext.shellRoutes ?? []),
           ],
         },

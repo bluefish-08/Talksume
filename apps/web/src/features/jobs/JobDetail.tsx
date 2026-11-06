@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { Button, IconButton, Spinner } from "../../components/ui.tsx";
+import { PrepareInterviewButton } from "../interview/PrepareButton.tsx";
 import { TailorLine } from "../tailor/TailorLine.tsx";
 import {
   dimRows,
@@ -241,6 +242,7 @@ export function JobDetail(props: DetailProps) {
             {busy.optimize && <Spinner label="准备中" />}针对这个岗位优化简历
           </Button>
           {applyButton(props)}
+          <PrepareInterviewButton jobId={job.id} size="lg" className={styles.optimize} />
         </div>
         {applyNote(props)}
         <div className={styles.minor}>

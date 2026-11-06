@@ -1,6 +1,7 @@
 export * from "./completeness.ts";
 export * from "./controller.ts";
 export * from "./facts.ts";
+export * from "./interview/index.ts";
 export * from "./job-tools.ts";
 export * from "./memory.ts";
 export * from "./prompt.ts";

@@ -24,6 +24,8 @@ export const OWNED_TABLES: OwnedTable[] = [
   { table: schema.notifications, keys: ["kind", "ref_id"] },
   { table: schema.llmCallLogs, keys: [] },
   { table: schema.userImages, keys: [] },
+  { table: schema.interviewPreps, keys: ["job_id"] },
+  { table: schema.interviewSessions, keys: [] },
 ];
 
 /** 单行主键的表：目标账号已有行时整表都不动。 */
@@ -85,6 +87,8 @@ async function rekeyImportedJobs(tx: Db, from: string, to: string): Promise<Tabl
       ["applications", "job_id"],
       ["feedback", "job_id"],
       ["resume_tailorings", "job_id"],
+      ["interview_preps", "job_id"],
+      ["interview_sessions", "job_id"],
       ["jobs", "duplicate_of"],
     ] as const) {
       await tx.execute(

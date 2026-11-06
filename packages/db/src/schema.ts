@@ -3,10 +3,13 @@ import {
   type ApplicationOutcome,
   type ApplicationStatus,
   type Fact,
+  type InterviewQuestion,
+  type InterviewSessionState,
   PROFILE_SECTIONS,
   type Profile,
   type ProfileSection,
   type ResumeContent,
+  type ResumeSource,
   type ResumeStyle,
   type StatusSource,
   type TailorChange,
@@ -247,6 +250,50 @@ export const resumeTailorings = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("resume_tailorings_user_job_uq").on(t.userId, t.jobId)],
+);
+
+/** 每个岗位一份面试题单；resume 是出题时用的简历快照，resumeSource 记录它取自哪里。 */
+export const interviewPreps = pgTable(
+  "interview_preps",
+  {
+    id: textId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    resumeSource: text("resume_source").$type<ResumeSource>().notNull(),
+    resumeVersionId: uuid("resume_version_id").references(() => resumeVersions.id, { onDelete: "set null" }),
+    resume: jsonb("resume").$type<ResumeContent>().notNull(),
+    questions: jsonb("questions").$type<InterviewQuestion[]>().notNull().default([]),
+    model: text("model"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("interview_preps_user_job_uq").on(t.userId, t.jobId),
+    check("interview_preps_source_check", sql`${t.resumeSource} in ('application', 'tailoring', 'current')`),
+  ],
+);
+
+/** 模拟面试会话，和建档对话（conversations）完全分开；题单随会话冻结一份，重新生成题单不影响进行中的面试。 */
+export const interviewSessions = pgTable(
+  "interview_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    questions: jsonb("questions").$type<InterviewQuestion[]>().notNull(),
+    state: jsonb("state").$type<InterviewSessionState>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("interview_sessions_user_job_idx").on(t.userId, t.jobId, t.updatedAt)],
 );
 
 export const jobs = pgTable(

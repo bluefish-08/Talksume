@@ -1,0 +1,166 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 860px;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: var(--surface-sunken);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stale {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+}
+
+.alert {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card[data-risky] {
+  border-color: #f0cfa6;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kind {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+
+.no {
+  font-size: 12px;
+  color: var(--placeholder);
+}
+
+.q {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.meta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-3);
+}
+
+.meta b {
+  margin-right: 8px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.risk {
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.risk svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.points {
+  margin-top: 4px;
+}
+
+.h {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.points ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.quote {
+  display: block;
+  font-size: 12px;
+  color: var(--placeholder);
+}
+
+.missing {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}

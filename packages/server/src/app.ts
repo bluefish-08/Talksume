@@ -12,6 +12,7 @@ import { type StructuredLlm, structuredLlmFromEnv } from "./polish-llm.ts";
 import { conversationTitleRoutes } from "./routes/conversation-title.ts";
 import { conversationRoutes } from "./routes/conversations.ts";
 import { flowRoutes } from "./routes/flow.ts";
+import { interviewRoutes } from "./routes/interview.ts";
 import { jobsBrowseRoutes } from "./routes/jobs-browse.ts";
 import { matchingRoutes } from "./routes/matching.ts";
 import { polishRoutes } from "./routes/polish.ts";
@@ -67,6 +68,7 @@ const routes: RouteModule[] = [
   conversationRoutes,
   conversationTitleRoutes,
   flowRoutes,
+  interviewRoutes,
   jobsBrowseRoutes,
   matchingRoutes,
   polishRoutes,
