@@ -16,6 +16,7 @@ import { MessageList } from "./MessageList.tsx";
 import { ResumePane, type TailorTarget } from "./ResumePane.tsx";
 import type { ConversationDetail, TailorCard } from "./types.ts";
 import { useChatSession } from "./useChatSession.ts";
+import { REPLICA_DEFAULT_TEXT, useImageDraft } from "./useImageDraft.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
 
 export function ChatView({ detail }: { detail: ConversationDetail }) {
@@ -27,6 +28,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const facts = useFacts();
   const conversations = useConversations();
   const [draft, setDraft] = useState("");
+  const imageDraft = useImageDraft();
   const [paneOpen, setPaneOpen] = useState(false);
   const [tailor, setTailor] = useState<TailorTarget | null>(null);
   const client = useQueryClient();
@@ -83,7 +85,11 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
 
   const submit = () => {
     scroller.pin();
-    if (send(draft)) setDraft("");
+    const text = draft.trim() || (imageDraft.images.length > 0 ? REPLICA_DEFAULT_TEXT : "");
+    if (send(text, imageDraft.images)) {
+      setDraft("");
+      imageDraft.clear();
+    }
   };
 
   return (
@@ -138,6 +144,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
               onStop={session.stop}
               inputRef={input}
               onAttach={() => importer.open()}
+              images={imageDraft}
               tools={<span className={styles.hint}>Enter 发送 · Shift + Enter 换行</span>}
             />
           </div>

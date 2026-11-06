@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CSS_LIMITS, sanitizeResumeCss } from "./resume-css.ts";
 import { hue, ResumeTheme, type ResumeThemePatch, sanitizeTheme } from "./resume-theme.ts";
 
 export const RESUME_TEMPLATES = ["campus", "modern", "minimal", "tech"] as const;
@@ -29,6 +30,8 @@ export const ResumeStyle = z.object({
   accent: z.enum(RESUME_ACCENTS),
   /** 对话里定制的主题；template/accent 同时存着最接近的预设，主题失效或 HR 快照时用它。 */
   theme: ResumeTheme.optional(),
+  /** 经 sanitizeResumeCss 规范化的定制 CSS，叠在主题（或预设）之上。 */
+  css: z.string().max(CSS_LIMITS.maxChars).optional(),
 });
 export type ResumeStyle = z.infer<typeof ResumeStyle>;
 
@@ -40,7 +43,28 @@ export function resolveResumeStyle(value: unknown): ResumeStyle {
   const template = RESUME_TEMPLATES.find((t) => t === raw.template) ?? DEFAULT_RESUME_STYLE.template;
   const accent = RESUME_ACCENTS.find((a) => a === raw.accent) ?? DEFAULT_RESUME_STYLE.accent;
   const theme = raw.theme === undefined ? null : sanitizeTheme(raw.theme)?.theme;
-  return theme ? { template, accent, theme } : { template, accent };
+  const css = typeof raw.css === "string" ? sanitizeResumeCss(raw.css) : undefined;
+  return {
+    template,
+    accent,
+    ...(theme && { theme }),
+    ...(css?.ok && { css: css.css }),
+  };
+}
+
+/** 保存定制 CSS：校验不过返回错误列表，样式不变。 */
+export function applyCustomCss(
+  current: ResumeStyle,
+  input: string,
+): { ok: true; style: ResumeStyle; rules: number; dropped: string[] } | { ok: false; errors: string[] } {
+  const result = sanitizeResumeCss(input);
+  if (!result.ok) return result;
+  return { ok: true, style: { ...current, css: result.css }, rules: result.rules, dropped: result.dropped };
+}
+
+export function clearCustomCss(current: ResumeStyle): ResumeStyle {
+  const { css: _css, ...rest } = current;
+  return rest;
 }
 
 const PRESET_THEMES: Record<ResumeTemplate, Omit<ResumeTheme, "name" | "accent">> = {
@@ -134,5 +158,5 @@ export function applyThemePatch(current: ResumeStyle, patch: ResumeThemePatch): 
   const sanitized = sanitizeTheme({ ...themeFromPreset(current), ...changes, name });
   if (!sanitized) return null;
   const { theme, notes } = sanitized;
-  return { style: { ...fallbackPreset(theme), theme }, notes };
+  return { style: { ...fallbackPreset(theme), theme, ...(current.css && { css: current.css }) }, notes };
 }

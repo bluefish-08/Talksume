@@ -11,6 +11,9 @@
     "sample": "node scripts/sample.ts"
   },
   "dependencies": {
+    "@fontsource/ma-shan-zheng": "^5.3.1",
+    "@fontsource/noto-sans-sc": "^5.3.1",
+    "@fontsource/noto-serif-sc": "^5.3.1",
     "@talksume/core": "workspace:*",
     "docx": "^9.15.1",
     "playwright": "^1.64.1"

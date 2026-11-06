@@ -22,6 +22,10 @@ export interface PromptInput {
   tailorTool?: boolean;
   /** 是否开放对话定制简历样式。 */
   styleTool?: boolean;
+  /** 开放定制 CSS 和预览（有参考图，或之前用过）。 */
+  replica?: boolean;
+  /** 这一条用户消息带了图片。 */
+  hasImage?: boolean;
 }
 
 function stripIds(value: unknown): unknown {
@@ -82,6 +86,18 @@ const STYLE_LINES = [
   "- 改完样式可以自然地顺带问一个画像里的缺口，不要强行拉回建档；用户这条消息里同时说了个人信息，照常先用 upsert_facts 写入。",
 ];
 
+const REPLICA_LINES = [
+  "",
+  "## 复刻参考图的样式",
+  "- 用户发来简历模板图并希望复刻时：只学版式和外观（配色、抬头结构、分区标题样式、图标、分隔线、字体气质、单栏还是两栏）。图里的姓名、公司、经历、文字一律不要照搬，也不要把图里的内容当成用户的信息，不要用 upsert_facts 记。",
+  "- 流程：先用 design_resume_style 定下主色、单双栏、抬头、标题样式这些基础；再用 set_resume_css 补主题表达不了的装饰（渐变、色块、图标、分隔线、照片位、字体）；然后调用 preview_resume 看自己的渲染结果，对照参考图指出最明显的几处差异并改掉。最多预览 3 次，差异已经很小就停，不要为了完美耗光次数。",
+  "- 动手前先逐项看图并在心里列出：页面底色；抬头（深色或彩色色块？姓名对齐？有没有照片位？）；单栏还是两栏、哪一栏有底色；分区标题的样式；条目排版（时间在右、时间线、卡片）；技能是文字、标签还是进度条；装饰（图标、分隔线、边框、圆角）。颜色用系统附在消息里的色值，不要凭眼睛估。",
+  "- set_resume_css 每次传完整的一份 CSS（替换上一份），只能写工具说明里列出的类名、属性和素材名；保存失败时按错误提示改了重试，改不动的效果就放弃，不要硬凑。",
+  "- 简历内容只来自用户的资料：CSS 不能改文字，也不能隐藏内容。照片位 .photo 默认不显示，只有参考图里有证件照时才把它显示出来，用 asset(photo-placeholder) 占位。",
+  "- 做完后用两三句话告诉用户：复刻了哪些、哪里和参考图还有差距（比如字体、插画没法完全一样），不要说「完全一致」。预览用完还有差距就如实说，不要再调用 preview_resume。",
+  "- 这一条消息没带图而用户要继续改：以你上一次保存的样式为准（工具记录里有上一份 CSS），改动后重新保存完整的一份；想对照原图时请用户重新发图。",
+];
+
 const DIG_LINES = [
   "",
   "## 经历少的同学怎么挖",
@@ -114,7 +130,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}${input.styleTool ? "；样式工具：design_resume_style 定制简历外观" : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历" : ""}` : ""}${input.styleTool ? `；样式工具：design_resume_style 定制简历外观${input.replica ? "、set_resume_css 写受限 CSS、preview_resume 预览渲染结果" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -168,7 +184,12 @@ export function buildSystemPrompt(input: PromptInput): string {
     lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...jobLines);
   }
   if (input.styleTool) {
-    lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...STYLE_LINES);
+    lines.splice(
+      lines.indexOf("## 当前画像（已记录的内容）") - 1,
+      0,
+      ...STYLE_LINES,
+      ...(input.replica ? REPLICA_LINES : []),
+    );
   }
   if (input.drafts && input.drafts.length > 0) {
     lines.push("", "## 暂存中（还没写进画像）");
@@ -197,7 +218,11 @@ export function buildSystemPrompt(input: PromptInput): string {
       `用户这句「${input.autoSkipped.quote}」是在回答上一轮问的「${input.autoSkipped.label}」，系统已记为跳过，不要再调用 skip_field，也不要把这句话当成对下面目标的回答。`,
     );
   }
-  if (input.closed) {
+  if (input.hasImage && input.replica) {
+    lines.push(
+      "这一轮的任务只有一个：复刻用户发来的参考图样式。收到图后马上动手调用样式工具，不要先回复一句「我先看看」就停下，也不要问建档问题、不要收尾总结。完成复刻并向用户说明后这一轮就结束。",
+    );
+  } else if (input.closed) {
     lines.push(
       "已经收尾过了：这一轮不要提问，也不要再总结收尾。用户补充了新信息就照常写入，回应完就结束；用户只是致谢或客套，一句话回应即可。",
     );

@@ -16,6 +16,8 @@ export interface GatewayConfig {
   redactPii: boolean;
   /** 请求里带上各家的「关闭思考」参数；推理模型不关会先想几十秒才出正文。 */
   disableThinking: boolean;
+  /** 主模型能看图；关掉后上下文里的图片一律换成文字占位。 */
+  vision: boolean;
 }
 
 export class GatewayConfigError extends Error {}
@@ -40,6 +42,7 @@ export function loadGatewayConfig(
     retryBaseDelayMs: 500,
     redactPii: true,
     disableThinking: !/^(0|false|off)$/i.test(env.LLM_DISABLE_THINKING ?? ""),
+    vision: !/^(0|false|off)$/i.test(env.LLM_VISION ?? ""),
     ...overrides,
   };
 }

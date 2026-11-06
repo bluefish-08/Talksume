@@ -16,6 +16,7 @@ import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
 import type { ConversationDetail, TailorCard } from "./types.ts";
 import { useChatSession } from "./useChatSession.ts";
+import { REPLICA_DEFAULT_TEXT, useImageDraft } from "./useImageDraft.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
 
 /** 面板里会话的最新简历快照，供页面左侧预览实时展示。 */
@@ -268,6 +269,7 @@ function PanelSession({
   const resume = usePolishedResume(session.resume);
   const { messages, send } = session;
   const [draft, setDraft] = useState("");
+  const imageDraft = useImageDraft();
   const scroller = useStickToBottom(messages, session.conflicts, visible);
   const consumed = useRef<number | null>(null);
 
@@ -329,11 +331,17 @@ function PanelSession({
           value={draft}
           onChange={setDraft}
           onSubmit={() => {
-            if (talk(draft)) setDraft("");
+            const text = draft.trim() || (imageDraft.images.length > 0 ? REPLICA_DEFAULT_TEXT : "");
+            scroller.pin();
+            if (send(text, imageDraft.images)) {
+              setDraft("");
+              imageDraft.clear();
+            }
           }}
           streaming={session.streaming}
           onStop={session.stop}
           onAttach={onAttach}
+          images={imageDraft}
         />
       </div>
     </>

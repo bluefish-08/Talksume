@@ -114,7 +114,7 @@ export function useExportResume() {
       try {
         // 有对话定制的主题时不带预设参数，服务端按保存的样式导出
         const params = new URLSearchParams(
-          style.theme ? { format } : { format, template: style.template, accent: style.accent },
+          style.theme || style.css ? { format } : { format, template: style.template, accent: style.accent },
         );
         if (version) params.set("version", version);
         const res = await fetch(`/api/v1/resume/export?${params}`);

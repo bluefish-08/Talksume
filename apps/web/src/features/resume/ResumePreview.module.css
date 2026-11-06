@@ -4,3 +4,16 @@
   background: #fff;
   box-shadow: var(--shadow-page);
 }
+
+.frame {
+  display: block;
+  width: 210mm;
+  border: 0;
+  background: #fff;
+  zoom: var(--zoom, 1);
+}
+
+/* 缩略图放在按钮里：点击要落到外层，不被 iframe 吞掉 */
+.inert {
+  pointer-events: none;
+}

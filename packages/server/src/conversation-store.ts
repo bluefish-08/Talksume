@@ -125,7 +125,7 @@ export async function loadConversation(
     id: m.id,
     role: m.role,
     content: m.content,
-    ...(m.meta.tools || m.meta.slot || m.meta.clarified || m.meta.closed
+    ...(m.meta.tools || m.meta.slot || m.meta.clarified || m.meta.closed || m.meta.images
       ? {
           meta: {
             ...(m.meta.tools ? { tools: m.meta.tools } : {}),
@@ -134,6 +134,7 @@ export async function loadConversation(
             ...(m.meta.slot ? { slot: m.meta.slot } : {}),
             ...(m.meta.clarified ? { clarified: m.meta.clarified } : {}),
             ...(m.meta.closed ? { closed: true } : {}),
+            ...(m.meta.images ? { images: m.meta.images } : {}),
           },
         }
       : {}),

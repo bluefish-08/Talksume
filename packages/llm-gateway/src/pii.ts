@@ -61,6 +61,8 @@ export function createPiiRedactor(): PiiRedactor {
     if (typeof value === "string") return fn(value) as T;
     if (Array.isArray(value)) return value.map((v) => mapDeep(v, fn)) as T;
     if (value && typeof value === "object") {
+      // 图片的 base64 里会撞上手机号的数字规律，改写就坏图了
+      if ((value as { type?: unknown }).type === "image") return value;
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
         out[k] = SKIP_KEYS.has(k) ? v : mapDeep(v, fn);

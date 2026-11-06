@@ -26,6 +26,8 @@ import {
   wrapsUp,
 } from "./tools.ts";
 import type {
+  ChatImage,
+  ChatTurn,
   IntakeEvent,
   IntakeState,
   JobCard,
@@ -90,7 +92,33 @@ export interface TurnMetrics {
 export interface UserMessage {
   id: string;
   text: string;
+  /** 随这条消息发的图片，只在这一轮传给模型。 */
+  images?: ChatImage[];
+  /** 服务端对图片量出的信息（主要色值等），只拼进本轮给模型的文字，不入历史。 */
+  imageNotes?: string[];
 }
+
+function promptOf(message: UserMessage): string {
+  const notes = message.imageNotes?.filter(Boolean) ?? [];
+  return notes.length > 0 ? `${message.text}\n\n[系统附：${notes.join("；")}]` : message.text;
+}
+
+function userTurn(user: UserMessage): ChatTurn {
+  return {
+    id: user.id,
+    role: "user",
+    content: user.text,
+    ...(user.images?.length
+      ? { meta: { images: user.images.map(({ id, mimeType }) => ({ id, mimeType })) } }
+      : {}),
+  };
+}
+
+const REPLICA_NUDGE =
+  "[系统提示，不是用户发言] 你还没有调用任何样式工具。现在就开始复刻：先 design_resume_style 定下主色、单双栏、抬头和标题样式，再 set_resume_css 补装饰，然后 preview_resume 对照参考图检查。不要再只回复文字。";
+
+/** 复刻参考图要多几轮工具往返（保存、预览、再保存……）。 */
+const REPLICA_EXTRA_TURNS = 12;
 
 const ZERO_USAGE = {
   input: 0,
@@ -240,7 +268,12 @@ function historyToMessages(state: IntakeState, model: Model<Api>, limit: number)
     .slice(-limit)
     .filter((turn) => turn.content.trim())
     .flatMap((turn, index): AgentMessage[] => {
-      if (turn.role === "user") return [{ role: "user", content: turn.content, timestamp: now }];
+      if (turn.role === "user") {
+        const n = turn.meta?.images?.length ?? 0;
+        const note =
+          n > 0 ? `\n[用户当时随消息发了 ${n} 张图片，现在已不在上下文里；要对照原图请让用户重新发送]` : "";
+        return [{ role: "user", content: turn.content + note, timestamp: now }];
+      }
       // 回应挂在建档调用之前，首字不被写入拖慢；下一个问题要等「下一个目标」，放在结果之后。岗位工具的正文依赖结果，仍放在前面
       const records = turn.meta?.tools ?? [];
       const intake = records.filter((r) => REPLAYED_INTAKE_TOOLS.has(r.name));
@@ -497,7 +530,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       const reply = CLOSED_REPLIES[user.text.length % CLOSED_REPLIES.length] ?? "";
       firstTokenMs = since();
       yield { type: "token", text: reply };
-      state.history.push({ id: user.id, role: "user", content: user.text });
+      state.history.push(userTurn(user));
       state.history.push({ id: `${turn.id}:reply`, role: "assistant", content: reply });
       deps.onMetrics?.({
         totalMs: since(),
@@ -511,6 +544,13 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       return;
     }
 
+    const replica = Boolean(
+      deps.styles?.setCss &&
+        deps.styles.preview &&
+        (user?.images?.length ||
+          state.history.some((t) => t.meta?.tools?.some((r) => r.name === "set_resume_css"))),
+    );
+    const turnLimit = maxModelTurns + (replica ? REPLICA_EXTRA_TURNS : 0);
     const autoSkipped = user ? skipDeclined(state, user.text) : null;
     const answered = user && !autoSkipped ? answeredSlot(state, user.text) : undefined;
     const completeness = computeCompleteness(state.profile, { completedSections: state.completedSections });
@@ -529,6 +569,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       jobTools: Boolean(deps.jobs),
       tailorTool: Boolean(deps.jobs && deps.tailor),
       styleTool: Boolean(deps.styles),
+      replica,
+      hasImage: Boolean(user?.images?.length),
     });
 
     let llmError: string | undefined;
@@ -539,6 +581,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let wrote = false;
     let nudged = false;
     let repaired = false;
+    let replicaNudged = false;
     let resumed = false;
     // 正文按整句送出：断流时没说完的半句扣下，不让用户看到
     let unsent = "";
@@ -599,7 +642,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         tools: [
           ...createIntakeTools(ctx),
           ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog, deps.tailor) : []),
-          ...(deps.styles ? createStyleTools(ctx, deps.styles, toolLog) : []),
+          ...(deps.styles ? createStyleTools(ctx, deps.styles, toolLog, { replica }) : []),
         ],
         messages: historyToMessages(state, deps.model, historyLimit),
       },
@@ -617,7 +660,20 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         const stopping = flags.asked || !calledTool;
         const rejected = flags.rejected;
         flags.rejected = false;
-        if (user && stopping && !nudged && failures < 2 && modelTurns < maxModelTurns) {
+        // 收到参考图却只回了一句「我先看看」就停：催一次，让它直接动手
+        if (
+          replica &&
+          user?.images?.length &&
+          !flags.jobs &&
+          !replicaNudged &&
+          failures < 2 &&
+          modelTurns < turnLimit
+        ) {
+          replicaNudged = true;
+          agent.steer({ role: "user", content: REPLICA_NUDGE, timestamp: Date.now() });
+          return { action: "continue" };
+        }
+        if (user && stopping && !nudged && failures < 2 && modelTurns < turnLimit) {
           const missed = unrecorded();
           if (missed.length > 0) {
             nudged = true;
@@ -643,12 +699,12 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           }
         }
         // 写入和追问同一次发出时，被拒的条目没有机会改；问题已送出，再给一次只改写入的机会
-        if (rejected && flags.asked && !repaired && failures < 2 && modelTurns < maxModelTurns) {
+        if (rejected && flags.asked && !repaired && failures < 2 && modelTurns < turnLimit) {
           repaired = true;
           agent.steer({ role: "user", content: REPAIR_TEXT, timestamp: Date.now() });
           return { action: "continue" };
         }
-        if (flags.asked || failures >= 2 || modelTurns >= maxModelTurns) return { action: "end" };
+        if (flags.asked || failures >= 2 || modelTurns >= turnLimit) return { action: "end" };
       },
     });
 
@@ -729,11 +785,17 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     const resumable = () => {
       const kind = llmError && errorKindOf(llmError);
       if (resumed || !broken?.afterText || !kind || !isRetryableKind(kind)) return false;
-      if (options.signal?.aborted || modelTurns >= maxModelTurns) return false;
+      if (options.signal?.aborted || modelTurns >= turnLimit) return false;
       return broken.inTools || !(flags.asked || questionsShown > 0);
     };
     const run = (async () => {
-      await agent.prompt(turn.prompt);
+      const images = user?.images?.map((i) => ({
+        type: "image" as const,
+        data: i.data,
+        mimeType: i.mimeType,
+      }));
+      if (images?.length) await agent.prompt(turn.prompt, images);
+      else await agent.prompt(turn.prompt);
       if (!resumable()) return;
       resumed = true;
       unsent = "";
@@ -862,7 +924,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(toolLog.length > 0 ? { tools: about ? withoutCards(toolLog) : toolLog } : {}),
     };
     if (!llmError || flags.changed || changes.length > 0 || cards.length > 0 || about || tailored) {
-      if (user) state.history.push({ id: user.id, role: "user", content: user.text });
+      if (user) state.history.push(userTurn(user));
       if (user || reply || changes.length > 0) {
         state.history.push({
           id: `${turn.id}:reply`,
@@ -881,7 +943,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     message: UserMessage,
     options: { signal?: AbortSignal } = {},
   ): AsyncGenerator<IntakeEvent, void> {
-    return runTurn(state, { id: message.id, user: message, prompt: message.text }, options);
+    return runTurn(state, { id: message.id, user: message, prompt: promptOf(message) }, options);
   }
 
   function confirmConflict(state: IntakeState, factId: string, accept: boolean): IntakeEvent[] {

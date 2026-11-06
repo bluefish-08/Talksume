@@ -7,6 +7,7 @@ import {
   RESUME_TEMPLATES,
   type ResumeBullet,
   type ResumeContent,
+  type ResumeFontName,
   type ResumeItem,
   type ResumeLink,
   type ResumeSection,
@@ -16,6 +17,7 @@ import {
   sanitizeTheme,
   templateUsesAccent,
 } from "@talksume/core";
+import { customCss } from "./custom-css.ts";
 import { type Layout, layoutFor, layoutForTheme, SIDEBAR, SIDEBAR_KINDS } from "./layout.ts";
 import { richSpans, typeset } from "./text.ts";
 import { FONT_STACK_CSS, type RenderOptions, SERIF_STACK_CSS } from "./types.ts";
@@ -50,7 +52,7 @@ interface TemplateSpec {
 const MONO_STACK = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
 
 const BASE_CSS = `
-.resume { font-family: ${FONT_STACK_CSS}; font-size: var(--fs); line-height: var(--lh); background: #fff;
+.resume { position: relative; font-family: ${FONT_STACK_CSS}; font-size: var(--fs); line-height: var(--lh); background: #fff;
   font-variant-ligatures: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-rendering: optimizeLegibility;
   --ink: #111827; --body: #374151; --label: #4b5563; --muted: #6b7280; --faint: #9ca3af; --rule: #e5e7eb; color: var(--body);
   --accent-soft: color-mix(in srgb, var(--accent) 9%, #fff); --accent-deep: color-mix(in srgb, var(--accent) 78%, #000); }
@@ -84,6 +86,7 @@ const BASE_CSS = `
 .resume .skill-line + .skill-line { margin-top: calc(var(--li-gap) + 1pt); }
 .resume .skill-line .item-title { font-size: 1em; }
 .resume .lvl { color: var(--muted); }
+.resume .photo { display: none; }
 `;
 
 const TAGS_CSS = `
@@ -272,17 +275,31 @@ export interface ResumeFragment {
   margin: string;
   style: ResumeStyle;
   layout: Layout;
+  /** 定制 CSS 用到的内置字体名；预览据此向服务端取 @font-face。 */
+  fonts: ResumeFontName[];
 }
 
-function headHtml(content: ResumeContent): string {
+function contactKind(raw: string): "phone" | "email" | "text" {
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim())) return "email";
+  if (/^\+?[\d\s-]{7,}$/.test(raw.trim())) return "phone";
+  return "text";
+}
+
+/** custom 为真时多带两个只给定制 CSS 用的钩子：联系方式类型、照片占位（默认不显示）。 */
+function headHtml(content: ResumeContent, custom = false): string {
   const { name, headline, contacts, links = [], summary } = content.basics;
-  const contactItems = [...contacts.map(text), ...links.map((l) => escapeHtml(linkText(l)))];
+  const contactItems = [
+    ...contacts.map((c) => ({ html: text(c), kind: contactKind(c) })),
+    ...links.map((l) => ({ html: escapeHtml(linkText(l)), kind: "link" as const })),
+  ];
+  const attr = (kind: string) => (custom ? ` data-k="${kind}"` : "");
   const contactHtml = contactItems.length
-    ? `<div class="contacts">${contactItems.map((c) => `<span>${c}</span>`).join("")}</div>`
+    ? `<div class="contacts">${contactItems.map((c) => `<span${attr(c.kind)}>${c.html}</span>`).join("")}</div>`
     : "";
+  const photo = custom ? '<div class="photo" aria-hidden="true"></div>' : "";
   const headlineHtml = headline ? `<p class="headline">${text(headline)}</p>` : "";
   const summaryHtml = summary ? `<p class="summary">${text(summary)}</p>` : "";
-  return `<header class="head"><div class="head-main"><h1>${escapeHtml(name)}</h1>${headlineHtml}</div>${contactHtml}${summaryHtml}</header>`;
+  return `<header class="head">${photo}<div class="head-main"><h1>${escapeHtml(name)}</h1>${headlineHtml}</div>${contactHtml}${summaryHtml}</header>`;
 }
 
 function layoutVars(layout: Layout): string[] {
@@ -361,6 +378,7 @@ function themeCss(theme: ResumeTheme): string {
 
 function renderThemed(content: ResumeContent, theme: ResumeTheme, options: RenderOptions): ResumeFragment {
   const layout = layoutForTheme(content, theme, options.density);
+  const extra = customCss(options);
   const sections = content.sections.map((s, i) => ({ s, html: renderSection(s, i, theme.skills) }));
   const side = sections.filter((x) => SIDEBAR_KINDS.includes(x.s.kind) && x.html);
   const main = sections.filter((x) => !SIDEBAR_KINDS.includes(x.s.kind) && x.html);
@@ -375,17 +393,18 @@ function renderThemed(content: ResumeContent, theme: ResumeTheme, options: Rende
     `--heading: ${theme.headingColor ?? theme.accent}`,
     ...layoutVars(layout),
   ].join("; ");
-  const html = `<div class="resume th l-${theme.layout} d-${layout.density}" style="${vars}">
-${headHtml(content)}
+  const html = `<div class="resume th l-${theme.layout} d-${layout.density}${extra ? " custom" : ""}" style="${vars}">
+${headHtml(content, Boolean(extra))}
 ${body}
 </div>`;
   const preset = options.template && options.accent ? resolveRenderStyle(options) : fallbackPreset(theme);
   return {
-    css: BASE_CSS + scopeCss(themeCss(theme)),
+    css: BASE_CSS + scopeCss(themeCss(theme)) + (extra ? `\n${extra.css}` : ""),
     html,
     margin: `${layout.margin.y}mm ${layout.margin.x}mm`,
     style: { ...preset, theme },
     layout,
+    fonts: extra?.fonts ?? [],
   };
 }
 
@@ -396,15 +415,23 @@ export function renderFragment(content: ResumeContent, options: RenderOptions = 
   const style = resolveRenderStyle(options);
   const spec = TEMPLATES[style.template];
   const layout = layoutFor(content, style.template, options.density);
+  const extra = customCss(options);
   const sections = content.sections.map((s, i) => renderSection(s, i, spec.skills)).join("\n");
   const accent = templateUsesAccent(style.template) ? ACCENT_INFO[style.accent].hex : "#111111";
   const vars = [`--accent: ${accent}`, ...layoutVars(layout)].join("; ");
-  const html = `<div class="resume t-${style.template} d-${layout.density}" style="${vars}">
-${headHtml(content)}
+  const html = `<div class="resume t-${style.template} d-${layout.density}${extra ? " custom" : ""}" style="${vars}">
+${headHtml(content, Boolean(extra))}
 ${sections}
 </div>`;
   const margin = `${layout.margin.y}mm ${layout.margin.x}mm`;
-  return { css: BASE_CSS + scopeCss(spec.css), html, margin, style, layout };
+  return {
+    css: BASE_CSS + scopeCss(spec.css) + (extra ? `\n${extra.css}` : ""),
+    html,
+    margin,
+    style,
+    layout,
+    fonts: extra?.fonts ?? [],
+  };
 }
 
 export function renderHtml(content: ResumeContent, options: RenderOptions = {}): string {
@@ -413,13 +440,31 @@ export function renderHtml(content: ResumeContent, options: RenderOptions = {}):
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data: https://fonts.talksume.invalid">
 <title>${escapeHtml(content.basics.name)} - 简历</title>
 <style>@page { size: A4; margin: ${margin}; }
-html, body { margin: 0; padding: 0; background: #fff; }${css}</style>
+html, body { margin: 0; padding: 0; background: #fff; }${options.fontFaces ? `\n${options.fontFaces}` : ""}${css}</style>
 </head>
 <body>
 ${html}
+</body>
+</html>
+`;
+}
+
+/** 屏幕预览用的整页文档：和 PDF 同一份片段，边距换成纸面内边距，用来截图。 */
+export function renderScreenHtml(content: ResumeContent, options: RenderOptions = {}): string {
+  const { css, html, margin } = renderFragment(content, options);
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data: https://fonts.talksume.invalid">
+<style>html, body { margin: 0; padding: 0; background: #fff; }
+.page { box-sizing: border-box; width: 210mm; min-height: 297mm; padding: ${margin}; background: #fff; }${options.fontFaces ? `\n${options.fontFaces}` : ""}${css}</style>
+</head>
+<body>
+<div class="page">${html}</div>
 </body>
 </html>
 `;

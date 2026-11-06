@@ -484,3 +484,52 @@ describe("completeStructured", () => {
     await expect(failure).rejects.toMatchObject({ kind: "invalid_output" });
   });
 });
+
+describe("图片输入", () => {
+  const png = "iVBORw0KGgo13800138000AAAANSUhEUgAA";
+  const messages = [
+    {
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: "照这张做" },
+        { type: "image" as const, data: png, mimeType: "image/png" },
+      ],
+      timestamp: 1,
+    },
+  ];
+
+  it("主模型收到原图，base64 不被手机号脱敏改写", async () => {
+    const { gateway, calls } = setup(() => "好的");
+    await gateway.complete({ purpose: "p", messages });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toContain(png);
+  });
+
+  it("主模型失败切到备用模型时，图片换成文字占位", async () => {
+    const { gateway, calls } = setup((n) => (n <= 4 ? err("503 busy") : "好的"));
+    await gateway.complete({ purpose: "p", messages });
+    const fallback = calls.filter((c) => c.model === "glm-5.3");
+    expect(fallback.length).toBeGreaterThan(0);
+    for (const c of fallback) {
+      expect(c.text).not.toContain(png);
+      expect(c.text).toContain("[图片已省略]");
+    }
+    expect(calls.some((c) => c.model === "deepseek-v4.1-flash" && c.text.includes(png))).toBe(true);
+  });
+
+  it("LLM_VISION=0 时主模型也不收图", async () => {
+    const core = createFauxCore({ models: [{ id: "deepseek-v4.1-flash" }] });
+    let seen = "";
+    core.setResponses([
+      (context) => {
+        seen = JSON.stringify(context.messages);
+        return fauxAssistantMessage("ok");
+      },
+    ]);
+    const gateway = createGateway(loadGatewayConfig({ ...baseEnv, LLM_VISION: "0" }), {
+      baseStream: (m, c, o) => core.streamSimple(m, c, o),
+    });
+    await gateway.complete({ purpose: "p", messages });
+    expect(seen).not.toContain(png);
+  });
+});

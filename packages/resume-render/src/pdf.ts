@@ -1,21 +1,11 @@
 import type { ResumeContent } from "@talksume/core";
-import { type Browser, chromium } from "playwright";
+import { getBrowser } from "./chromium.ts";
+import { fitDensity } from "./fit.ts";
+import { FONT_ORIGIN, serveFonts, withFonts } from "./font-route.ts";
 import { renderHtml } from "./html.ts";
 import type { RenderOptions } from "./types.ts";
 
-let browserPromise: Promise<Browser> | undefined;
-
-function getBrowser(): Promise<Browser> {
-  if (browserPromise) return browserPromise;
-  const executablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
-  const launching = chromium.launch(executablePath ? { executablePath } : {});
-  browserPromise = launching;
-  const reset = () => {
-    if (browserPromise === launching) browserPromise = undefined;
-  };
-  launching.then((browser) => browser.on("disconnected", reset), reset);
-  return launching;
-}
+export { close } from "./chromium.ts";
 
 /** 页面只信任我们自己拼的 HTML；即便漏进外链，也一个请求都发不出去（防 SSRF）。 */
 export async function htmlToPdf(html: string): Promise<Uint8Array> {
@@ -27,8 +17,9 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
   });
   try {
     await context.route("**/*", (route) => route.abort("blockedbyclient"));
+    await serveFonts(context);
     const page = await context.newPage();
-    await page.setContent(html, { waitUntil: "load" });
+    await page.setContent(html, { waitUntil: html.includes(FONT_ORIGIN) ? "networkidle" : "load" });
     const buffer = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
     return new Uint8Array(buffer);
   } finally {
@@ -36,12 +27,7 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
   }
 }
 
-export function renderPdf(content: ResumeContent, options: RenderOptions = {}): Promise<Uint8Array> {
-  return htmlToPdf(renderHtml(content, options));
-}
-
-export async function close(): Promise<void> {
-  const pending = browserPromise;
-  browserPromise = undefined;
-  if (pending) await (await pending).close();
+export async function renderPdf(content: ResumeContent, options: RenderOptions = {}): Promise<Uint8Array> {
+  const fitted = await fitDensity(content, options);
+  return htmlToPdf(renderHtml(content, withFonts(content, fitted)));
 }

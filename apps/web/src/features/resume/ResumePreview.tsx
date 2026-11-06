@@ -1,6 +1,6 @@
 import { DEFAULT_RESUME_STYLE, type ResumeStyle } from "@talksume/core";
 import { renderFragment } from "@talksume/resume-render/browser";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { ResumeContent } from "../../api/types.ts";
 import styles from "./ResumePreview.module.css";
 import { PAPER_WIDTH_PX } from "./workbench.ts";
@@ -55,8 +55,8 @@ interface Props {
 
 // 高亮、标记、溯源浮层只在网页预览里叠加；字号按缩放反算，保证缩小的纸面上仍可读
 const PREVIEW_CSS = `
-:host { all: initial; display: block; }
-.page { box-sizing: border-box; width: 210mm; min-height: 297mm; background: #fff; zoom: var(--zoom, 1); }
+html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
+.page { box-sizing: border-box; width: 210mm; min-height: 297mm; background: #fff; }
 .resume .item, .resume .skill-line { position: relative; }
 .resume .hl { background: #eef3fe; box-shadow: 0 0 0 3pt #eef3fe, 0 0 0 calc(3pt + 1px) #bfd3f8; border-radius: 1px; }
 .resume .hl .hl { box-shadow: none; }
@@ -137,7 +137,7 @@ function markChanged(target: HTMLElement, note: ChangeNote, id: string, tagHost:
   target.append(pop);
 }
 
-function decorateChanges(root: ShadowRoot, resume: ResumeContent, marks: ChangeMarks, idPrefix: string) {
+function decorateChanges(root: ParentNode, resume: ResumeContent, marks: ChangeMarks, idPrefix: string) {
   const summary = root.querySelector<HTMLElement>(".head .summary");
   if (summary && marks.summary) markChanged(summary, marks.summary, `${idPrefix}-summary`);
   for (const section of root.querySelectorAll<HTMLElement>("section[data-kind]")) {
@@ -160,7 +160,7 @@ function decorateChanges(root: ShadowRoot, resume: ResumeContent, marks: ChangeM
   }
 }
 
-function decorate(root: ShadowRoot, resume: ResumeContent, d: Decoration) {
+function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
   const page = root.querySelector<HTMLElement>(".resume");
   if (!page) return;
   const has = (text: string) => d.highlightTexts?.has(text) ?? false;
@@ -228,7 +228,34 @@ function decorate(root: ShadowRoot, resume: ResumeContent, d: Decoration) {
   }
 }
 
-/** 预览直接挂 renderFragment 的输出，和 PDF 同一份 HTML/CSS；shadow DOM 隔离宿主样式。 */
+/** 预览文档的 CSP：没有脚本、没有网络，图片只认内置素材的 data URI。 */
+const FRAME_CSP =
+  "default-src 'none'; style-src 'unsafe-inline' 'self'; img-src data:; font-src 'self' data:";
+
+/** 先在脱离页面的文档里做高亮、溯源这些装饰，再序列化成 srcdoc，iframe 里没有脚本。 */
+function buildDocument(
+  fragment: ReturnType<typeof renderFragment>,
+  resume: ResumeContent,
+  decoration: Decoration | undefined,
+): string {
+  const parsed = new DOMParser().parseFromString(
+    `<!doctype html><body><div class="page" style="padding: ${fragment.margin}">${fragment.html}</div></body>`,
+    "text/html",
+  );
+  if (decoration) decorate(parsed.body, resume, decoration);
+  // 样式都是我们生成或白名单过滤过的，仍防一手提前闭合 style 标签
+  const css = /<\/style/i.test(fragment.css) ? "" : fragment.css;
+  const fonts =
+    fragment.fonts.length > 0
+      ? `<link rel="stylesheet" href="/api/v1/resume-fonts/faces.css?f=${fragment.fonts.join(",")}">`
+      : "";
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">${fonts}<style>${css}${PREVIEW_CSS}</style></head><body>${parsed.body.innerHTML}</body></html>`;
+}
+
+/**
+ * 预览挂在 sandbox iframe 里（srcdoc，不给 allow-scripts），和 PDF 同一份 HTML/CSS。
+ * allow-same-origin 只用来让外层量高度和滚动；iframe 里没有脚本可跑。
+ */
 export function ResumePreview({
   resume,
   resumeStyle = DEFAULT_RESUME_STYLE,
@@ -244,11 +271,13 @@ export function ResumePreview({
   as: Tag = "article",
 }: Props) {
   const host = useRef<HTMLElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const zoom = useRef(1);
   const idPrefix = useId().replace(/:/g, "");
-  const { template, accent, theme } = resumeStyle;
+  const { template, accent, theme, css } = resumeStyle;
   const fragment = useMemo(
-    () => renderFragment(resume, { template, accent, theme }),
-    [resume, template, accent, theme],
+    () => renderFragment(resume, { template, accent, theme, css }),
+    [resume, template, accent, theme, css],
   );
   const highlightKey = [...(highlightTexts ?? [])].join("\u0000");
   const factsKey = JSON.stringify(facts ?? {});
@@ -258,34 +287,56 @@ export function ResumePreview({
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 用序列化后的 key 判断变化，避免父组件每次重渲染都重建预览
-  useLayoutEffect(() => {
-    const node = host.current;
-    if (!node) return;
-    const root = node.shadowRoot ?? node.attachShadow({ mode: "open" });
-    root.innerHTML = `<style>${fragment.css}${PREVIEW_CSS}</style><div class="page" style="padding: ${fragment.margin}">${fragment.html}</div>`;
-    if (decorated)
-      decorate(root, resume, { highlightTexts, facts, changes: changeMarks, placeholders, idPrefix });
-  }, [fragment, decorated, highlightKey, factsKey, changesKey, placeholdersKey, idPrefix]);
+  const srcDoc = useMemo(
+    () =>
+      buildDocument(
+        fragment,
+        resume,
+        decorated ? { highlightTexts, facts, changes: changeMarks, placeholders, idPrefix } : undefined,
+      ),
+    [fragment, decorated, highlightKey, factsKey, changesKey, placeholdersKey, idPrefix],
+  );
 
+  const sync = useCallback(() => {
+    const el = frame.current;
+    const doc = el?.contentDocument;
+    if (!el || !doc?.documentElement) return;
+    doc.documentElement.style.setProperty("--zoom", String(zoom.current));
+    el.style.height = `${doc.documentElement.scrollHeight}px`;
+  }, []);
+
+  const onLoad = useCallback(() => {
+    sync();
+    const doc = frame.current?.contentDocument;
+    if (doc?.documentElement) new ResizeObserver(sync).observe(doc.documentElement);
+  }, [sync]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc 换了要重新滚到高亮处
   useEffect(() => {
     if (!revealHighlight || !highlightKey) return;
-    host.current?.shadowRoot?.querySelector(".hl")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [revealHighlight, highlightKey]);
+    frame.current?.contentDocument
+      ?.querySelector(".hl")
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [revealHighlight, highlightKey, srcDoc]);
 
   useLayoutEffect(() => {
     const node = host.current;
     if (!node) return;
+    const apply = (value: number) => {
+      zoom.current = value;
+      node.style.setProperty("--zoom", String(value));
+      sync();
+    };
     if (scale !== undefined) {
-      node.style.setProperty("--zoom", String(scale));
+      apply(scale);
       return;
     }
-    const fit = () =>
-      node.style.setProperty("--zoom", String(Math.min(1, node.clientWidth / PAPER_WIDTH_PX)));
+    const fit = () => apply(Math.min(1, node.clientWidth / PAPER_WIDTH_PX));
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [scale]);
+  }, [scale, sync]);
 
   return (
     <Tag
@@ -294,6 +345,18 @@ export function ResumePreview({
       aria-label={label}
       data-template={template}
       style={scale === undefined ? undefined : { width: PAPER_WIDTH_PX * scale }}
-    />
+    >
+      <iframe
+        ref={frame}
+        className={`${styles.frame}${decorated && Tag === "article" ? "" : ` ${styles.inert}`}`}
+        title={label}
+        sandbox="allow-same-origin"
+        referrerPolicy="no-referrer"
+        scrolling="no"
+        tabIndex={decorated && Tag === "article" ? 0 : -1}
+        srcDoc={srcDoc}
+        onLoad={onLoad}
+      />
+    </Tag>
   );
 }

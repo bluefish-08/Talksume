@@ -152,7 +152,11 @@ export interface Gateway {
   completeStructured<T>(request: StructuredRequest<T>): Promise<{ value: T; text: string; model: string }>;
 }
 
-export function buildModel(id: string, config: Pick<GatewayConfig, "baseUrl">): Model<"openai-completions"> {
+export function buildModel(
+  id: string,
+  config: Pick<GatewayConfig, "baseUrl">,
+  vision = false,
+): Model<"openai-completions"> {
   return {
     id,
     name: id,
@@ -160,7 +164,7 @@ export function buildModel(id: string, config: Pick<GatewayConfig, "baseUrl">): 
     provider: PROVIDER_ID,
     baseUrl: config.baseUrl,
     reasoning: false,
-    input: ["text"],
+    input: vision ? ["text", "image"] : ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128_000,
     maxTokens: 8_192,
@@ -216,6 +220,31 @@ function emptyAssistantMessage(
   };
 }
 
+const IMAGE_OMITTED = "[图片已省略]";
+
+type Block = { type: string };
+const dropImages = <T extends Block>(blocks: T[]): (T | { type: "text"; text: string })[] =>
+  blocks.map((b) => (b.type === "image" ? { type: "text" as const, text: IMAGE_OMITTED } : b));
+
+/** 不支持图片的模型：上下文里的图片换成文字占位。 */
+export function withoutImages(context: TranscriptContext): TranscriptContext {
+  const has = context.messages.some(
+    (m) =>
+      (m.role === "user" || m.role === "toolResult") &&
+      Array.isArray(m.content) &&
+      m.content.some((b) => b.type === "image"),
+  );
+  if (!has) return context;
+  return {
+    ...context,
+    messages: context.messages.map((m) =>
+      (m.role === "user" || m.role === "toolResult") && Array.isArray(m.content)
+        ? ({ ...m, content: dropImages(m.content as Block[]) } as Message)
+        : m,
+    ),
+  };
+}
+
 type Payload = Record<string, unknown>;
 
 /** 同时带上 DeepSeek / 智谱 / Qwen 系的开关，网关会忽略不认识的字段。 */
@@ -235,7 +264,8 @@ function withThinkingOff(payload: unknown): unknown {
 const sharedGate = createPriorityGate(DEFAULT_PRIORITY);
 
 export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Gateway {
-  const primaryModel = buildModel(config.model, config);
+  const primaryModel = buildModel(config.model, config, config.vision);
+  // 备用模型是否支持图片不明，一律按纯文本处理
   const fallbackModel = buildModel(config.fallbackModel, config);
   const streams = openAICompletionsApi();
   const baseStream: BaseStream = deps.baseStream ?? ((m, c, o) => streams.streamSimple(m, c, o));
@@ -395,15 +425,19 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         let terminal: AssistantMessage | undefined;
         let terminalEvent: AssistantMessageEvent | undefined;
         try {
-          const upstream = baseStream(model, safeContext, {
-            ...options,
-            apiKey: config.apiKey,
-            signal,
-            ...(thinkingOff && {
-              onPayload: async (payload, m) =>
-                withThinkingOff((await options?.onPayload?.(payload, m)) ?? payload),
-            }),
-          });
+          const upstream = baseStream(
+            model,
+            model.input.includes("image") ? safeContext : withoutImages(safeContext),
+            {
+              ...options,
+              apiKey: config.apiKey,
+              signal,
+              ...(thinkingOff && {
+                onPayload: async (payload, m) =>
+                  withThinkingOff((await options?.onPayload?.(payload, m)) ?? payload),
+              }),
+            },
+          );
           for await (const event of upstream) {
             touch();
             if (event.type === "done" || event.type === "error") {

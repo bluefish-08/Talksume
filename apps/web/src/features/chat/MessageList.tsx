@@ -1,5 +1,6 @@
 import { Check, ChevronDown, FileText } from "lucide-react";
 import { Fragment, useState } from "react";
+import { imageUrl } from "../../api/images.ts";
 import { SECTION_LABELS } from "../../api/types.ts";
 import { Button, Chip } from "../../components/ui.tsx";
 import { describeChange } from "./describe.ts";
@@ -11,6 +12,7 @@ import {
   type Conflict,
   messageText,
   type ProfileChange,
+  type StyleProgress,
   type TailorCard,
 } from "./types.ts";
 
@@ -46,6 +48,13 @@ export function MessageList({
           <ImportedResume key={m.key} message={m} />
         ) : m.role === "user" ? (
           <div key={m.key} className={styles.userWrap}>
+            {m.images && m.images.length > 0 && (
+              <div className={styles.userImages}>
+                {m.images.map((img) => (
+                  <img key={img.id} src={imageUrl(img.id)} alt="参考图" className={styles.userImage} />
+                ))}
+              </div>
+            )}
             <div className={styles.user}>{m.text}</div>
             {m.state === "failed" && (
               <div className={styles.failed} role="alert">
@@ -110,7 +119,8 @@ function Assistant({
     <div className={styles.assistant}>
       {message.about && <JobAbout job={message.about} />}
       {message.changes.length > 0 && <Written changes={message.changes} />}
-      {waiting && (
+      {message.state === "streaming" && message.progress && <StyleProgressLine progress={message.progress} />}
+      {waiting && !message.progress && (
         <span className={styles.typing} role="status" aria-label="正在回复">
           <i />
           <i />
@@ -128,6 +138,18 @@ function Assistant({
       )}
       {message.jobs.length > 0 && <JobCards jobs={message.jobs} />}
       {message.tailor && <TailorCardView card={message.tailor} onOpen={onOpenTailor} />}
+    </div>
+  );
+}
+
+function StyleProgressLine({ progress }: { progress: StyleProgress }) {
+  return (
+    <div className={styles.progress} role="status" aria-live="polite">
+      <i className={styles.spin} aria-hidden="true" />
+      正在复刻…第 {progress.round} 轮
+      <span className={styles.progressStage}>
+        （{progress.stage === "previewing" ? "对比参考图" : "调整样式"}，最多 {progress.max} 轮）
+      </span>
     </div>
   );
 }

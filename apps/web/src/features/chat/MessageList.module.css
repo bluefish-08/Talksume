@@ -217,3 +217,52 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.userImages {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.userImage {
+  width: 120px;
+  max-height: 160px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.progressStage {
+  color: var(--text-2);
+}
+
+.spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent-line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: replica-spin 0.9s linear infinite;
+}
+
+@keyframes replica-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

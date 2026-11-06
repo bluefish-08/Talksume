@@ -15,6 +15,7 @@ import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -29,6 +30,11 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const EMBEDDING_DIMENSIONS = 1024;
+
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => "bytea",
+  fromDriver: (value) => Buffer.from(value),
+});
 
 const inList = (values: readonly string[]) => sql.raw(values.map((v) => `'${v}'`).join(", "));
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -65,6 +71,24 @@ export const users = pgTable("users", {
   resumeStyle: jsonb("resume_style").$type<ResumeStyle>(),
   createdAt: createdAt(),
 });
+
+/** 对话里上传的参考图：按用户隔离，账号删除时级联清掉。 */
+export const userImages = pgTable(
+  "user_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mimeType: text("mime_type").$type<"image/png" | "image/jpeg" | "image/webp">().notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("user_images_user_idx").on(t.userId, t.createdAt)],
+);
 
 export const profiles = pgTable("profiles", {
   userId: uuid("user_id")

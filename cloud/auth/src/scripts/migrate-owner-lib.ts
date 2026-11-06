@@ -23,6 +23,7 @@ export const OWNED_TABLES: OwnedTable[] = [
   { table: schema.feedback, keys: [] },
   { table: schema.notifications, keys: ["kind", "ref_id"] },
   { table: schema.llmCallLogs, keys: [] },
+  { table: schema.userImages, keys: [] },
 ];
 
 /** 单行主键的表：目标账号已有行时整表都不动。 */

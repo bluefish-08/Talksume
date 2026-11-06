@@ -1,6 +1,8 @@
 import {
   Award,
   Basics,
+  CSS_LIMITS,
+  describeCssVocabulary,
   Education,
   Experience,
   HexColor,
@@ -219,6 +221,18 @@ export const DesignResumeStyleArgs = z.object({
 });
 export type DesignResumeStyleArgs = z.infer<typeof DesignResumeStyleArgs>;
 
+export const SetResumeCssArgs = z.object({
+  css: z
+    .string()
+    .max(CSS_LIMITS.maxChars + 2000)
+    .optional()
+    .describe("完整的一份 CSS，会替换上一份定制 CSS；只写白名单里的类、属性和素材名"),
+  clear: z.boolean().optional().describe("要去掉定制 CSS、只保留主题时填 true，css 不填"),
+});
+export type SetResumeCssArgs = z.infer<typeof SetResumeCssArgs>;
+
+export const PreviewResumeArgs = z.object({});
+
 export type ToolName =
   | "upsert_facts"
   | "ask_user"
@@ -229,7 +243,9 @@ export type ToolName =
   | "search_jobs"
   | "explain_job"
   | "tailor_resume"
-  | "design_resume_style";
+  | "design_resume_style"
+  | "set_resume_css"
+  | "preview_resume";
 
 export const JOB_TOOL_NAMES: readonly ToolName[] = [
   "recommend_jobs",
@@ -303,6 +319,17 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description:
       "按用户对简历外观的要求定制简历样式（配色、字体、抬头和分区标题样式、单栏或两栏、疏密），只改外观不改内容，预览和导出的 PDF 都会按它来。只填用户这次要改的字段，其余沿用当前样式。模糊说法这样翻译：「稳重/正式」→ 标题用 serif、underline 或 plain 标题、深色主色；「活泼/现代」→ band 抬头、bar 标题；「简洁」→ plain 抬头和标题；「紧凑/压到一页」→ compact。",
     schema: DesignResumeStyleArgs,
+  },
+  {
+    name: "set_resume_css",
+    description: `用受限的 CSS 复刻参考图里主题字段表达不了的外观（渐变和色块、图标、分隔线、照片位、字体、精细的间距和标题样式）。CSS 只作用于简历的固定结构，写进去的内容必须落在下面的白名单里，写错的规则（没有的类、不支持的属性或值）会被整条丢弃并逐条告诉你，其余照常保存；夹带 url()、@规则等试探写法则整份都不保存（上一版继续有效）；选择器会自动限定在简历内部，不要写 body、html、* 或 @规则，禁止 url()、@import、@font-face、content 里写文字（content 只能是 ""）、!important、transform、filter、list-style-type；要点符号用 li::before 自己画（background 或 mask 配 asset 素材），不要用 ::marker；mask 不加 -webkit- 前缀也行。每次传完整的一份，会替换上一份。简历文字、条目顺序都由系统渲染，CSS 改不了也不能隐藏。\n结构：header.head（.photo 照片位、.head-main 里 h1 姓名和 .headline 求职意向、.contacts 里每个 span 联系方式、.summary 摘要）→ section[data-kind] 里 h2 分区标题 + .sec-body 里的 .item（.item-head 里 .item-title .item-sub 和 .item-aside 里的 .item-period .item-meta；.item-stack；ul>li 要点，li 里 .lead .num）或 .skill-line（.item-title .lvl .tags>.tag）；两栏时 .cols 里是 .side 和 .main。\n${describeCssVocabulary()}`,
+    schema: SetResumeCssArgs,
+  },
+  {
+    name: "preview_resume",
+    description:
+      "把当前保存的样式套在用户的简历上渲染成一张整页图片返回给你，用来和参考图对比。每轮对话最多 3 次；调用前先把这一轮要改的样式保存好。返回里还有版式自检（页数、溢出、重叠）。",
+    schema: PreviewResumeArgs,
   },
 ];
 

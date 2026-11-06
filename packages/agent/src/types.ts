@@ -78,10 +78,39 @@ export interface ResumeTailor {
   tailor(profile: Profile, facts: readonly Fact[], jobId: string): Promise<TailorOutcome | null>;
 }
 
+/** 渲染预览后的版式自检，给模型对照参考图时一并参考。 */
+export interface StylePreviewCheck {
+  pages: number;
+  overflowX: number;
+  hiddenText: number;
+  overlaps: number;
+  lowContrast?: number;
+}
+
+export interface StylePreview {
+  png: Uint8Array;
+  check: StylePreviewCheck;
+}
+
+export type CssSaveResult =
+  | { ok: true; style: ResumeStyle; rules: number; dropped: string[] }
+  | { ok: false; errors: string[] };
+
 /** 服务端注入的简历样式存取：校验、归一化和落库都在实现里做。 */
 export interface ResumeStyler {
   design(patch: ResumeThemePatch): Promise<{ style: ResumeStyle; notes: string[] }>;
   reset(): Promise<ResumeStyle>;
+  /** 保存定制 CSS（null 清除）；不合法时样式保持不变并返回原因。 */
+  setCss?(css: string | null): Promise<CssSaveResult>;
+  /** 把当前保存的样式套在用户的简历上渲染成一张 PNG。 */
+  preview?(signal?: AbortSignal): Promise<StylePreview>;
+}
+
+/** 用户在对话里发的图片。data 是 base64，只在发出的这一轮传给模型。 */
+export interface ChatImage {
+  id: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  data: string;
 }
 
 /** 落库的工具调用，下一轮重放进模型上下文，便于追问「第二个怎么样」。 */
@@ -109,6 +138,8 @@ export type TurnMeta = {
   closed?: boolean;
   /** 这条用户消息是导入的简历原文，正文即抽取出的文字。 */
   resumeImport?: { fileName?: string; facts: number };
+  /** 这条用户消息带的图片；只留引用，图片本身不再回放给模型。 */
+  images?: { id: string; mimeType: string }[];
 };
 
 export interface ChatTurn {
@@ -176,5 +207,6 @@ export type IntakeEvent =
   | { type: "about_job"; job: JobCard }
   | { type: "tailor"; tailor: TailorCard }
   | { type: "resume_style"; style: ResumeStyle }
+  | { type: "style_progress"; stage: "styling" | "previewing"; round: number; max: number }
   | { type: "completeness"; completeness: Completeness; nextSlot: Slot | null }
   | { type: "error"; code: string; message: string; recoverable: boolean };

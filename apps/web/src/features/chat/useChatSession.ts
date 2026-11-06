@@ -14,7 +14,9 @@ import type {
   Conflict,
   ConversationDetail,
   JobCard,
+  MessageImage,
   ProfileChange,
+  StyleProgress,
   TailorCard,
 } from "./types.ts";
 
@@ -42,6 +44,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     ...(m.about && { about: m.about }),
     ...(m.tailor && { tailor: m.tailor }),
     ...(m.resumeImport && { resumeImport: m.resumeImport }),
+    ...(m.images && { images: m.images }),
     state: "done",
   }));
 }
@@ -139,6 +142,9 @@ export function useChatSession(detail: ConversationDetail) {
             case "resume_style":
               client.setQueryData(resumeStyleKey, data.style as ResumeStyle);
               break;
+            case "style_progress":
+              patch(replyKey, (m) => ({ ...m, progress: data as unknown as StyleProgress }));
+              break;
             case "ask": {
               const question = String(data.question ?? "");
               const quickReplies = Array.isArray(data.quickReplies) ? (data.quickReplies as string[]) : [];
@@ -177,7 +183,7 @@ export function useChatSession(detail: ConversationDetail) {
                     m.key === userKey
                       ? { ...m, serverId: userId }
                       : m.key === replyKey
-                        ? { ...m, serverId: messageId, state: "done" }
+                        ? { ...m, serverId: messageId, state: "done", progress: undefined }
                         : m,
                   ),
                 );
@@ -216,13 +222,17 @@ export function useChatSession(detail: ConversationDetail) {
   );
 
   const run = useCallback(
-    (userKey: string, content: string) =>
-      stream(`/api/v1/conversations/${detail.id}/messages`, { content, ...choice }, userKey),
+    (userKey: string, content: string, images: MessageImage[] = []) =>
+      stream(
+        `/api/v1/conversations/${detail.id}/messages`,
+        { content, ...(images.length > 0 && { imageIds: images.map((i) => i.id) }), ...choice },
+        userKey,
+      ),
     [detail.id, stream, choice],
   );
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, images: MessageImage[] = []) => {
       const content = text.trim();
       if (!content || busy.current) return false;
       const key = nextKey();
@@ -237,10 +247,11 @@ export function useChatSession(detail: ConversationDetail) {
           changes: [],
           quickReplies: [],
           jobs: [],
+          ...(images.length > 0 && { images }),
           state: "done",
         },
       ]);
-      void run(key, content);
+      void run(key, content, images);
       return true;
     },
     [run],
@@ -252,7 +263,7 @@ export function useChatSession(detail: ConversationDetail) {
       const target = messages.find((m) => m.key === key);
       if (!target) return;
       setHighlights(new Set());
-      void run(key, target.text);
+      void run(key, target.text, target.images);
     },
     [messages, run],
   );

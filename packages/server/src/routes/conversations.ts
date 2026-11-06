@@ -9,7 +9,7 @@ import {
   openingMessage,
   topicOfFacts,
 } from "@talksume/agent";
-import { profileToResume } from "@talksume/core";
+import { type Profile, profileToResume } from "@talksume/core";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { LlmDeps, RouteModule, TurnReport } from "../app.ts";
@@ -27,8 +27,12 @@ import {
 } from "../conversation-store.ts";
 import { createTitleScheduler } from "../conversation-title.ts";
 import { openSse, sendError } from "../http.ts";
+import { imageNotes } from "../image-notes.ts";
+import { loadChatImages } from "../image-store.ts";
 import { matchingJobTools, storeResumeTailor } from "../job-tools.ts";
 import { storeResumeStyler } from "../resume-style.ts";
+import { fontRoutes } from "./fonts.ts";
+import { imageRoutes } from "./images.ts";
 import { matchingServiceFor } from "./matching.ts";
 import { resumeRoutes } from "./resume.ts";
 import { resumeImportRoutes } from "./resume-import.ts";
@@ -39,6 +43,7 @@ const MessageBody = z.object({
   content: z.string().trim().min(1).max(4000),
   model: z.string().optional(),
   thinking: z.boolean().optional(),
+  imageIds: z.array(z.uuid()).max(2).optional(),
 });
 const ConflictBody = z.object({ choice: z.enum(["proposed", "previous"]) });
 
@@ -64,10 +69,10 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   };
   app.addHook("onClose", () => titles.drain());
   const jobService = matchingServiceFor(db, deps.matching ?? {}, app.log);
-  const chatTools = (userId: string) => ({
+  const chatTools = (userId: string, profile: () => Profile) => ({
     jobs: matchingJobTools(jobService, userId),
     ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId) }),
-    styles: storeResumeStyler(db, userId),
+    styles: storeResumeStyler(db, userId, { profile }),
   });
 
   const snapshotOf = (state: ReturnType<typeof createIntakeState>) => ({
@@ -137,6 +142,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         ...(m.meta.about && { about: m.meta.about }),
         ...(m.meta.tailor && { tailor: m.meta.tailor }),
         ...(m.meta.resumeImport && { resumeImport: m.meta.resumeImport }),
+        ...(m.meta.images && { images: m.meta.images }),
         createdAt: m.createdAt.toISOString(),
       })),
       ...snapshotOf(loaded.state),
@@ -223,16 +229,28 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const loaded = await loadConversation(db, req.userId, id);
     if (!loaded) return sendError(reply, 404, "conversation_not_found", "会话不存在");
     if (busy.has(id)) return sendError(reply, 409, "conversation_busy", "上一条消息还在处理中", true);
+    const images = await loadChatImages(db, req.userId, body.data.imageIds ?? []);
+    if (!images) return sendError(reply, 400, "image_not_found", "图片不存在或已被删除，请重新上传");
 
     const controller = createIntakeController({
       ...llm.resolve({ model, thinking }),
       genId,
-      ...chatTools(req.userId),
+      ...chatTools(req.userId, () => loaded.state.profile),
       onMetrics: (metrics) => reportTurn(req, { conversationId: id, model, ...metrics }),
     });
     const messageId = randomUUID();
+    const notes = images.length > 0 ? await imageNotes(images) : [];
     await streamTurn(req, reply, id, loaded, `${messageId}:reply`, (signal) =>
-      controller.handleUserMessage(loaded.state, { id: messageId, text: body.data.content }, { signal }),
+      controller.handleUserMessage(
+        loaded.state,
+        {
+          id: messageId,
+          text: body.data.content,
+          ...(images.length > 0 && { images }),
+          ...(notes.length > 0 && { imageNotes: notes }),
+        },
+        { signal },
+      ),
     );
   });
 
@@ -249,7 +267,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
 
     const controller = createIntakeController({
       ...resolveDefault(),
-      ...chatTools(req.userId),
+      ...chatTools(req.userId, () => loaded.state.profile),
       onMetrics: (metrics) => reportTurn(req, { conversationId: id, ...metrics }),
     });
     await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>
@@ -260,6 +278,8 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     );
   });
 
+  fontRoutes(app);
+  imageRoutes(app, deps);
   resumeRoutes(app, deps);
   resumeImportRoutes(app, deps, busy);
 };

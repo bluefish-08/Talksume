@@ -46,6 +46,18 @@ export interface ResumeImportNote {
   facts: number;
 }
 
+export interface MessageImage {
+  id: string;
+  mimeType: string;
+}
+
+/** 复刻参考图时服务端推来的进度：round 是第几轮，stage 是这一轮在改样式还是对比预览。 */
+export interface StyleProgress {
+  stage: "styling" | "previewing";
+  round: number;
+  max: number;
+}
+
 export interface ConversationDetail {
   id: string;
   title: string | null;
@@ -60,6 +72,7 @@ export interface ConversationDetail {
     about?: JobCard;
     tailor?: TailorCard;
     resumeImport?: ResumeImportNote;
+    images?: MessageImage[];
     createdAt: string;
   }[];
   profile: Profile;
@@ -83,6 +96,9 @@ export interface ChatMessage {
   about?: JobCard;
   tailor?: TailorCard;
   resumeImport?: ResumeImportNote;
+  images?: MessageImage[];
+  /** 流式回复中的复刻进度；回复结束后清掉。 */
+  progress?: StyleProgress;
   /** 已落库的消息 ID；用户消息用它换算“第几轮”。 */
   serverId?: string;
   state: "done" | "streaming" | "failed";
