@@ -46,7 +46,7 @@ export function InterviewPage() {
         </Link>
         <h1 className={styles.h1}>面试准备{view && `：${view.job.company} · ${view.job.title}`}</h1>
         <p className={styles.sub}>
-          题目主要从你递出去的那份简历里出，答题要点只引用你说过的话，JD 决定技术基础题和考察重点。
+          题目主要从你递出去的那份简历里出，涉及你本人的内容只用你说过的话，JD 决定技术基础题和考察重点。
         </p>
       </header>
 

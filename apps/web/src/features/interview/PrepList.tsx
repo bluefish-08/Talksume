@@ -32,7 +32,8 @@ function download(view: PrepView, prep: Prep) {
   URL.revokeObjectURL(url);
 }
 
-function Question({ q, index }: { q: InterviewQuestion; index: number }) {
+export function Question({ q, index }: { q: InterviewQuestion; index: number }) {
+  const approach = q.approach ?? [];
   return (
     <li
       className={styles.card}
@@ -65,20 +66,38 @@ function Question({ q, index }: { q: InterviewQuestion; index: number }) {
           <span>{r.note}</span>
         </p>
       ))}
+      {approach.length > 0 && (
+        <div className={styles.block}>
+          <h4 className={styles.h}>怎么答</h4>
+          <ol className={styles.steps}>
+            {approach.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
       {q.answerPoints.length > 0 && (
-        <div className={styles.points}>
-          <h4 className={styles.h}>答题要点（只用你说过的事实）</h4>
-          <ul>
+        <div className={styles.block}>
+          <h4 className={styles.h}>你能用的</h4>
+          <ul className={styles.points}>
             {q.answerPoints.map((p) => (
               <li key={p.text}>
                 {p.text}
-                <span className={styles.quote}>你的原话：「{p.quote}」</span>
+                <details className={styles.source}>
+                  <summary>出处</summary>
+                  <span className={styles.quote}>{p.quote}</span>
+                </details>
               </li>
             ))}
           </ul>
         </div>
       )}
-      {q.missing && <p className={styles.missing}>{q.missing}</p>}
+      {q.missing && (
+        <div className={styles.think}>
+          <h4 className={styles.h}>面试前要想好</h4>
+          <p>{q.missing}</p>
+        </div>
+      )}
     </li>
   );
 }

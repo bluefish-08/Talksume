@@ -56,6 +56,7 @@ function prepLlm() {
             ref: "r1",
             question: "订单查询接口里你具体做了哪部分？有没有遇到难点？",
             focus: "本人贡献",
+            approach: ["先给结论，再讲你负责的部分", "举 2 个具体例子", "用 Kafka 说明"],
             answerPoints: [
               { text: "参与了订单查询接口开发", quote: "参与了订单查询接口的开发" },
               { text: "接口响应时间提升 50%", quote: "参与了订单查询接口的开发" },
@@ -67,10 +68,11 @@ function prepLlm() {
             ref: "r2",
             question: "接口文档怎么维护？",
             focus: "文档意识",
+            approach: ["先讲文档怎么维护", "我负责过支付模块"],
             answerPoints: [],
             think: ["用什么工具写的"],
           },
-          { ref: "r99", question: "不存在的条目？", focus: "x", answerPoints: [], think: [] },
+          { ref: "r99", question: "不存在的条目？", focus: "x", approach: [], answerPoints: [], think: [] },
         ],
       };
     }
@@ -81,6 +83,7 @@ function prepLlm() {
           question: "Redis 为什么快？",
           focus: "内存、单线程模型",
           jd: "熟悉 Java、Redis",
+          approach: ["先给结论", "再分点解释原因"],
           answerPoints: [],
           think: ["你有没有用过 Redis"],
         },
@@ -89,6 +92,7 @@ function prepLlm() {
           question: "编造的 JD 题？",
           focus: "x",
           jd: "要求三年 Go 经验",
+          approach: [],
           answerPoints: [],
           think: [],
         },
@@ -97,6 +101,7 @@ function prepLlm() {
           question: "为什么选美团？",
           focus: "动机",
           jd: null,
+          approach: [],
           answerPoints: [],
           think: [],
         },
@@ -112,12 +117,16 @@ describe("generateInterviewPrep", () => {
     const [q1, q2, tech, motivation] = questions;
     expect(questions.map((q) => q.kind)).toEqual(["resume", "resume", "technical", "motivation"]);
     expect(q1?.question).toBe("订单查询接口里你具体做了哪部分？");
+    expect(q1?.approach).toEqual(["先给结论，再讲你负责的部分"]);
     expect(q1?.answerPoints).toEqual([{ text: "参与了订单查询接口开发", quote: "参与了订单查询接口的开发" }]);
     expect(q1?.risks[0]?.kind).toBe("stronger_than_quote");
     expect(q1?.risks[0]?.note).toContain("主导");
+    expect(q1?.missing).toBe("你还没讲过这部分，面试前想清楚：你写了哪几个接口");
+    expect(q2?.approach).toEqual(["先讲文档怎么维护"]);
     expect(q2?.answerPoints).toEqual([]);
     expect(q2?.missing).toBe("你还没讲过这部分，面试前想清楚：用什么工具写的");
     expect(tech?.source.jd).toBe("熟悉 Java、Redis");
+    expect(tech?.approach).toEqual(["先给结论", "再分点解释原因"]);
     expect(tech?.missing).toContain("你还没讲过这部分");
     expect(motivation?.missing).toBeTruthy();
   });
@@ -162,6 +171,7 @@ const questions: InterviewQuestion[] = [
     kind: "resume",
     question: "订单查询接口里你具体做了哪部分？",
     focus: "本人贡献",
+    approach: [],
     source: { bullet: { heading: "星河科技", text: "主导订单查询接口开发，响应时间提升 40%" } },
     answerPoints: [],
     risks: [{ kind: "stronger_than_quote", terms: ["主导"], note: "x" }],
@@ -171,6 +181,7 @@ const questions: InterviewQuestion[] = [
     kind: "behavior",
     question: "讲一次你和同学意见不合的经历？",
     focus: "协作",
+    approach: [],
     source: {},
     answerPoints: [],
     risks: [],
@@ -248,8 +259,26 @@ describe("模拟面试", () => {
   it("planQueue 优先放简历里风险高的条目，其余题型各取一道", () => {
     const more: InterviewQuestion[] = [
       ...questions,
-      { id: "q3", kind: "technical", question: "t", focus: "f", source: {}, answerPoints: [], risks: [] },
-      { id: "q4", kind: "motivation", question: "m", focus: "f", source: {}, answerPoints: [], risks: [] },
+      {
+        id: "q3",
+        kind: "technical",
+        question: "t",
+        focus: "f",
+        approach: [],
+        source: {},
+        answerPoints: [],
+        risks: [],
+      },
+      {
+        id: "q4",
+        kind: "motivation",
+        question: "m",
+        focus: "f",
+        approach: [],
+        source: {},
+        answerPoints: [],
+        risks: [],
+      },
     ];
     expect(planQueue(more)).toEqual(["q1", "q3", "q2", "q4"]);
   });

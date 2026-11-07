@@ -131,7 +131,7 @@
   margin-top: 3px;
 }
 
-.points {
+.block {
   margin-top: 4px;
 }
 
@@ -142,25 +142,53 @@
   color: var(--text-2);
 }
 
-.points ul {
+.steps,
+.points {
   margin: 0;
   padding-left: 18px;
   font-size: 13.5px;
   line-height: 1.7;
 }
 
+.source {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.source summary {
+  display: inline;
+  cursor: pointer;
+  list-style: none;
+  color: var(--accent-strong);
+  text-decoration: underline dotted;
+}
+
+.source summary::-webkit-details-marker {
+  display: none;
+}
+
 .quote {
   display: block;
-  font-size: 12px;
+  margin-top: 2px;
   color: var(--placeholder);
 }
 
-.missing {
-  margin: 4px 0 0;
+.think {
+  margin-top: 4px;
   padding: 8px 12px;
   border-radius: var(--r-sm);
-  background: var(--surface-sunken);
+  background: var(--warning-soft);
+  color: var(--warning);
   font-size: 13px;
   line-height: 1.6;
-  color: var(--text-2);
+}
+
+.think .h {
+  color: var(--warning);
+}
+
+.think p {
+  margin: 0;
 }

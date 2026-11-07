@@ -1,9 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { type InterviewQuestion, ungroundedTokens } from "@talksume/core";
+import { approachProblems, type InterviewQuestion, ungroundedTokens } from "@talksume/core";
 import {
   answerTurn,
+  approachMaterial,
   buildUserCorpus,
   generateInterviewPrep,
   type InterviewLlm,
@@ -36,6 +37,13 @@ async function prepChecks(
   const leader = questions.find((q) => q.source.bullet?.text.includes("主导订单查询"));
   const risky = questions.filter((q) => q.risks.some((r) => r.kind === "stronger_than_quote"));
   const numbered = questions.find((q) => q.source.bullet?.text.includes("200 人"));
+  const material = approachMaterial({ job: JOB, resume: RESUME, facts: FACTS });
+  const badApproach = questions.flatMap((q) =>
+    (q.approach ?? []).flatMap((step) =>
+      approachProblems(step, material).map((problem) => `${q.id}「${step}」：${problem}`),
+    ),
+  );
+  const noGuidance = questions.filter((q) => (q.approach ?? []).length === 0 && !q.missing);
   return {
     questions,
     dropped,
@@ -65,6 +73,18 @@ async function prepChecks(
         id: "no-false-flag",
         label: "措辞和原话一致的「负责后端接口开发」不误报",
         pass: !risky.some((q) => q.source.bullet?.text === "负责后端接口开发"),
+      },
+      {
+        id: "approach-or-missing",
+        label: "每题都有怎么答步骤，或面试前要想好的问题",
+        pass: questions.length > 0 && noGuidance.length === 0,
+        detail: `${questions.length - noGuidance.length}/${questions.length} 题有引导`,
+      },
+      {
+        id: "approach-clean",
+        label: "怎么答只讲方法，没有数字、没提过的技术/机构或第一人称说法",
+        pass: badApproach.length === 0,
+        detail: badApproach.slice(0, 3).join(" | "),
       },
       {
         id: "missing-hint",

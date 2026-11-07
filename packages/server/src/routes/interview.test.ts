@@ -1,4 +1,4 @@
-import { type Job, Profile } from "@talksume/core";
+import { type InterviewQuestion, type Job, Profile, type ResumeContent } from "@talksume/core";
 import { createDb, type DbHandle, JobRepo, migrate, schema } from "@talksume/db";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -55,6 +55,7 @@ function fakeLlm() {
                   ref: "r1",
                   question: "订单查询接口里你具体做了哪部分？",
                   focus: "本人贡献",
+                  approach: ["先给结论", "举 2 个例子", "我负责过支付模块"],
                   answerPoints: [
                     { text: "参与了订单查询接口的开发", quote: "参与了订单查询接口的开发" },
                     { text: "QPS 提升 50%", quote: "参与了订单查询接口的开发" },
@@ -153,9 +154,45 @@ describe("面试准备", () => {
     expect(prep.resumeSource).toBe("current");
     const [resumeQ] = prep.questions as Json[];
     expect(resumeQ.kind).toBe("resume");
+    expect(resumeQ.approach).toEqual(["先给结论"]);
     expect(resumeQ.answerPoints).toHaveLength(1);
     expect(resumeQ.risks[0].kind).toBe("stronger_than_quote");
     expect(prep.questions.at(-1).missing).toContain("你还没讲过这部分");
+  });
+
+  it("旧题单没有 approach 也能读出来，按空数组处理", async () => {
+    await boot(fakeLlm().llm);
+    const resume: ResumeContent = {
+      basics: { name: "李明", contacts: [] },
+      sections: [
+        {
+          kind: "experiences",
+          title: "实习经历",
+          items: [{ heading: "星河科技", bullets: [{ text: "做了订单接口", factIds: [] }] }],
+        },
+      ],
+    };
+    const oldQuestion = {
+      id: "q1",
+      kind: "motivation",
+      question: "为什么选美团？",
+      focus: "动机",
+      source: {},
+      answerPoints: [],
+      missing: "你还没讲过这部分，面试前想清楚：你对哪块业务感兴趣？",
+      risks: [],
+    };
+    await handle.db.insert(schema.interviewPreps).values({
+      userId,
+      jobId: JOB,
+      resumeSource: "current",
+      resume,
+      questions: [oldQuestion] as unknown as InterviewQuestion[],
+      model: "fake",
+    });
+    const res = await call("GET", prepUrl);
+    expect(res.status).toBe(200);
+    expect(res.body.prep.questions[0].approach).toEqual([]);
   });
 
   it("没有配置模型时不能生成；岗位不存在返回 404", async () => {

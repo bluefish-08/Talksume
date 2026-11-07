@@ -147,7 +147,7 @@ export async function prepView(db: Db, userId: string, jobId: string) {
     prep: row
       ? {
           resumeSource: row.resumeSource,
-          questions: row.questions,
+          questions: withApproach(row.questions),
           model: row.model,
           updatedAt: row.updatedAt.toISOString(),
           stale: row.resumeSource !== choice.source || (row.resumeVersionId ?? null) !== choice.versionId,
@@ -193,6 +193,9 @@ export interface SessionView {
   updatedAt: string;
 }
 
+const withApproach = (questions: readonly InterviewQuestion[]): InterviewQuestion[] =>
+  questions.map((q) => ({ ...q, approach: q.approach ?? [] }));
+
 const viewOf = (row: typeof interviewSessions.$inferSelect): SessionView => ({
   id: row.id,
   jobId: row.jobId,
@@ -210,12 +213,10 @@ export async function beginSession(db: Db, userId: string, jobId: string): Promi
     .where(and(eq(interviewPreps.userId, userId), eq(interviewPreps.jobId, jobId)));
   if (!prep || prep.questions.length === 0)
     throw new InterviewError("no_prep", "先生成面试题单再开始模拟面试");
-  const ctx = await sessionContext(db, userId, jobId, prep.questions);
+  const questions = withApproach(prep.questions);
+  const ctx = await sessionContext(db, userId, jobId, questions);
   const state = startSession(ctx);
-  const [row] = await db
-    .insert(interviewSessions)
-    .values({ userId, jobId, questions: prep.questions, state })
-    .returning();
+  const [row] = await db.insert(interviewSessions).values({ userId, jobId, questions, state }).returning();
   if (!row) throw new Error("创建面试失败");
   return viewOf(row);
 }

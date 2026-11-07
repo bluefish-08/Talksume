@@ -37,6 +37,8 @@ export interface InterviewQuestion {
   question: string;
   /** 面试官想考察什么。 */
   focus: string;
+  /** 怎么组织答案的步骤，只讲方法，不陈述用户事实。 */
+  approach: string[];
   source: { bullet?: { heading: string; text: string }; jd?: string };
   answerPoints: AnswerPoint[];
   /** 材料不够时给用户的提醒，不替用户编答案。 */
@@ -126,6 +128,101 @@ export function bulletRisks(text: string, quotes: readonly string[]): InterviewR
   ];
 }
 
+const APPROACH_FIRST_PERSON =
+  /(?:我|本人)(?:负责|主导|做过|参与|完成|开发|搭建|设计|实现|牵头|带领|独立|写过|写了|做了|带过|搞过)/;
+const APPROACH_NUMBER = /\d+(?:\.\d+)?\s*[%％]?/g;
+const APPROACH_TECH = [
+  "微服务",
+  "分布式",
+  "高并发",
+  "消息队列",
+  "中间件",
+  "云原生",
+  "容器化",
+  "机器学习",
+  "深度学习",
+  "推荐系统",
+  "搜索引擎",
+  "数据结构",
+  "操作系统",
+  "计算机网络",
+  "全栈",
+  "算法",
+  "前端",
+  "后端",
+  "数据库",
+  "缓存",
+  "测试",
+  "运维",
+];
+const APPROACH_NAMES = [
+  // 常见城市和公司；没收录的中文专有名词仍靠提示词约束
+  "北京",
+  "上海",
+  "广州",
+  "深圳",
+  "杭州",
+  "南京",
+  "成都",
+  "武汉",
+  "西安",
+  "苏州",
+  "厦门",
+  "长沙",
+  "合肥",
+  "天津",
+  "重庆",
+  "腾讯",
+  "阿里巴巴",
+  "阿里",
+  "字节跳动",
+  "字节",
+  "百度",
+  "京东",
+  "网易",
+  "华为",
+  "小米",
+  "滴滴",
+  "拼多多",
+  "快手",
+  "携程",
+  "哔哩哔哩",
+  "小红书",
+  "蚂蚁",
+  "美团",
+  "中兴",
+  "联想",
+  "商汤",
+  "旷视",
+  "大疆",
+];
+const APPROACH_ORG = /公司|集团|科技|银行|大学|学院|研究院|工作室|实验室/g;
+const GENERIC_ORG =
+  /了解|熟悉|结合|目标|应聘|面试|岗位|行业|业务|公司|集团|团队|部门|项目|工作|发展|文化|产品|技术|这个|那个|这家|那家|一家|各家|所在|大型|中型|小型|上市|国企|外企|民企|正规|互联|联网|科技|软件|网络|金融|咨询|教育|制造|传统|创业|我们|你们|他们|你的|我的|他的|这|那|该|贵|的|地|得|我|你|他|她|它|们/;
+const SAFE_METHOD_TOKENS = new Set(["jd", "star", "okr", "kpi", "smart"]);
+
+/** 方法步骤里不该出现的用户专属说法；非空即整条丢弃。 */
+export function approachProblems(step: string, material: string): string[] {
+  const problems = new Set<string>();
+  for (const m of step.matchAll(APPROACH_NUMBER)) problems.add(m[0].trim());
+  const firstPerson = step.match(APPROACH_FIRST_PERSON);
+  if (firstPerson) problems.add(firstPerson[0]);
+  for (const term of [...APPROACH_TECH, ...APPROACH_NAMES]) {
+    if (step.includes(term) && !material.includes(term)) problems.add(term);
+  }
+  for (const m of step.matchAll(APPROACH_ORG)) {
+    const start = m.index ?? 0;
+    const before = step.slice(Math.max(0, start - 3), start);
+    if (before.length < 2 || GENERIC_ORG.test(before)) continue;
+    const name = `${before.slice(-2)}${m[0]}`;
+    if (!material.includes(name)) problems.add(name);
+  }
+  for (const token of ungroundedTokens(material, step)) {
+    if (!SAFE_METHOD_TOKENS.has(token.toLowerCase())) problems.add(token);
+  }
+  return [...problems];
+}
+
 const PERCENT = /\d+(?:\.\d+)?\s*[%％]/g;
 const normalizePercent = (s: string) => s.replace(/\s|％/g, "").replace(/%$/, "");
 
@@ -176,11 +273,18 @@ export function interviewPrepMarkdown(prep: InterviewPrepExport): string {
       if (q.source.bullet) lines.push(`- 简历出处：${q.source.bullet.heading} —— ${q.source.bullet.text}`);
       if (q.source.jd) lines.push(`- JD 出处：${q.source.jd}`);
       for (const r of q.risks) lines.push(`- ⚠ ${r.note}`);
-      if (q.answerPoints.length > 0) {
-        lines.push("- 答题要点（只用你说过的事实）：");
-        for (const p of q.answerPoints) lines.push(`  - ${p.text}（原话：「${p.quote}」）`);
+      const approach = q.approach ?? [];
+      if (approach.length > 0) {
+        lines.push("", "#### 怎么答", "");
+        approach.forEach((step, j) => {
+          lines.push(`${j + 1}. ${step}`);
+        });
       }
-      if (q.missing) lines.push(`- 待补充：${q.missing}`);
+      if (q.answerPoints.length > 0) {
+        lines.push("", "#### 你能用的", "");
+        for (const p of q.answerPoints) lines.push(`- ${p.text}`);
+      }
+      if (q.missing) lines.push("", "#### 面试前要想好", "", `> ${q.missing}`);
       lines.push("");
     });
   }

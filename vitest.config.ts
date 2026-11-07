@@ -9,6 +9,7 @@ export default defineConfig({
       "packages/*/src/**/*.test.ts",
       "cloud/*/src/**/*.test.ts",
       "apps/*/src/**/*.test.ts",
+      "apps/*/src/**/*.test.tsx",
       "scripts/**/*.test.ts",
     ],
   },
