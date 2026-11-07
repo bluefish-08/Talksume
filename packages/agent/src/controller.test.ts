@@ -16,7 +16,7 @@ import {
   splitAtQuestion,
   type TurnMetrics,
 } from "./controller.ts";
-import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
+import { cleanQuickReplies, TOOL_SPECS, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
 import { nextSlotOf, skipSlot } from "./tools.ts";
 import type { IntakeEvent, JobTools, ResumeTailor } from "./types.ts";
 import { createIntakeState } from "./types.ts";
@@ -714,7 +714,8 @@ describe("intake controller: adding to a narrative field", () => {
     const prompts: string[] = [];
     const { controller } = fake([toolTurn(ask("你叫什么？"))], prompts);
     await collect(controller.handleUserMessage(createIntakeState(), { id: "m1", text: "你好" }));
-    expect(prompts[0]).toContain("完整合并文本");
+    const upsert = TOOL_SPECS.find((s) => s.name === "upsert_facts")?.description ?? "";
+    expect(upsert).toContain("完整合并文本");
     expect(prompts[0]).toContain("不要承诺任何没有工具支持的动作");
     expect(prompts[0]).toContain("右侧预览就是简历，可以点「润色」优化表述、切换模板，或者直接导出");
     expect(prompts[0]).not.toContain("可以去生成简历");
@@ -780,12 +781,9 @@ describe("intake controller: skill levels", () => {
   });
 
   it("exposes a four-step level enum and the mapping rule to the model", async () => {
-    const prompts: string[] = [];
-    const { controller } = fake([toolTurn(ask("你叫什么？"))], prompts);
-    await collect(controller.handleUserMessage(createIntakeState(), { id: "m1", text: "你好" }));
-    expect(prompts[0]).toContain("熟悉→familiar");
-    const schema = JSON.stringify(toolJsonSchema(UpsertFactsArgs));
-    expect(schema).toContain('"beginner","familiar","proficient","expert"');
+    const schema = toolJsonSchema(UpsertFactsArgs);
+    expect(JSON.stringify(schema)).toContain("熟悉→familiar");
+    expect(JSON.stringify(schema)).toContain('"beginner","familiar","proficient","expert"');
   });
 });
 

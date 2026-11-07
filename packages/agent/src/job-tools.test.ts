@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { computeCompleteness } from "./completeness.ts";
 import { createIntakeController } from "./controller.ts";
 import { buildSystemPrompt } from "./prompt.ts";
+import { TOOL_SPECS } from "./schemas.ts";
 import {
   createIntakeState,
   type IntakeEvent,
@@ -578,31 +579,34 @@ describe("岗位相关的系统提示", () => {
       jobTools,
     };
   };
+  const description = (name: string) => TOOL_SPECS.find((s) => s.name === name)?.description ?? "";
 
-  it("开放岗位工具后要求先查再答，投递留给用户确认", () => {
+  it("岗位规则跟着岗位工具走，系统提示不再列工具清单", () => {
     const prompt = buildSystemPrompt(input(true));
-    expect(prompt).toContain("## 岗位问题");
-    expect(prompt).toContain("不要推说「等画像补完再推荐」");
-    expect(prompt).toContain("不要先叙述要找岗位");
-    expect(prompt).not.toContain("不要向用户叙述正在调用工具");
-    expect(prompt).not.toContain("先用一句话告诉用户你要做什么");
-    expect(prompt).toContain("recommend_jobs");
-    expect(prompt).toContain("岗位详情页");
-    expect(prompt).not.toContain("比如生成简历、改写措辞、重点突出某条、投递");
-    expect(prompt).not.toContain("tailor_resume");
+    expect(prompt).not.toContain("## 岗位问题");
+    expect(prompt).not.toContain("recommend_jobs");
+    expect(prompt).toContain("替用户投递");
+    expect(description("recommend_jobs")).toContain("不要推说「等画像补完再推荐」");
+    expect(description("recommend_jobs")).toContain("画像缺求职意向或技能也先给结果");
+    expect(description("explain_job")).toContain("不要重新搜索");
+    expect(description("search_jobs")).toContain("不受推荐门槛限制");
   });
 
-  it("开放定制工具后可以按岗位改侧重，但只有工具成功才能说生成了", () => {
+  it("没开岗位工具时提示不出现岗位工具，只保留职位推荐页的兜底", () => {
+    const prompt = buildSystemPrompt(input(false));
+    expect(prompt).not.toContain("recommend_jobs");
+    expect(prompt).not.toContain("## 岗位问题");
+    expect(prompt).toContain("职位推荐");
+  });
+
+  it("定制规则在工具说明里，只有成功才能说已经生成", () => {
     const prompt = buildSystemPrompt({ ...input(true), tailorTool: true });
-    expect(prompt).toContain("tailor_resume 按岗位定制简历");
-    expect(prompt).toContain("select_tailor_changes 按话调整选中项");
-    expect(prompt).toContain("revoke_tailoring 改回主简历");
-    expect(prompt).toContain("只有 tailor_resume 返回「已生成定制版草稿」时");
-    expect(prompt).toContain("这一轮最多问一个问题");
-    expect(prompt).toContain("不要再问建档问题（包括难点）");
-    expect(prompt).toContain("回复只用一两句话确认改了什么");
-    expect(prompt).toContain("还是用定制版");
-    expect(prompt).toContain("select_tailor_changes adopt=true");
-    expect(prompt).not.toContain("改写措辞、重点突出某条");
+    expect(prompt).not.toContain("## 岗位问题");
+    expect(prompt).not.toContain("tailor_resume");
+    expect(description("tailor_resume")).toContain("有三档");
+    expect(description("tailor_resume")).toContain("「大改」「重写」「再大胆一点」");
+    expect(description("tailor_resume")).toContain("不要追问");
+    expect(description("select_tailor_changes")).toContain("摘要那条不要");
+    expect(description("revoke_tailoring")).toContain("这个岗位不用定制版了");
   });
 });

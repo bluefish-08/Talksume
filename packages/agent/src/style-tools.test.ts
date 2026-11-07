@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { computeCompleteness } from "./completeness.ts";
 import { createIntakeController } from "./controller.ts";
 import { buildSystemPrompt } from "./prompt.ts";
+import { TOOL_SPECS } from "./schemas.ts";
 import { createIntakeState, type IntakeEvent, type ResumeStyler } from "./types.ts";
 
 function memoryStyler(fail = false): { styler: ResumeStyler; saved: () => ResumeStyle } {
@@ -172,7 +173,8 @@ describe("design_resume_style", () => {
       conflicts: [],
       styleTool: true,
     });
-    expect(prompt).toContain("## 简历样式");
-    expect(prompt).toContain("design_resume_style");
+    expect(prompt).not.toContain("## 简历样式");
+    expect(prompt).not.toContain("design_resume_style");
+    expect(TOOL_SPECS.find((s) => s.name === "design_resume_style")?.description).toContain("更稳重一点");
   });
 });

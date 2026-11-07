@@ -301,7 +301,7 @@ export function createStyleTools(
     const next =
       previews < MAX_PREVIEWS
         ? `接下来调用 preview_resume 看渲染结果，并和参考图对比（还剩 ${MAX_PREVIEWS - previews} 次预览）。`
-        : "预览次数已用完，不要再调用 preview_resume，直接向用户说明复刻了什么、还有哪些差距。";
+        : "预览次数已用完，不要再调用 preview_resume，直接向用户说明复刻了什么、还有哪些差距，不要说「完全一致」。";
     const dropped =
       result.dropped.length > 0
         ? `\n下面这些规则不合规，已丢弃（其余已保存）：\n${result.dropped.map((d) => `- ${d}`).join("\n")}\n还想要这些效果的话，换成支持的写法后重新保存完整的一份。`
@@ -357,7 +357,7 @@ export function createStyleTools(
       ...warnings,
       left > 0
         ? "对照参考图，列出最明显的 1 到 3 处差异（配色、抬头、分区标题、图标、分隔线、字体、版式），用 set_resume_css 一次改完；差异已经很小就不用再改，直接向用户说明。图里的文字内容不要照搬。"
-        : "这是最后一次预览：还有明显差异就保存一次小修，之后不要再预览，向用户如实说明哪里还有差距。",
+        : "这是最后一次预览：还有明显差异就保存一次小修，之后不要再预览，向用户如实说明哪里还有差距，不要说「完全一致」。",
     ].join("\n");
     return {
       content: [

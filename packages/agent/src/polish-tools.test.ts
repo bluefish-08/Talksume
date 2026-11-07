@@ -11,6 +11,7 @@ import { computeCompleteness } from "./completeness.ts";
 import { createIntakeController } from "./controller.ts";
 import { clipText, polishItemLine } from "./polish-tools.ts";
 import { buildSystemPrompt } from "./prompt.ts";
+import { TOOL_SPECS } from "./schemas.ts";
 import { createIntakeState, type IntakeEvent, type PolishCard, type ResumePolisher } from "./types.ts";
 
 const CARD: PolishCard = {
@@ -247,7 +248,7 @@ describe("润色工具", () => {
     expect(reply?.content).not.toContain("还有别的项目");
   });
 
-  it("提示词只在开放润色工具时包含润色规则", () => {
+  it("润色规则在工具说明里，系统提示不再列工具", () => {
     const base = {
       profile: state().profile,
       completeness: computeCompleteness(state().profile),
@@ -255,10 +256,16 @@ describe("润色工具", () => {
       completedSections: [],
       conflicts: [],
     };
-    expect(buildSystemPrompt(base)).not.toContain("## 简历润色");
+    const off = buildSystemPrompt(base);
+    expect(off).not.toContain("## 简历润色");
+    expect(off).not.toContain("polish_resume");
     const on = buildSystemPrompt({ ...base, polishTool: true });
-    expect(on).toContain("## 简历润色");
-    expect(on).toContain("polish_resume");
-    expect(on).toContain("decide_polish");
+    expect(on).not.toContain("## 简历润色");
+    expect(on).not.toContain("polish_resume");
+    const polish = TOOL_SPECS.find((s) => s.name === "polish_resume")?.description ?? "";
+    expect(polish).toContain("润色一下");
+    expect(polish).toContain("不要让润色去编");
+    const decide = TOOL_SPECS.find((s) => s.name === "decide_polish")?.description ?? "";
+    expect(decide).toContain("都用上");
   });
 });

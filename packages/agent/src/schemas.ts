@@ -366,60 +366,61 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   {
     name: "upsert_facts",
     description:
-      "把用户在对话中明确说出的信息写入画像。每条事实必须附带 quote（用户原话）。不要写入用户没说过的内容。",
+      "把用户在对话中明确说出的信息写入画像；用户说完一段话就调用，一句话含多个事实时一次写入。每条事实必须附带 quote（用户原话，逐字摘抄）；只写用户说过的内容，不要推测、补全或美化。叙述性字段（项目的 situation、获奖的 description、basics.summary、要点的 detail）补充时写包含原文的完整合并文本，只有用户明确纠正时才替换。实习和项目统一写 highlights，不要写 bullets/task/action/result；项目背景写 situation。教育：gpa 照用户说的原样写，排名写 rank，课程一门一条；奖学金、竞赛奖项写 awards，三好学生、优秀毕业生这类荣誉称号写 education.honors。basics.links 每项 {label, url}。技术栈只写对应条目的 techStack；skills 只记用户这句话里亲口说的技能，不要从已有条目的技术栈里搬过去。",
     schema: UpsertFactsArgs,
   },
   {
     name: "ask_user",
     description:
-      "向用户追问下一个问题，可附带 quickReplies 作为用户的快捷回答。调用后本轮对话结束，等待用户回答。每轮最多调用一次。",
+      "向用户追问下一个问题，可附带 quickReplies 作为用户的快捷回答；question 填你刚在正文里问的那句。调用后本轮对话结束，等待用户回答。每轮最多调用一次，只在「下一个目标」有内容时调用。问技术栈时给这类方向常见的组合（如「Java + MySQL」「Go」）再加「跳过这个」；问量化结果时给「没有具体数字」「记不清了」。",
     schema: AskUserArgs,
   },
   {
     name: "complete_section",
-    description: "标记某个分区已收集完成，或用户明确表示该分区没有内容。",
+    description:
+      "标记某个分区已收集完成，或用户明确表示该分区没有内容。reason=done 表示信息已够，user_skipped 表示用户明确说没有或不想提供（要带 quote）。",
     schema: CompleteSectionArgs,
   },
   {
     name: "skip_field",
     description:
-      "用户对某一项明确说没有或不想说时调用（如「成绩不想说」）。跳过的项以后的会话都不会再问；整个分区都没有时改用 complete_section。",
+      "用户对某一项明确说没有或不想说时调用（如「成绩不想说」）；上一轮问的那一项用户只回「没有」「没统计过」「记不清」「没遇到难点」也算，直接调用，不要再追问。只能跳过上一轮问的那一项；闲聊或没有信息的消息不要调用。跳过的项以后的会话都不会再问；整个分区都没有时改用 complete_section。",
     schema: SkipFieldArgs,
   },
   {
     name: "resolve_conflict",
     description:
-      "用户用文字回答了待确认的矛盾（如「用原来的」「新的对」）时调用，按用户的选择消解矛盾。用户没明确选哪个时不要调用。",
+      "用户用文字回答了待确认的矛盾（如「用原来的」「保留之前的」「新的对」「以刚才说的为准」）时调用，choice=previous 保留原来的、proposed 采用新的，quote 摘抄用户这句原话；用户没明确选哪个时不要调用。调用后按返回的「下一个目标」接着问，不要在文字里复述或再次追问矛盾。",
     schema: ResolveConflictArgs,
   },
   {
     name: "recommend_jobs",
     description:
-      "按用户画像取推荐岗位（已按匹配度排序），可按城市、求职类型、方向关键词收窄。用户让你推荐岗位、问「我适合什么」时调用。结果会以卡片展示给用户；本轮如果接着解读或定制某个岗位，就只显示那个岗位的标签。",
+      "按用户画像取推荐岗位（已按匹配度排序），可按城市、求职类型、方向关键词收窄。用户让你推荐岗位、问「我适合什么」时调用；直接调用，不要推说「等画像补完再推荐」，画像缺求职意向或技能也先给结果。",
     schema: RecommendJobsArgs,
   },
   {
     name: "search_jobs",
     description:
-      "在全部在招岗位里搜索，不受推荐门槛限制。用户问某家公司、某个具体岗位时调用：公司名放 company，岗位关键词放 query。结果会以卡片展示给用户；本轮如果接着解读或定制某个岗位，就只显示那个岗位的标签。",
+      "在全部在招岗位里搜索，不受推荐门槛限制。用户问某家公司、某个具体岗位时调用：公司名放 company，岗位关键词放 query。",
     schema: SearchJobsArgs,
   },
   {
     name: "explain_job",
     description:
-      "解读用户和某个岗位的匹配情况：匹配度、优势、短板和投递前可以补充什么。用户问「我差在哪」「这个岗位怎么样」「第二个呢」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。",
+      "解读用户和某个岗位的匹配情况：匹配度、优势、短板和投递前可以补充什么。用户问「我差在哪」「这个岗位怎么样」「第二个呢」时调用；jobId 取自之前的岗位结果，用户说「第二个」「刚才那个腾讯的」时也从之前结果里找，不要重新搜索，找不到再用 search_jobs。",
     schema: ExplainJobArgs,
   },
   {
     name: "tailor_resume",
     description:
-      "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。有三档：微调（默认）、嵌入关键词、深度改写，用户提到才选，不确定就用默认。用户说「帮我针对这个岗位改一下简历」「让简历更适配美团那个」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。草稿会在右侧简历面板打开，要用户在面板里采用后才生效。",
+      "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。用户说「帮我针对这个岗位改一下简历」「让简历更适配那个岗位」「定制一下」时调用，jobId 取自之前的岗位结果，找不到先用 search_jobs。有三档：微调（默认，不用填 level）、嵌入关键词（用户说「用岗位的说法」「把关键词写进去」→ keywords）、深度改写（用户说「大改」「重写」「再大胆一点」→ deep）；用户没提档位就不要填，也不要追问。草稿会在右侧简历面板打开，要用户在面板里采用后才生效。用户想加简历里没有的内容（如岗位要的某项技能）时补不上：先如实说明，再问有没有相关经历，有就先用 upsert_facts 记下，之后再定制。",
     schema: TailorResumeArgs,
   },
   {
     name: "select_tailor_changes",
     description:
-      "按用户的话勾选或去掉当前定制版草稿里的改动，可在同一轮直接采用。用户说「摘要那条不要」「只留技能那条」「用这版」时调用。keep 和 drop 用 tailor_resume 卡片或工具结果里的改动 id；被拦下的改动不能选。",
+      "按用户的话勾选或去掉当前定制版草稿里的改动，可在同一轮直接采用。用户说「摘要那条不要」「只留技能那条」「用这版」时调用。keep 和 drop 用 tailor_resume 卡片或工具结果里的改动 id；被拦下的改动不能选，找不到的 id 不要硬编。",
     schema: SelectTailorChangesArgs,
   },
   {
@@ -431,7 +432,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   {
     name: "polish_resume",
     description:
-      "润色简历里的经历要点：只改写措辞，不新增事实，出现原文没有的数字或英文词的建议会被拦下。用户说「润色一下」「写得更专业/更有力」「把某段改得好一点」时调用；点名了条目就填 items（用简历上的条目标题），说了风格就填 instruction。结果会以卡片展示，用户在卡片或右侧预览里采用后才生效。",
+      "润色简历里的经历要点：只改写措辞，不新增事实，出现原文没有的数字或英文词的建议会被拦下。用户说「润色一下」「写得更专业/更有力」「把某段改得好一点」时调用；点名了条目就填 items（用简历上的条目标题），说了风格就把「更专业」「突出数据」「精简一点」这类填进 instruction。用户想加内容（新技能、新结果）先用 upsert_facts，不要让润色去编。结果会以卡片展示，用户在卡片或右侧预览里采用后才生效；最后可以提醒用户点「润色」。",
     schema: PolishResumeArgs,
   },
   {
@@ -443,18 +444,18 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
   {
     name: "design_resume_style",
     description:
-      "按用户对简历外观的要求定制简历样式（配色、字体、抬头和分区标题样式、单栏或两栏、疏密），只改外观不改内容，预览和导出的 PDF 都会按它来。只填用户这次要改的字段，其余沿用当前样式。模糊说法这样翻译：「稳重/正式」→ 标题用 serif、underline 或 plain 标题、深色主色；「活泼/现代」→ band 抬头、bar 标题；「简洁」→ plain 抬头和标题；「紧凑/压到一页」→ compact。",
+      "按用户对简历外观的要求定制简历样式（配色、字体、抬头和分区标题样式、单栏或两栏、疏密），只改外观不改内容，预览和导出的 PDF 都会按它来。用户说「更稳重一点」「标题换成深绿」「做成两栏」「排紧凑点」「换个风格」时调用；这些话不要用 upsert_facts 记。只填用户这次要改的字段，其余沿用当前样式；颜色给具体色值，太浅的颜色系统会自动加深。模糊说法这样翻译：「稳重/正式」→ 标题用 serif、underline 或 plain 标题、深色主色；「活泼/现代」→ band 抬头、bar 标题；「简洁」→ plain 抬头和标题；「紧凑/压到一页」→ compact。用户要回到原来的模板时填 reset=true。",
     schema: DesignResumeStyleArgs,
   },
   {
     name: "set_resume_css",
-    description: `用受限的 CSS 复刻参考图里主题字段表达不了的外观（渐变和色块、图标、分隔线、照片位、字体、精细的间距和标题样式）。CSS 只作用于简历的固定结构，写进去的内容必须落在下面的白名单里，写错的规则（没有的类、不支持的属性或值）会被整条丢弃并逐条告诉你，其余照常保存；夹带 url()、@规则等试探写法则整份都不保存（上一版继续有效）；选择器会自动限定在简历内部，不要写 body、html、* 或 @规则，禁止 url()、@import、@font-face、伪元素以外的地方写 transform / clip-path、content 里写任意文字（伪元素的 content 只能是 ""、01–12 编号或少量符号）、!important、filter、list-style-type；要点符号用 li::before 自己画（background 或 mask 配 asset 素材），不要用 ::marker；mask 不加 -webkit- 前缀也行。每次传完整的一份，会替换上一份。简历文字、条目顺序都由系统渲染，CSS 改不了也不能隐藏。\n结构（页面骨架不同，外层容器也不同：side-left/side-right 是 .frame>(.side 含抬头 + .main)，band-cols 是 header 后接 .frame>(.main + .side)，timeline/cards/numbered 是 header 后接 .frame 包住全部分区）：header.head（.photo 照片位、.head-main 里 h1 姓名和 .headline 求职意向、.contacts 里每个 span 联系方式、.summary 摘要）→ section[data-kind] 里 h2 分区标题 + .sec-body 里的 .item（.item-head 里 .item-title .item-sub 和 .item-aside 里的 .item-period .item-meta；.item-stack；ul>li 要点，li 里 .lead .num）或 .skill-line（.item-title .lvl .tags>.tag）；两栏时 .cols 里是 .side 和 .main。\n${describeCssVocabulary()}`,
+    description: `复刻参考图时只学版式和外观（配色、抬头结构、分区标题样式、图标、分隔线、字体气质、单栏还是两栏），图里的姓名、公司、经历、文字一律不要照搬，也不要用 upsert_facts 记；颜色用系统附在消息里的色值，不要凭眼睛估。流程：先用 design_resume_style 定下主色、单双栏、抬头、标题样式这些基础，再用本工具补主题表达不了的装饰，然后调用 preview_resume 对照参考图检查。照片位 .photo 默认不显示，只有参考图里有证件照时才用 asset(photo-placeholder) 占位显示。用受限的 CSS 复刻参考图里主题字段表达不了的外观（渐变和色块、图标、分隔线、照片位、字体、精细的间距和标题样式）。CSS 只作用于简历的固定结构，写进去的内容必须落在下面的白名单里，写错的规则（没有的类、不支持的属性或值）会被整条丢弃并逐条告诉你，其余照常保存；夹带 url()、@规则等试探写法则整份都不保存（上一版继续有效）；选择器会自动限定在简历内部，不要写 body、html、* 或 @规则，禁止 url()、@import、@font-face、伪元素以外的地方写 transform / clip-path、content 里写任意文字（伪元素的 content 只能是 ""、01–12 编号或少量符号）、!important、filter、list-style-type；要点符号用 li::before 自己画（background 或 mask 配 asset 素材），不要用 ::marker；mask 不加 -webkit- 前缀也行。每次传完整的一份，会替换上一份。简历文字、条目顺序都由系统渲染，CSS 改不了也不能隐藏。\n结构（页面骨架不同，外层容器也不同：side-left/side-right 是 .frame>(.side 含抬头 + .main)，band-cols 是 header 后接 .frame>(.main + .side)，timeline/cards/numbered 是 header 后接 .frame 包住全部分区）：header.head（.photo 照片位、.head-main 里 h1 姓名和 .headline 求职意向、.contacts 里每个 span 联系方式、.summary 摘要）→ section[data-kind] 里 h2 分区标题 + .sec-body 里的 .item（.item-head 里 .item-title .item-sub 和 .item-aside 里的 .item-period .item-meta；.item-stack；ul>li 要点，li 里 .lead .num）或 .skill-line（.item-title .lvl .tags>.tag）；两栏时 .cols 里是 .side 和 .main。\n${describeCssVocabulary()}`,
     schema: SetResumeCssArgs,
   },
   {
     name: "propose_resume_designs",
     description:
-      "一次给用户 3 版明显不同的简历设计，让用户在缩略图里点选，选中后才保存。用户说了风格词（清新、高级极简、设计感、理工风、活泼……）、说「帮我设计一下/换个好看的/来几个版式」或者没提具体要求只想要更好看时调用；用户只要改某一处（换成深绿、标题加粗）时仍用 design_resume_style。优先用系统提示里的「本轮候选方向」：每版只填 direction（三版骨架互不相同、字体/抬头/标题样式也要拉开），方向自带完整的版式手法和配色；只有候选都不合用户要求时，才自己填 theme（和可选 css）。工具会逐版校验和渲染，返回三张缩略图和自检结果；有被拒绝或自检不过的版本，按原因修好重新提交（最多再调一次）。调用后用两三句话介绍三版各自的气质，请用户点选，不要说已经应用了。",
+      "一次给用户 3 版明显不同的简历设计，让用户在缩略图里点选，选中后才保存。用户说了风格词（清新、高级极简、设计感、理工风、活泼……）、说「帮我设计一下/换个好看的/来几个版式」或者没提具体要求只想要更好看时调用；用户只要改某一处（换成深绿、标题加粗）时仍用 design_resume_style。优先用系统提示里的「本轮候选方向」：每版只填 direction（三版骨架互不相同、字体/抬头/标题样式也要拉开），方向自带完整的版式手法和配色；只有候选都不合用户要求时，才自己填 theme（和可选 css）。三版里至少一版要适合投大厂网申：用经典骨架或不依赖左右分栏的骨架；分栏骨架介绍时提醒用户 ATS 可能读乱。工具会逐版校验和渲染，返回三张缩略图和自检结果；有被拒绝或自检不过的版本，按原因修好重新提交（最多再调一次）。调用后用两三句话介绍三版各自的气质，请用户点选，不要说已经应用了。",
     schema: ProposeDesignsArgs,
   },
   {
