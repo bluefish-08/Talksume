@@ -56,7 +56,7 @@ interface Props {
 }
 
 // 高亮、标记、溯源浮层只在网页预览里叠加；字号按缩放反算，保证缩小的纸面上仍可读
-const PREVIEW_CSS = `
+export const PREVIEW_CSS = `
 html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
 .page { box-sizing: border-box; width: 210mm; min-height: 297mm; background: #fff; }
 .resume .item, .resume .skill-line { position: relative; }
@@ -75,11 +75,10 @@ html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
 .resume .traceable:hover > .pop, .resume .traceable:focus-visible > .pop { display: flex; }
 .resume .pop-head { color: #9fb3d1; }
 .resume section > h2, .resume li.changed, .resume .summary.changed { position: relative; }
-.resume .changed { background: #fdf6e3; box-shadow: 0 0 0 3pt #fdf6e3, 0 0 0 calc(3pt + 1px) #ecd28f; border-radius: 1px; border-left: 2px solid #2563eb; padding-left: calc(8px / var(--zoom, 1)); }
+.resume .changed { border-left: 2px solid #2563eb; padding-left: calc(6px / var(--zoom, 1)); }
 .resume .change-no { position: absolute; left: calc(-26px / var(--zoom, 1)); top: calc(1px / var(--zoom, 1)); width: calc(14px / var(--zoom, 1)); height: calc(14px / var(--zoom, 1)); border-radius: 50%; background: #2563eb; color: #fff; font: 400 calc(9px / var(--zoom, 1)) / calc(14px / var(--zoom, 1)) -apple-system, "PingFang SC", sans-serif; text-align: center; text-indent: 0; }
-.resume .changed.traceable:hover, .resume .changed.traceable:focus-visible { background: #fbefcc; box-shadow: 0 0 0 3pt #fbefcc, 0 0 0 calc(3pt + 1px) #ecd28f; }
-.resume .changed .changed { box-shadow: none; }
-.resume .new-tag.tailor-tag { background: #b7791f; }
+.resume .changed.traceable:hover, .resume .changed.traceable:focus-visible { background: #f0f4fa; }
+.resume .changed .changed { border-left: 0; padding-left: 0; }
 .resume .ph-text { opacity: 0.4; }
 .resume .ph h2 { opacity: 0.4; }
 .resume .ph .bar { height: 6pt; margin-top: 5pt; border-radius: 3pt; background: #eef1f6; }
@@ -127,10 +126,25 @@ function attachSources(target: HTMLElement, factIds: readonly string[], d: Decor
   target.append(pop);
 }
 
-function markChanged(target: HTMLElement, note: ChangeNote, id: string, tagHost: HTMLElement = target) {
-  target.classList.add("changed", "traceable");
-  tagHost.append(el("span", "new-tag tailor-tag", "已定制"));
-  if (note.number !== undefined) target.append(el("span", "change-no", String(note.number)));
+export interface ChangeMarkParts {
+  className: string;
+  number?: number;
+  badge?: string;
+}
+
+/** 定制的纸面标记只有编号和左侧竖线；这里留成纯数据，测试据此确认没有角标。 */
+export function changeMarkParts(note: ChangeNote): ChangeMarkParts {
+  return {
+    className: "changed traceable",
+    ...(note.number !== undefined && { number: note.number }),
+  };
+}
+
+function markChanged(target: HTMLElement, note: ChangeNote, id: string) {
+  const parts = changeMarkParts(note);
+  target.classList.add(...parts.className.split(" "));
+  if (parts.badge) target.append(el("span", "new-tag", parts.badge));
+  if (parts.number !== undefined) target.append(el("span", "change-no", String(parts.number)));
   const pop = el("span", "pop");
   pop.id = id;
   pop.setAttribute("role", "tooltip");
@@ -154,8 +168,7 @@ function decorateChanges(root: ParentNode, resume: ResumeContent, marks: ChangeM
     const item = resume.sections[s ?? -1]?.items[i ?? -1];
     if (!item) continue;
     const order = marks.items.get(item.heading);
-    if (order)
-      markChanged(node, order, `${idPrefix}-${node.dataset.item}`, node.querySelector(".item-head") ?? node);
+    if (order) markChanged(node, order, `${idPrefix}-${node.dataset.item}`);
     for (const li of node.querySelectorAll<HTMLElement>("[data-bullet]")) {
       const bullet = item.bullets[Number(li.dataset.bullet?.split("-")[2])];
       const note = bullet && marks.bullets.get(bullet.text);

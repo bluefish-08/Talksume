@@ -166,7 +166,7 @@ export async function createConversation(
   db: Db,
   userId: string,
   state: IntakeState,
-  greeting: { id: string; text: string; slot?: string },
+  greeting: { id: string; text: string; slot?: string } | null,
   ledgerBefore: Ledger,
 ): Promise<string> {
   return db.transaction(async (tx) => {
@@ -176,13 +176,15 @@ export async function createConversation(
       .values({ userId, intakeState: intakeOf(state) })
       .returning({ id: conversations.id });
     if (!conv) throw new Error("创建会话失败");
-    await tx.insert(messages).values({
-      id: greeting.id,
-      conversationId: conv.id,
-      role: "assistant",
-      content: greeting.text,
-      ...(greeting.slot ? { metadata: { slot: greeting.slot } } : {}),
-    });
+    if (greeting) {
+      await tx.insert(messages).values({
+        id: greeting.id,
+        conversationId: conv.id,
+        role: "assistant",
+        content: greeting.text,
+        ...(greeting.slot ? { metadata: { slot: greeting.slot } } : {}),
+      });
+    }
     return conv.id;
   });
 }

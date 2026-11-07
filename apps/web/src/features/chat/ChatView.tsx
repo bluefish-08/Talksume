@@ -13,7 +13,7 @@ import { tailoringKey } from "../tailor/queries.ts";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
-import { ResumePane, type TailorTarget } from "./ResumePane.tsx";
+import { ResumePane, type TailorJob, type TailorTarget } from "./ResumePane.tsx";
 import type { ConversationDetail, TailorCard } from "./types.ts";
 import { useChatSession } from "./useChatSession.ts";
 import { REPLICA_DEFAULT_TEXT, useImageDraft } from "./useImageDraft.ts";
@@ -69,6 +69,10 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   }, [liveTailor, client, showTailor]);
 
   const scroller = useStickToBottom(messages, session.conflicts);
+  const tailorJob = useMemo<TailorJob | null>(() => {
+    const card = messages.findLast((m) => m.tailor && m.tailor.kind !== "update")?.tailor;
+    return card ? { jobId: card.jobId, company: card.company, title: card.title } : null;
+  }, [messages]);
 
   const userIds = useMemo(
     () => messages.filter((m) => m.role === "user" && !m.resumeImport).map((m) => m.serverId),
@@ -162,8 +166,14 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           facts={facts.data ?? []}
           quotes={quotes}
           roundOf={roundOf}
+          tailorJob={tailorJob}
           tailor={tailor}
-          onTailorShow={(showing) => setTailor((t) => t && { ...t, showing })}
+          onTailorShow={(showing) =>
+            setTailor((t) => {
+              if (t) return { ...t, showing };
+              return showing && tailorJob ? { ...tailorJob, showing, at: Date.now() } : t;
+            })
+          }
           onTailorDiscard={() => setTailor(null)}
         />
       </div>

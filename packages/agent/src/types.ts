@@ -5,6 +5,7 @@ import {
   type ProfileSection,
   type ResumeStyle,
   type ResumeThemePatch,
+  type TailorChangeKind,
   type TailorLevel,
 } from "@talksume/core";
 import type { Completeness, Slot } from "./completeness.ts";
@@ -87,6 +88,16 @@ export interface TailorCardItem {
   selected: boolean;
   blocked: boolean;
   violations?: string[];
+  /** 前端据此生成确定性短标签；老数据没有。 */
+  kind?: TailorChangeKind;
+  /** 一处改动的短名（改写用要点开头，顺序类用排在前面的名字）。 */
+  name?: string;
+  /** 顺序类改动调整后的名字；摘要/改写不用。 */
+  order?: string[];
+  /** 技能顺序调整前的顺序，用来找真正提前的技能。 */
+  orderBefore?: string[];
+  /** 摘要原来是否有内容：有就是改写，没有就是补一段。 */
+  hadBefore?: boolean;
 }
 
 export interface TailorCard {
@@ -99,6 +110,15 @@ export interface TailorCard {
   rejected: number;
   /** 逐条改动，给卡片和模型映射「摘要那条」用。 */
   items?: TailorCardItem[];
+  /** generation 是新生成；update 来自 select/revoke，不单独出卡片。老数据按 generation 处理。 */
+  kind?: "generation" | "update";
+  /** 卡片生成/更新时的服务端状态；旧数据没有。 */
+  status?: "draft" | "adopted" | "revoked";
+}
+
+export interface TailorKept {
+  changes: number;
+  status: "draft" | "adopted" | "revoked";
 }
 
 export interface TailorOutcome {
@@ -106,6 +126,8 @@ export interface TailorOutcome {
   /** 给模型看的可采用调整，一行一处。 */
   lines: string[];
   notes?: string[];
+  /** 本轮没有新的可用调整，服务端保留了之前那版。 */
+  kept?: TailorKept;
 }
 
 /** 服务端注入的按岗位定制简历；找不到岗位返回 null。 */

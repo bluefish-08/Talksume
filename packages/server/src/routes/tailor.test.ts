@@ -177,6 +177,31 @@ const tailorUrl = (jobId: string) => `/api/v1/jobs/${encodeURIComponent(jobId)}/
 const allText = (resume: ResumeContent) => JSON.stringify(resume);
 
 describe("按岗位定制简历", () => {
+  it("重新生成 0 处可用时不覆盖已有的可用定制版", async () => {
+    let calls = 0;
+    const base = tailorResponder(false);
+    const { llm } = fakeLlm((prompt, call) => {
+      calls++;
+      return calls <= 2 ? base(prompt, call) : {};
+    });
+    await boot(llm);
+
+    const first = await call("POST", tailorUrl(MEITUAN));
+    expect(first.status).toBe(200);
+    const changes = first.body.tailoring.changes as TailorChange[];
+    const usableId = changes.find((c) => c.violations.length === 0)?.id;
+    expect(usableId).toBeTruthy();
+    const adopted = await call("POST", `${tailorUrl(MEITUAN)}/adopt`, { changeIds: [usableId ?? ""] });
+    const before = adopted.body.tailoring;
+
+    const second = await call("POST", tailorUrl(MEITUAN));
+    expect(second.status).toBe(200);
+    expect(second.body.tailoring.changes).toEqual(before.changes);
+    expect(second.body.tailoring.selected).toEqual(before.selected);
+    expect(second.body.tailoring.adopted).toEqual(before.adopted);
+    expect(second.body.tailoring.revoked).toBe(false);
+  });
+
   it("编造的数字和 JD 词被拦下、不能采用；采用后存为该岗位的版本，主简历不变", async () => {
     const { llm, prompts } = fakeLlm(tailorResponder(false));
     await boot(llm);
@@ -450,6 +475,8 @@ describe("对话里定制简历", () => {
       level: "deep",
       changes: 5,
       rejected: 1,
+      kind: "generation",
+      status: "draft",
     });
     expect(card.items).toHaveLength(6);
     expect(card.items.find((item: { blocked: boolean }) => item.blocked)).toMatchObject({
@@ -498,6 +525,38 @@ describe("对话里定制简历", () => {
     expect(view.body.tailoring).toBeNull();
   });
 
+  it("再次 tailor_resume 得到 0 处可用时保留旧版，模型收到保留提示且不推新卡片", async () => {
+    let calls = 0;
+    const base = tailorResponder(false);
+    const { llm } = fakeLlm((prompt, call) => {
+      calls++;
+      return calls <= 2 ? base(prompt, call) : {};
+    });
+    const { send } = await conversation(llm);
+    const first = await send("帮我按美团这个岗位改一版简历", [
+      toolTurn(fauxToolCall("tailor_resume", { jobId: MEITUAN, level: "deep" })),
+      fauxAssistantMessage([fauxText("这个岗位最看重缓存和接口性能。")]),
+    ]);
+    expect(first.find((e) => e.event === "tailor")).toBeTruthy();
+    const before = await call("GET", tailorUrl(MEITUAN));
+
+    let keptResult = "";
+    const second = await send("我想再改一版", [
+      toolTurn(fauxToolCall("tailor_resume", { jobId: MEITUAN, level: "deep" })),
+      (context) => {
+        keptResult = JSON.stringify(context.messages.at(-1));
+        return fauxAssistantMessage([fauxText("这版没有生成新的可用调整。")]);
+      },
+    ]);
+    expect(second.some((e) => e.event === "tailor")).toBe(false);
+    expect(keptResult).toContain("0 处可用");
+    expect(keptResult).toContain("之前那版 5 处改动");
+    expect(keptResult).toContain("当前状态：草稿");
+    expect(keptResult).toContain("select_tailor_changes（adopt=true）");
+    const after = await call("GET", tailorUrl(MEITUAN));
+    expect(after.body.tailoring.changes).toEqual(before.body.tailoring.changes);
+  });
+
   it("记录生成它的对话，并能按话去掉、采用和改回；被拦下和未知 id 不写进选中", async () => {
     let selectResult = "";
     let adoptResult = "";
@@ -516,6 +575,7 @@ describe("对话里定制简历", () => {
     const summary = changes.find((c) => c.kind === "summary");
     const blocked = changes.find((c) => c.violations.length > 0);
     const keep = changes.find((c) => c.kind === "skill_order");
+    const allUsable = changes.filter((c) => c.violations.length === 0).map((c) => c.id);
     expect(summary?.id).toBeTruthy();
     expect(blocked?.id).toBeTruthy();
     expect(keep?.id).toBeTruthy();
@@ -524,7 +584,10 @@ describe("对话里定制简历", () => {
       toolTurn(fauxToolCall("select_tailor_changes", { jobId: MEITUAN, drop: [summary?.id ?? ""] })),
       fauxAssistantMessage([fauxText("好，去掉了摘要。")]),
     ]);
-    expect(dropped.find((e) => e.event === "tailor")).toBeTruthy();
+    expect(dropped.find((e) => e.event === "tailor")?.data.tailor).toMatchObject({
+      kind: "update",
+      status: "draft",
+    });
     view = await call("GET", tailorUrl(MEITUAN));
     expect(view.body.tailoring.selected).not.toContain(summary?.id);
     expect(view.body.tailoring.selected.length).toBeGreaterThan(0);
@@ -546,6 +609,7 @@ describe("对话里定制简历", () => {
     expect(view.body.tailoring.selected).toEqual([keep?.id]);
     expect(selectResult).toContain("不能选");
     expect(selectResult).toContain("missing-id");
+    expect(selectResult).toContain("不要问任何建档问题（包括难点）");
 
     const adopted = await send("用这版", [
       toolTurn(fauxToolCall("select_tailor_changes", { jobId: MEITUAN, adopt: true })),
@@ -570,10 +634,27 @@ describe("对话里定制简历", () => {
         return fauxAssistantMessage([fauxText("好，改回主简历了。")]);
       },
     ]);
-    expect(revoked.find((e) => e.event === "tailor")).toBeTruthy();
+    expect(revoked.find((e) => e.event === "tailor")?.data.tailor).toMatchObject({
+      kind: "update",
+      status: "revoked",
+    });
     expect(adoptResult).toContain("改回主简历");
     view = await call("GET", tailorUrl(MEITUAN));
     expect(view.body.tailoring.adopted).toBeNull();
     expect(view.body.tailoring.selected).toEqual([]);
+    expect(view.body.tailoring.revoked).toBe(true);
+
+    const reAdopted = await send("我想了想，还是用定制版吧", [
+      toolTurn(fauxToolCall("select_tailor_changes", { jobId: MEITUAN, adopt: true })),
+      fauxAssistantMessage([fauxText("好，用回刚才那版。")]),
+    ]);
+    expect(reAdopted.find((e) => e.event === "tailor")?.data.tailor).toMatchObject({
+      kind: "update",
+      status: "adopted",
+    });
+    view = await call("GET", tailorUrl(MEITUAN));
+    expect(view.body.tailoring.selected).toEqual(allUsable);
+    expect(view.body.tailoring.revoked).toBe(false);
+    expect(view.body.tailoring.adopted?.resumeVersionId).toBeTruthy();
   });
 });

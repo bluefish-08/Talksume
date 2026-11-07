@@ -393,6 +393,19 @@ const isQuestionText = (sentence: string) => /[？?]["”」』）)]*$/.test(sen
 
 const SENTENCES = /[^。！!？?\n]*(?:[。！!？?]+|\n+|$)/g;
 const ELABORATION = /^(?:比如|例如|譬如|像是?|或者|还是|是不是|或是|你?是?怎么(?:解决|处理|做)的)/;
+const LOOKUP_HEAD = /^(?:那|好|好的|嗯|行|OK)?\s*(?:我)?\s*(?:先|去|这就|马上|现在)/i;
+const LOOKUP_VERB = /找|搜|查|看/;
+const LOOKUP_TARGET = /岗位|职位|要求|JD|招聘|简历|资料|信息|一下|看看/;
+const JOB_GAP_QUESTION = /岗位|职位|JD|招聘|要求|这个岗|投递/;
+
+/** 开头叙述「先去找/搜/查/看」的动作不算回复内容；只拦第一句。 */
+export function announcesLookup(sentence: string): boolean {
+  const text = sentence.trim();
+  // 只看第一个分句，「我先说结论：这个岗位最看重…」里的「看」不算查找动作
+  const clause = text.split(/[，,。！？?；;：:\n]/)[0] ?? "";
+  if (!LOOKUP_HEAD.test(text) || !LOOKUP_VERB.test(clause)) return false;
+  return LOOKUP_TARGET.test(clause) || /搜|查/.test(clause);
+}
 
 function resumeText(shown: string): string {
   const seen = shown
@@ -497,6 +510,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       genId,
       emit: (event) => {
         if (event.type === "ask") {
+          // 定制轮只确认这个岗位，不接受模型或代码追加的建档提问与快捷回复
+          if (flags.tailored) return;
           if (event.quickReplies) quickReplies = event.quickReplies;
           if (event.slot) askedSlot = event.slot.key;
           // 每条回复恰好带一个问题：正文已经问了就以正文为准，没问才用 ask_user 的 question
@@ -600,6 +615,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let resumed = false;
     // 正文按整句送出：断流时没说完的半句扣下，不让用户看到
     let unsent = "";
+    // 只对回复的第一句做「先去找/搜」叙述过滤
+    let firstSentenceSeen = false;
     // 下一步由规划器定：不该问的时候（已收尾、要收尾、刚发了确认）问句拦下，还要问的时候自己写的收尾句拦下，一条回复只留一个问句
     const isQuestion = isQuestionText;
     // 收尾说过一次，这一轮后面的正文不再要：模型常在调用写入之前先收尾，写入返回后又收尾一遍
@@ -609,9 +626,11 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       if (!plain) return true;
       const plan = planNext(state);
       if (closingShown) return false;
-      // 三版缩略图已经摆出来：这一轮只请用户点选，模型顺带追问的建档问题不送出
-      if (flags.designs && isQuestion(plain)) return false;
       if (isQuestion(plain)) {
+        // 定制轮最多留一个和岗位 JD 有关的问题，建档问题一律不送出
+        if (flags.tailored) return questionsShown === 0 && JOB_GAP_QUESTION.test(plain);
+        // 三版缩略图已经摆出来：这一轮只请用户点选，模型顺带追问的建档问题不送出
+        if (flags.designs) return false;
         if (plan.kind !== "ask" || flags.asked) return false;
         return questionsShown === 0 || ELABORATION.test(plain);
       }
@@ -626,7 +645,14 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       unsent = unsent.slice(at);
       let text = "";
       for (const x of chunk.match(SENTENCES) ?? []) {
-        if (!x || !allowed(x)) continue;
+        if (!x.trim()) {
+          if (allowed(x)) text += x;
+          continue;
+        }
+        const first = !firstSentenceSeen;
+        if (first) firstSentenceSeen = true;
+        if (first && announcesLookup(x)) continue;
+        if (!allowed(x)) continue;
         if (isQuestion(x)) questionsShown++;
         text += x;
       }
@@ -907,7 +933,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       clarified = failedWords;
       askedSlot ??= lastAskedKey(state);
       yield { type: "ask", kind: "clarify", question };
-    } else if (plan.kind === "ask" && !flags.asked && !flags.jobs) {
+    } else if (plan.kind === "ask" && !flags.asked && !flags.jobs && !flags.tailored) {
       // 问哪一项是规划器定的：模型问了就记在这一项上，没问就由代码问
       const { slot } = plan;
       const replies = cleanQuickReplies(slot.replies);
@@ -934,6 +960,10 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     }
 
     if (llmError) shown = withoutFragment(shown);
+    if (flags.tailored) {
+      asks.length = 0;
+      quickReplies = [];
+    }
     const reply = [shown.trim(), ...(designs ? [] : asks)].filter(Boolean).join("\n");
     const meta: TurnMeta = {
       ...(changes.length > 0 ? { changes } : {}),

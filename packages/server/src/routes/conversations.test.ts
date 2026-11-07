@@ -55,8 +55,13 @@ async function boot(llm?: AppDeps["llm"], extra: Partial<AppDeps> = {}) {
   await app.ready();
 }
 
-async function createConversation(headers: Record<string, string> = {}) {
-  const res = await app.inject({ method: "POST", url: "/api/v1/conversations", headers });
+async function createConversation(headers: Record<string, string> = {}, payload?: object) {
+  const res = await app.inject({
+    method: "POST",
+    url: "/api/v1/conversations",
+    headers,
+    ...(payload && { payload }),
+  });
   return { res, id: res.json().id as string };
 }
 
@@ -96,6 +101,26 @@ describe("创建与读取会话", () => {
     expect(detail.completeness.score).toBe(0);
     expect(detail.resume).toEqual({ basics: { name: "", contacts: [] }, sections: [] });
     expect(detail.conflicts).toEqual([]);
+  });
+
+  it("从岗位页发起时跳过开场白，普通新建仍保留开场问题", async () => {
+    await boot();
+    const skipped = await createConversation({}, { skipGreeting: true });
+    expect(skipped.res.statusCode).toBe(201);
+    expect(skipped.res.json().greeting).toBeNull();
+    const empty = (await app.inject({ method: "GET", url: `/api/v1/conversations/${skipped.id}` })).json();
+    expect(empty.messages).toHaveLength(0);
+
+    const normal = await createConversation();
+    expect(normal.res.json().greeting).toContain("怎么称呼你");
+
+    const bad = await app.inject({
+      method: "POST",
+      url: "/api/v1/conversations",
+      payload: { skipGreeting: "yes" },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toMatchObject({ code: "invalid_request" });
   });
 
   it("别人的会话和格式不对的 id 都是 404", async () => {

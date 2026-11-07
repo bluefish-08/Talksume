@@ -3,7 +3,7 @@ import { Button, Spinner } from "../../components/ui.tsx";
 import { errorText } from "../tailor/changes.tsx";
 import { useTailorActions, useTailoring } from "../tailor/queries.ts";
 import styles from "./TailorCard.module.css";
-import { cardStatus, levelName } from "./tailorCards.ts";
+import { cardStatus, changeLabel, levelName, withLiveSelection } from "./tailorCards.ts";
 import type { TailorCard } from "./types.ts";
 
 interface Props {
@@ -12,86 +12,67 @@ interface Props {
   onOpen: (card: TailorCard) => void;
 }
 
-/** 卡片状态跟当前服务端一致；历史消息里的卡片只保留当时的改动清单。 */
+const STATUS_LABEL = { draft: "草稿", adopted: "已采用", revoked: "已改回主简历" } as const;
+
+/** 卡片状态跟当前服务端一致；更新卡已经合并进最近一次生成卡。 */
 export function TailorCardView({ card, superseded, onOpen }: Props) {
   const view = useTailoring(card.jobId);
   const toast = useToast();
   const { adopt } = useTailorActions(card.jobId);
-  const adopted = cardStatus(view.data?.tailoring) === "adopted";
-  const level = levelName(card.level);
-  const items = card.items ?? [];
+  const status = cardStatus(view.data?.tailoring, card);
+  const items = withLiveSelection(card.items ?? [], view.data?.tailoring, status);
   const ids = items.filter((item) => item.selected && !item.blocked).map((item) => item.id);
 
   if (superseded) {
+    const level = card.level ? ` · ${levelName(card.level)}` : "";
     return (
       <div className={styles.older} role="note">
-        <span>
-          上一版{level ? ` · ${level}` : ""} · {card.changes} 处改动
-        </span>
-        <span className={styles.grow} />
-        <span>已被下面这版替换</span>
+        上一版{level} · {card.changes} 处改动
       </div>
     );
   }
 
   return (
-    <section className={styles.card} data-adopted={adopted} aria-label="定制版简历">
+    <section className={styles.card} data-status={status} aria-label="定制版简历">
       <div className={styles.head}>
-        <span className={styles.avatar} aria-hidden="true">
-          {card.company.slice(0, 1)}
-        </span>
-        <div className={styles.headText}>
-          <strong className={styles.title}>
-            {card.company} · {card.title}定制版
-          </strong>
-          <span className={styles.meta}>只用于这个岗位{level ? ` · ${level}` : ""}</span>
-        </div>
-        <span className={styles.chip} data-adopted={adopted}>
-          {adopted ? "已采用" : "草稿"}
+        <strong className={styles.title}>
+          {card.company} · {card.title} · 定制版
+        </strong>
+        <span className={styles.chip} data-status={status}>
+          {STATUS_LABEL[status]}
         </span>
       </div>
 
       {items.length > 0 ? (
         <ol className={styles.list}>
-          {items.map((item) => (
-            <li
-              key={item.id}
-              className={styles.item}
-              data-blocked={item.blocked}
-              data-off={!item.blocked && !item.selected}
-            >
-              <span className={styles.num} data-blocked={item.blocked} aria-hidden="true">
-                {item.number ?? "–"}
-              </span>
-              <span>
-                <strong>{item.title}</strong>
-                {item.blocked ? (
-                  <>
-                    {"　"}没改：{item.summary}
-                    {item.violations && item.violations.length > 0
-                      ? `（${item.violations.join("、")} 你没说过）`
-                      : "（你没说过）"}
-                  </>
-                ) : (
-                  <>
-                    {"　"}
-                    {item.summary}
-                    {!item.selected && <span className={styles.off}> · 已去掉</span>}
-                  </>
-                )}
-              </span>
-            </li>
-          ))}
+          {items.map((item) =>
+            item.blocked ? (
+              <li key={item.id} className={styles.blocked}>
+                没改：{(item.violations ?? []).join("、")}（你没说过）
+              </li>
+            ) : (
+              <li key={item.id} className={styles.item} data-off={!item.selected} title={item.summary}>
+                <span className={styles.num} aria-hidden="true">
+                  {item.number ?? "–"}
+                </span>
+                <span className={styles.itemText}>
+                  <strong>{item.title}</strong>
+                  {"　"}
+                  {changeLabel(item)}
+                </span>
+              </li>
+            ),
+          )}
         </ol>
       ) : (
         <p className={styles.fallback}>
           共 {card.changes} 处改动{card.rejected > 0 ? `，${card.rejected} 处没改` : ""}
-          ，点「在右边逐条看」对照简历。
+          ，点「在右边看」对照简历。
         </p>
       )}
 
-      <div className={styles.foot}>
-        {!adopted && (
+      {status === "draft" && (
+        <div className={styles.foot}>
           <Button
             variant="dark"
             size="sm"
@@ -105,13 +86,11 @@ export function TailorCardView({ card, superseded, onOpen }: Props) {
           >
             {adopt.isPending && <Spinner label="采用中" />}用这版
           </Button>
-        )}
-        <Button size="sm" onClick={() => onOpen(card)}>
-          在右边逐条看
-        </Button>
-        <span className={styles.grow} />
-        <span className={styles.hint}>{adopted ? "想撤回就说「改回主简历」" : "不满意直接说"}</span>
-      </div>
+          <Button size="sm" onClick={() => onOpen(card)}>
+            在右边看
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

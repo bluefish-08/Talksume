@@ -17,6 +17,13 @@
   white-space: nowrap;
 }
 
+.icon {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  color: var(--muted);
+}
+
 /* 页头里与其他页面的按钮同高同形 */
 .md {
   height: 38px;

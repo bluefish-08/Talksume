@@ -9,10 +9,16 @@ import {
 import { Profile } from "@talksume/core";
 import { createGateway, loadGatewayConfig } from "@talksume/llm-gateway";
 import { describe, expect, it } from "vitest";
-import { createIntakeController, replayRecord, splitAtQuestion, type TurnMetrics } from "./controller.ts";
+import {
+  announcesLookup,
+  createIntakeController,
+  replayRecord,
+  splitAtQuestion,
+  type TurnMetrics,
+} from "./controller.ts";
 import { cleanQuickReplies, toolJsonSchema, UpsertFactsArgs } from "./schemas.ts";
 import { nextSlotOf, skipSlot } from "./tools.ts";
-import type { IntakeEvent } from "./types.ts";
+import type { IntakeEvent, JobTools, ResumeTailor } from "./types.ts";
 import { createIntakeState } from "./types.ts";
 
 let n = 0;
@@ -1615,5 +1621,126 @@ describe("intake controller: one planner decides the next question", () => {
     expect(tokens(events).match(/[？?]/g)).toHaveLength(1);
     expect(asks(events).map((a) => a.kind)).toEqual([]);
     expect(state.askCounts["basics:_:name"]).toBe(1);
+  });
+});
+
+describe("intake controller: 定制轮不追问建档", () => {
+  const card = {
+    jobId: "demo:2",
+    company: "云帆网络",
+    title: "Java 后台开发实习",
+    changes: 2,
+    rejected: 0,
+    items: [{ id: "summary", number: 1, title: "摘要", summary: "补一句", selected: true, blocked: false }],
+  };
+  const jobs: JobTools = {
+    recommend: async () => ({ jobs: [], total: 0 }),
+    search: async () => ({ jobs: [], total: 0 }),
+    explain: async () => null,
+  };
+  const tailor: ResumeTailor = {
+    tailor: async () => ({ card, lines: ["- 个人摘要：熟悉 Java"] }),
+    select: async () => ({ card, lines: [] }),
+    revoke: async () => ({ card, lines: [] }),
+  };
+
+  function run(steps: FauxResponseStep[]) {
+    const core = createFauxCore({ models: [{ id: "fake-model" }] });
+    core.setResponses(steps);
+    const controller = createIntakeController({
+      streamFn: (model, context, options) => core.streamSimple(model, context, options),
+      model: core.getModel(),
+      genId,
+      jobs,
+      tailor,
+    });
+    return controller;
+  }
+
+  it("tailor_resume 后丢掉模型针对建档槽位的问句，也不追加代码追问和快捷回复", async () => {
+    const controller = run([
+      toolTurn(fauxToolCall("tailor_resume", { jobId: "demo:2" })),
+      fauxAssistantMessage([fauxText("这个岗位最看重 Redis。你还有哪些项目经历？")]),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "u1", text: "按这个岗位改一版" }));
+    const text = tokens(events);
+    expect(text).toContain("这个岗位最看重 Redis。");
+    expect(text).not.toContain("项目经历");
+    expect(asks(events)).toHaveLength(0);
+    expect(state.history.at(-1)?.meta?.quickReplies).toBeUndefined();
+    expect(state.history.at(-1)?.meta?.tools?.[0]?.result).toContain("不要问任何建档问题（包括难点）");
+  });
+
+  it("select_tailor_changes 后 ask_user 的建档问题和快捷回复都不送出", async () => {
+    const controller = run([
+      toolTurn(fauxToolCall("select_tailor_changes", { jobId: "demo:2", keep: ["summary"] })),
+      toolTurn(
+        fauxToolCall("ask_user", {
+          question: "你还有哪些项目经历？",
+          quickReplies: ["有课程项目", "没有项目"],
+        }),
+      ),
+    ]);
+    const state = createIntakeState();
+    const events = await collect(controller.handleUserMessage(state, { id: "u1", text: "只留摘要那条" }));
+    expect(asks(events)).toHaveLength(0);
+    expect(state.history.at(-1)?.meta?.quickReplies).toBeUndefined();
+    expect(state.history.at(-1)?.content).not.toContain("项目经历");
+    expect(state.history.at(-1)?.meta?.tools?.[0]?.result).toContain("不要问任何建档问题");
+  });
+
+  it("定制轮最多留下一个和岗位 JD 有关的问题", async () => {
+    const controller = run([
+      toolTurn(fauxToolCall("tailor_resume", { jobId: "demo:2" })),
+      fauxAssistantMessage([fauxText("JD 里还提到消息队列，你接触过吗？你还有别的项目吗？")]),
+    ]);
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "u1", text: "按这个岗位改一版" }),
+    );
+    const text = tokens(events);
+    expect(text).toContain("JD 里还提到消息队列，你接触过吗？");
+    expect(text).not.toContain("别的项目");
+    expect(asks(events)).toHaveLength(0);
+  });
+});
+
+describe("intake controller: 开头叙述工具动作的过滤", () => {
+  it("只有第一句的「先去找/搜/查/看」被丢掉，后面的正文保留", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage([fauxText("我先去搜一下这个岗位。这个岗位最看重 Redis，你的缓存经历最对口。")]),
+    ]);
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "u1", text: "看看这个岗位" }),
+    );
+    const text = tokens(events);
+    expect(text).not.toContain("我先去搜一下");
+    expect(text).toContain("这个岗位最看重 Redis");
+  });
+
+  it("「我先说结论」这类不是查找叙述，照常保留", async () => {
+    const { controller } = fake([
+      fauxAssistantMessage([fauxText("我先说结论：这个岗位最看重 Redis，你的缓存经历最对口。")]),
+    ]);
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "u1", text: "看看这个岗位" }),
+    );
+    expect(tokens(events)).toContain("我先说结论：这个岗位最看重 Redis");
+  });
+
+  it("叙述出现在第二句时不拦", async () => {
+    const { controller } = fake([fauxAssistantMessage([fauxText("这个岗位最看重 Redis。我先去搜一下。")])]);
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "u1", text: "看看这个岗位" }),
+    );
+    expect(tokens(events)).toContain("我先去搜一下");
+  });
+
+  it("直接判断典型叙述与误报", () => {
+    expect(announcesLookup("我先把网易这个服务端开发实习生的岗位找出来，看看要求。")).toBe(true);
+    expect(announcesLookup("我先去搜一下…")).toBe(true);
+    expect(announcesLookup("我先查一下这个岗位的要求。")).toBe(true);
+    expect(announcesLookup("我先说结论。")).toBe(false);
+    expect(announcesLookup("我先把简历里的要点顺序调一下。")).toBe(false);
   });
 });

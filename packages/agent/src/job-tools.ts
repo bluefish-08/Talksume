@@ -59,19 +59,20 @@ const clampLimit = (n: number | undefined) => Math.min(MAX_JOB_RESULTS, Math.max
 
 const plain = (args: object) => JSON.parse(JSON.stringify(args)) as Record<string, unknown>;
 
-const TAILOR_NOTE =
-  "定制版草稿已在右侧简历面板打开，还没有生效，面板上标着「定制版草稿 · 未采用」，改动处高亮、可逐条取消；用户在面板里点「采用」后，投递这个岗位时才会默认用定制版，主简历不变。先用一句话说这个岗位最看重什么、用户哪段经历最对口，这是回复里唯一需要复述的内容；改动已经列在卡片上，不要再逐条复述；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。";
+const TAILOR_NO_INTAKE =
+  "这一轮只谈这个岗位：不要问任何建档问题（包括难点），也不要提用户还没说过的其他经历；最多只问一个这个岗位 JD 里缺的东西。";
 
-const TAILOR_UPDATE_NOTE =
-  "只有工具返回成功时才能说已经改好、已经采用或已经改回主简历；工具失败或返回找不到时如实告诉用户，不要说已经生效。";
+const TAILOR_NOTE = `定制版草稿已在右侧简历面板打开，还没有生效，面板顶部是「<公司>定制版 · 草稿」，改动处高亮、可逐条取消；用户在面板里点「采用」后，投递这个岗位时才会默认用定制版，主简历不变。先用一句话说这个岗位最看重什么、用户哪段经历最对口，这是回复里唯一需要复述的内容；改动已经列在卡片上，不要再逐条复述；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。${TAILOR_NO_INTAKE}`;
+
+const TAILOR_UPDATE_NOTE = `只有工具返回成功时才能说已经改好、已经采用或已经改回主简历；工具失败或返回找不到时如实告诉用户，不要说已经生效。回复只用一两句话确认改了什么（或已采用），不要列清单，不要开启新的建档话题。${TAILOR_NO_INTAKE}`;
 
 const failedNote = (name: ToolName, reason: string) => {
   if (name === "select_tailor_changes")
-    return `这次没有改成功：${reason}。如实告诉用户哪一处没改，不要说自己已经勾选或已经采用。`;
+    return `这次没有改成功：${reason}。如实告诉用户哪一处没改，不要说自己已经勾选或已经采用。${TAILOR_NO_INTAKE}`;
   if (name === "revoke_tailoring")
-    return `改回主简历失败：${reason}。如实告诉用户这次没有撤销，仍按原来的定制版。`;
+    return `改回主简历失败：${reason}。如实告诉用户这次没有撤销，仍按原来的定制版。${TAILOR_NO_INTAKE}`;
   return name === "tailor_resume"
-    ? `定制简历失败：${reason}。如实告诉用户这次没有生成成功，可以稍后再试，或去岗位详情页点「让 AI 按这个岗位改简历」；绝对不要说已经改好或已经定制。`
+    ? `定制简历失败：${reason}。如实告诉用户这次没有生成成功，可以稍后再试，或去岗位详情页点「让 AI 按这个岗位改简历」；绝对不要说已经改好或已经定制。${TAILOR_NO_INTAKE}`
     : `岗位服务出错：${reason}。如实告诉用户暂时查不到，可以稍后再试或去「职位推荐」页看看，不要编造岗位。`;
 };
 
@@ -103,6 +104,8 @@ export function createJobTools(
       result = failedNote(name, error instanceof Error ? error.message : String(error));
     }
     ctx.flags.jobs = true;
+    if (name === "tailor_resume" || name === "select_tailor_changes" || name === "revoke_tailoring")
+      ctx.flags.tailored = true;
     log.push({ name, args: plain(args), result });
     return text(result);
   }
@@ -208,6 +211,10 @@ export function createJobTools(
         const target = `${card.company} · ${card.title}`;
         const blocked =
           card.rejected > 0 ? `另有 ${card.rejected} 处因出现简历里没有的内容被拦下，不会采用。` : "";
+        if (outcome.kept) {
+          const state = { adopted: "已采用", draft: "草稿", revoked: "已改回" }[outcome.kept.status];
+          return `针对「${target}」这次没有再生成可用的调整（0 处可用）。之前那版 ${outcome.kept.changes} 处改动还在，当前状态：${state}。用户想用回这版时调用 select_tailor_changes（adopt=true）重新采用，不要重新 tailor_resume，也不要说旧版被替换。${TAILOR_NO_INTAKE}`;
+        }
         if (card.changes === 0) {
           return `针对「${target}」没有得到可采用的调整，简历维持原样。${blocked}如实告诉用户现在的简历和这个岗位已经比较贴合，或者可以先补充相关经历；不要说已经改好。${ABOUT_NOTE}`;
         }
@@ -277,7 +284,20 @@ export function createJobTools(
         }
         const card = withLevel(outcome.card, earlierTailor(state, args.jobId)?.level);
         ctx.emit({ type: "tailor", tailor: card });
-        return `已把「${card.company} · ${card.title}」改回主简历，投递这个岗位时不再使用定制版，主简历没有改动。${TAILOR_UPDATE_NOTE}`;
+        const list = (card.items ?? []).map((item) =>
+          item.blocked
+            ? `- ${item.title} [${item.id}] · 没改：${(item.violations ?? []).join("、")} 你没说过`
+            : `- ${item.number}. ${item.title} [${item.id}] · ${item.summary}`,
+        );
+        return [
+          `已把「${card.company} · ${card.title}」改回主简历，投递这个岗位时不再使用定制版，主简历没有改动。`,
+          list.length > 0 ? "这版里的改动：" : "",
+          ...list,
+          "用户之后想用回这版时调用 select_tailor_changes（adopt=true），不要重新 tailor_resume。",
+          TAILOR_UPDATE_NOTE,
+        ]
+          .filter(Boolean)
+          .join("\n");
       }),
   );
 

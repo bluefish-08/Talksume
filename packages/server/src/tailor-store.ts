@@ -52,7 +52,14 @@ async function mainResume(db: Db, userId: string, profile?: Profile) {
 
 export const usable = (c: TailorChange) => c.violations.length === 0;
 
-/** 重新生成会替换草稿，但已采用的版本保留到用户再次采用或撤销为止。 */
+export interface KeptTailoring {
+  changes: TailorChange[];
+  selected: string[];
+  revoked: boolean;
+  adopted: boolean;
+}
+
+/** 重新生成会替换草稿，但新草稿没有可用改动时保留之前那版。 */
 export async function generateTailoring(
   db: Db,
   llm: StructuredLlm,
@@ -68,6 +75,7 @@ export async function generateTailoring(
 ) {
   const job = await loadTailorJob(db, userId, jobId);
   if (!job) throw new TailorError("job_not_found", "岗位不存在");
+  const existing = await loadRow(db, userId, jobId);
   const base = await mainResume(db, userId, options.profile);
   const tailorable = base.sections.some((s) => s.kind !== "education" && s.items.length > 0);
   if (!tailorable) throw new TailorError("profile_empty", "简历里还没有经历或技能，先和助手聊聊再来定制");
@@ -78,6 +86,15 @@ export async function generateTailoring(
     ...(options.signal && { signal: options.signal }),
     ...(options.level && { level: options.level }),
   });
+  if (existing && draft.changes.filter(usable).length === 0 && existing.changes.filter(usable).length > 0) {
+    const kept: KeptTailoring = {
+      changes: existing.changes,
+      selected: existing.selected,
+      revoked: existing.revokedAt !== null,
+      adopted: existing.resumeVersionId !== null,
+    };
+    return { job, changes: draft.changes, level, kept };
+  }
   await db
     .insert(resumeTailorings)
     .values({
@@ -94,6 +111,7 @@ export async function generateTailoring(
         baseContent: base,
         changes: draft.changes,
         selected: [],
+        revokedAt: null,
         model: draft.model,
         ...(options.conversationId && { conversationId: options.conversationId }),
         updatedAt: new Date(),
@@ -125,7 +143,12 @@ export async function adoptTailoring(db: Db, userId: string, jobId: string, ids:
       .returning({ id: resumeVersions.id });
     await tx
       .update(resumeTailorings)
-      .set({ selected: chosen.map((c) => c.id), resumeVersionId: created?.id ?? null, updatedAt: new Date() })
+      .set({
+        selected: chosen.map((c) => c.id),
+        resumeVersionId: created?.id ?? null,
+        revokedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(resumeTailorings.id, row.id));
   });
   return { adopted: chosen.length, rejected: wanted.length - chosen.length };
@@ -176,7 +199,7 @@ export async function selectTailoring(
   else
     await db
       .update(resumeTailorings)
-      .set({ selected, updatedAt: new Date() })
+      .set({ selected, revokedAt: null, updatedAt: new Date() })
       .where(and(eq(resumeTailorings.userId, userId), eq(resumeTailorings.jobId, jobId)));
   return { ...snapshot, selected, unknown, refused };
 }
@@ -184,7 +207,7 @@ export async function selectTailoring(
 export async function revokeTailoring(db: Db, userId: string, jobId: string) {
   await db
     .update(resumeTailorings)
-    .set({ selected: [], resumeVersionId: null, updatedAt: new Date() })
+    .set({ selected: [], resumeVersionId: null, revokedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(resumeTailorings.userId, userId), eq(resumeTailorings.jobId, jobId)));
 }
 
@@ -214,6 +237,7 @@ export async function tailoringView(db: Db, userId: string, jobId: string) {
       base: row.baseContent,
       changes: row.changes,
       selected: row.selected,
+      revoked: row.revokedAt !== null,
       conversationId: row.conversationId,
       adopted: adopted[0]
         ? { resumeVersionId: adopted[0].id, adoptedAt: adopted[0].createdAt.toISOString() }

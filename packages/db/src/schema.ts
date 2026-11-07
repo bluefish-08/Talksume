@@ -248,6 +248,8 @@ export const resumeTailorings = pgTable(
     selected: jsonb("selected").$type<string[]>().notNull().default([]),
     resumeVersionId: uuid("resume_version_id").references(() => resumeVersions.id, { onDelete: "set null" }),
     model: text("model"),
+    /** 用户改回主简历的时间；再生成或再采用时清空。 */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

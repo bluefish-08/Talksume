@@ -189,9 +189,25 @@ function cardSummary(change: TailorChange): string {
   return clip(`${change.after.slice(0, 2).join("、")} 提前`);
 }
 
+function changeLabelData(change: TailorChange) {
+  if (change.kind === "summary")
+    return { kind: change.kind, hadBefore: Boolean(change.before?.trim()) } as const;
+  if (change.kind === "bullet")
+    return { kind: change.kind, name: clip(change.before.replace(/^[•\-\s]+/, ""), 12) } as const;
+  if (change.kind === "bullet_order")
+    return {
+      kind: change.kind,
+      name: clip(change.after[0] ?? change.heading, 12),
+      order: change.after,
+    } as const;
+  if (change.kind === "skill_order")
+    return { kind: change.kind, order: change.after, orderBefore: change.before } as const;
+  return { kind: change.kind, name: clip(change.after[0] ?? "", 12), order: change.after } as const;
+}
+
 function tailorCardOf(
   snapshot: Pick<TailoringSnapshot, "job" | "changes" | "selected">,
-  level?: TailorCard["level"],
+  extra: Pick<TailorCard, "level" | "kind" | "status"> = {},
 ): TailorCard {
   const usableChanges = snapshot.changes.filter(usable);
   const chosen =
@@ -207,6 +223,7 @@ function tailorCardOf(
       summary: cardSummary(change),
       selected: !blocked && chosen.has(change.id),
       blocked,
+      ...changeLabelData(change),
       ...(blocked && { violations: change.violations }),
     };
   });
@@ -214,7 +231,9 @@ function tailorCardOf(
     jobId: snapshot.job.id,
     company: snapshot.job.company,
     title: snapshot.job.title,
-    ...(level && { level }),
+    ...(extra.level && { level: extra.level }),
+    ...(extra.kind && { kind: extra.kind }),
+    ...(extra.status && { status: extra.status }),
     changes: usableChanges.length,
     rejected: snapshot.changes.length - usableChanges.length,
     items,
@@ -246,8 +265,20 @@ export function storeResumeTailor(
         throw error;
       });
       if (!result) return null;
+      if (result.kept) {
+        const usableChanges = result.kept.changes.filter(usable);
+        const status = result.kept.adopted ? "adopted" : result.kept.revoked ? "revoked" : "draft";
+        return {
+          card: tailorCardOf(
+            { job: result.job, changes: result.kept.changes, selected: result.kept.selected },
+            { level: result.level, kind: "update", status },
+          ),
+          lines: usableChanges.map(describeTailorChange),
+          kept: { changes: usableChanges.length, status },
+        };
+      }
       const snapshot = { job: result.job, changes: result.changes, selected: [] };
-      const card = tailorCardOf(snapshot, result.level);
+      const card = tailorCardOf(snapshot, { level: result.level, kind: "generation", status: "draft" });
       return {
         card,
         lines: result.changes.filter(usable).map(describeTailorChange),
@@ -260,7 +291,10 @@ export function storeResumeTailor(
         throw error;
       });
       if (!result) return null;
-      const card = tailorCardOf(result);
+      const card = tailorCardOf(result, {
+        kind: "update",
+        status: options.adopt ? "adopted" : "draft",
+      });
       const notes = [
         result.unknown.length > 0 ? `找不到这些改动 id：${result.unknown.join("、")}，没有改它们。` : "",
         result.refused.length > 0 ? `${result.refused.join("、")} 是被拦下的改动，不能选，已经忽略。` : "",
@@ -280,7 +314,7 @@ export function storeResumeTailor(
         throw error;
       });
       if (!snapshot) return null;
-      return { card: tailorCardOf(snapshot), lines: [] };
+      return { card: tailorCardOf(snapshot, { kind: "update", status: "revoked" }), lines: [] };
     },
   };
 }

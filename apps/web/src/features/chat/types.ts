@@ -1,4 +1,4 @@
-import type { ResumeStyle, TailorLevel } from "@talksume/core";
+import type { ResumeStyle, TailorChangeKind, TailorLevel } from "@talksume/core";
 import type { Completeness, Profile, ProfileSection, ResumeContent } from "../../api/types.ts";
 
 /** 与 packages/agent 的 ProfileChange / Conflict 保持一致（web 不依赖 agent 包）。 */
@@ -42,6 +42,11 @@ export interface TailorCardItem {
   selected: boolean;
   blocked: boolean;
   violations?: string[];
+  kind?: TailorChangeKind;
+  name?: string;
+  order?: string[];
+  orderBefore?: string[];
+  hadBefore?: boolean;
 }
 
 /** 与 packages/agent 的 TailorCard 保持一致：助手生成的定制简历草稿。 */
@@ -53,6 +58,8 @@ export interface TailorCard {
   changes: number;
   rejected: number;
   items?: TailorCardItem[];
+  kind?: "generation" | "update";
+  status?: "draft" | "adopted" | "revoked";
 }
 
 /** 与 packages/agent 的 DesignOption 保持一致：助手一次给出的几版设计之一。 */

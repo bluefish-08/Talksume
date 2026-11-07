@@ -150,7 +150,7 @@ export function useOptimizeResume() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (job: { company: string; title: string }) => {
-      const { id } = await api.post<{ id: string }>(`${API}/conversations`);
+      const { id } = await api.post<{ id: string }>(`${API}/conversations`, { skipGreeting: true });
       return { id, job };
     },
     onSuccess: ({ id, job }) => {

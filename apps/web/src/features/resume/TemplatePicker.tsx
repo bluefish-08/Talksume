@@ -8,7 +8,7 @@ import {
   templateUsesAccent,
 } from "@talksume/core";
 import { sampleResume } from "@talksume/resume-render/browser";
-import { Check, ChevronDown, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Palette, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../../api/client.ts";
 import type { ResumeContent } from "../../api/types.ts";
@@ -26,9 +26,11 @@ import styles from "./TemplatePicker.module.css";
 export function TemplatePicker({
   resume,
   size = "sm",
+  icon = false,
 }: {
   resume: ResumeContent | undefined;
   size?: TriggerSize;
+  icon?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [advice, setAdvice] = useState<StyleRecommendation | null>(null);
@@ -70,31 +72,41 @@ export function TemplatePicker({
   };
   const failure =
     recommend.error instanceof ApiError ? recommend.error.message : "智能推荐暂时不可用，请稍后再试";
+  const styleName = custom ? `AI 定制 · ${theme?.name ?? "参考图复刻"}` : TEMPLATE_INFO[style.template].label;
 
   return (
     <div className={styles.root} ref={root}>
       <button
         type="button"
-        className={size === "md" ? `${styles.trigger} ${styles.md}` : styles.trigger}
+        className={[styles.trigger, size === "md" && styles.md, icon && styles.icon]
+          .filter(Boolean)
+          .join(" ")}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={icon ? `简历样式：${styleName}` : undefined}
         onClick={() => setOpen((v) => !v)}
       >
-        <span
-          className={styles.dot}
-          style={{
-            background: theme
-              ? theme.accent
-              : custom
-                ? "#6b7280"
-                : accentOn
-                  ? ACCENT_INFO[style.accent].hex
-                  : "#111",
-          }}
-          aria-hidden="true"
-        />
-        {custom ? `AI 定制 · ${theme?.name ?? "参考图复刻"}` : TEMPLATE_INFO[style.template].label}
-        <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
+        {icon ? (
+          <Palette size={16} strokeWidth={1.8} aria-hidden="true" />
+        ) : (
+          <>
+            <span
+              className={styles.dot}
+              style={{
+                background: theme
+                  ? theme.accent
+                  : custom
+                    ? "#6b7280"
+                    : accentOn
+                      ? ACCENT_INFO[style.accent].hex
+                      : "#111",
+              }}
+              aria-hidden="true"
+            />
+            {styleName}
+            <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
+          </>
+        )}
       </button>
 
       {open && (

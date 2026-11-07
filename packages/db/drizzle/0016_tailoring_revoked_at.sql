@@ -1,0 +1,1 @@
+ALTER TABLE "resume_tailorings" ADD COLUMN "revoked_at" timestamp with time zone;

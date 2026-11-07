@@ -46,6 +46,7 @@ const MessageBody = z.object({
   imageIds: z.array(z.uuid()).max(2).optional(),
 });
 const ConflictBody = z.object({ choice: z.enum(["proposed", "previous"]) });
+const CreateBody = z.object({ skipGreeting: z.boolean().optional() });
 
 const DEFAULT_THINKING = true;
 
@@ -93,22 +94,28 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   });
 
   app.post("/api/v1/conversations", async (req, reply) => {
+    const body = CreateBody.safeParse(req.body ?? {});
+    if (!body.success) return sendError(reply, 400, "invalid_request", "skipGreeting 必须是布尔值");
     const { profile, facts, ledger, summaries } = await loadUserMemory(db, req.userId);
     const state = createIntakeState({ profile, facts, ...structuredClone(ledger) });
     const slot = nextSlotOf(state);
-    noteAsked(state, slot);
     const topic = summaries[0]?.topic ?? topicOfFacts(facts);
-    const greeting = {
-      id: randomUUID(),
-      text: openingMessage({ profile, slot, topic }),
-      ...(slot ? { slot: slot.key } : {}),
-    };
-    state.history.push({
-      id: greeting.id,
-      role: "assistant",
-      content: greeting.text,
-      ...(slot ? { meta: { slot: slot.key } } : {}),
-    });
+    const greeting = body.data.skipGreeting
+      ? null
+      : {
+          id: randomUUID(),
+          text: openingMessage({ profile, slot, topic }),
+          ...(slot ? { slot: slot.key } : {}),
+        };
+    if (greeting) {
+      noteAsked(state, slot);
+      state.history.push({
+        id: greeting.id,
+        role: "assistant",
+        content: greeting.text,
+        ...(slot ? { meta: { slot: slot.key } } : {}),
+      });
+    }
     const id = await createConversation(db, req.userId, state, greeting, ledger);
     const { summarizer } = deps;
     if (summarizer) {
@@ -116,7 +123,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         req.log.warn({ err }, "conversation summary failed"),
       );
     }
-    return reply.code(201).send({ id, greeting: greeting.text });
+    return reply.code(201).send({ id, greeting: greeting?.text ?? null });
   });
 
   app.get("/api/v1/conversations", async (req) => {

@@ -8,7 +8,9 @@ import type { Completeness, ProfileSection, ResumeContent } from "../../api/type
 import { useToast } from "../../components/Toast.tsx";
 import { factsKey, resumeStyleKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
+import { applyTailorUpdate } from "../tailor/queries.ts";
 import { useModelChoice } from "./modelChoice.ts";
+import { mergeTailorCard } from "./tailorCards.ts";
 import type {
   ChatMessage,
   Conflict,
@@ -138,9 +140,24 @@ export function useChatSession(detail: ConversationDetail) {
             case "about_job":
               patch(replyKey, (m) => ({ ...m, about: data.job as JobCard }));
               break;
-            case "tailor":
-              patch(replyKey, (m) => ({ ...m, tailor: data.tailor as TailorCard }));
+            case "tailor": {
+              const incoming = data.tailor as TailorCard;
+              if (incoming.kind === "update") {
+                applyTailorUpdate(client, incoming);
+                setMessages((all) => {
+                  const at = all.findLastIndex(
+                    (m) => m.tailor?.jobId === incoming.jobId && m.tailor.kind !== "update",
+                  );
+                  if (at < 0) return all;
+                  return all.map((m, i) =>
+                    i === at && m.tailor ? { ...m, tailor: mergeTailorCard(m.tailor, incoming) } : m,
+                  );
+                });
+              } else {
+                patch(replyKey, (m) => ({ ...m, tailor: incoming }));
+              }
               break;
+            }
             case "style_options":
               patch(replyKey, (m) => ({ ...m, designs: data.options as DesignOption[] }));
               break;

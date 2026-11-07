@@ -9,10 +9,9 @@ import { VersionSwitch } from "./VersionSwitch.tsx";
 
 interface Props {
   jobId: string;
-  /** 切回主简历预览，草稿还在。 */
-  onShowMain: () => void;
-  /** 放弃只是收起草稿，服务端的草稿和主简历都不动。 */
-  onDiscard: () => void;
+  /** 独立简历页仍用旧状态条；对话面板不传，改用单行头部和版本菜单。 */
+  onShowMain?: () => void;
+  onDiscard?: () => void;
 }
 
 /** 简历面板里的定制版预览：改动高亮、编号与卡片一致，采用前主简历不变。 */
@@ -36,10 +35,48 @@ export function TailorDraft({ jobId, onShowMain, onDiscard }: Props) {
       </div>
     );
   }
-  return <Draft key={view.tailoring.updatedAt} view={view} onShowMain={onShowMain} onDiscard={onDiscard} />;
+  return (
+    <Draft
+      key={view.tailoring.updatedAt}
+      view={view}
+      {...(onShowMain && { onShowMain })}
+      {...(onDiscard && { onDiscard })}
+    />
+  );
 }
 
 function Draft({
+  view,
+  onShowMain,
+  onDiscard,
+}: {
+  view: TailoringView;
+  onShowMain?: () => void;
+  onDiscard?: () => void;
+}) {
+  const draft = view.tailoring as NonNullable<TailoringView["tailoring"]>;
+  const { style } = useResumeStyle();
+  const { preview, marks } = useTailorDraft(draft);
+  const adopted = Boolean(draft.adopted && draft.selected.length > 0);
+
+  return (
+    <div className={styles.draft}>
+      {onShowMain && onDiscard && <DraftBar view={view} onShowMain={onShowMain} onDiscard={onDiscard} />}
+      {draft.stale && <p className={styles.warn}>主简历在生成这份定制后又更新过。</p>}
+      <div className={styles.scroll}>
+        <ResumePreview
+          resume={preview}
+          resumeStyle={style}
+          changeMarks={marks}
+          label={adopted ? "定制版简历" : "定制版简历草稿"}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** 独立简历页的状态条；对话里的面板改用单行头部，不再重复这一套按钮。 */
+function DraftBar({
   view,
   onShowMain,
   onDiscard,
@@ -50,77 +87,69 @@ function Draft({
 }) {
   const draft = view.tailoring as NonNullable<TailoringView["tailoring"]>;
   const toast = useToast();
-  const { style } = useResumeStyle();
   const { adopt, revoke } = useTailorActions(view.job.id);
-  const { chosen, preview, marks } = useTailorDraft(draft);
+  const { chosen } = useTailorDraft(draft);
   const busy = adopt.isPending || revoke.isPending;
   const adopted = Boolean(draft.adopted && draft.selected.length > 0);
 
   return (
-    <div className={styles.draft}>
-      <section className={styles.bar} data-tone={adopted ? "ok" : "draft"} aria-label="定制版状态">
-        <div className={styles.row}>
-          <VersionSwitch
-            className={styles.switch}
-            label={`${view.job.company}定制版`}
-            showing
-            onShow={(showing) => {
-              if (!showing) onShowMain();
-            }}
-          />
-          {adopted ? (
-            <span className={styles.ok}>
-              <i aria-hidden="true" />
-              已采用 · 投这个岗位时使用
-            </span>
-          ) : (
-            <span className={styles.state}>{draft.changes.length} 处改动 · 草稿</span>
-          )}
-          <span className={styles.grow} />
-          {adopted ? (
+    <section className={styles.bar} data-tone={adopted ? "ok" : "draft"} aria-label="定制版状态">
+      <div className={styles.row}>
+        <VersionSwitch
+          className={styles.switch}
+          label={`${view.job.company}定制版`}
+          showing
+          onShow={(showing) => {
+            if (!showing) onShowMain();
+          }}
+        />
+        {adopted ? (
+          <span className={styles.ok}>
+            <i aria-hidden="true" />
+            已采用 · 投这个岗位时使用
+          </span>
+        ) : (
+          <span className={styles.state}>{draft.changes.length} 处改动 · 草稿</span>
+        )}
+        <span className={styles.grow} />
+        {adopted ? (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              revoke.mutate(undefined, {
+                onSuccess: () => toast("已改回主简历，投递这个岗位时不再用定制版"),
+                onError: (e) => toast(errorText(e), { tone: "error" }),
+              })
+            }
+          >
+            改回主简历
+          </Button>
+        ) : (
+          <>
+            <Button size="sm" disabled={busy} onClick={onDiscard}>
+              放弃
+            </Button>
             <Button
+              variant="dark"
               size="sm"
-              disabled={busy}
+              disabled={busy || chosen.length === 0}
               onClick={() =>
-                revoke.mutate(undefined, {
-                  onSuccess: () => toast("已改回主简历，投递这个岗位时不再用定制版"),
-                  onError: (e) => toast(errorText(e), { tone: "error" }),
-                })
+                adopt.mutate(
+                  chosen.map((c) => c.id),
+                  {
+                    onSuccess: () => toast("已采用定制版，投递这个岗位时会默认使用", { tone: "success" }),
+                    onError: (e) => toast(errorText(e), { tone: "error" }),
+                  },
+                )
               }
             >
-              改回主简历
+              {adopt.isPending && <Spinner label="采用中" />}
+              用这版
             </Button>
-          ) : (
-            <>
-              <Button size="sm" disabled={busy} onClick={onDiscard}>
-                放弃
-              </Button>
-              <Button
-                variant="dark"
-                size="sm"
-                disabled={busy || chosen.length === 0}
-                onClick={() =>
-                  adopt.mutate(
-                    chosen.map((c) => c.id),
-                    {
-                      onSuccess: () => toast("已采用定制版，投递这个岗位时会默认使用", { tone: "success" }),
-                      onError: (e) => toast(errorText(e), { tone: "error" }),
-                    },
-                  )
-                }
-              >
-                {adopt.isPending && <Spinner label="采用中" />}
-                用这版
-              </Button>
-            </>
-          )}
-        </div>
-        {draft.stale && <p className={styles.warn}>主简历在生成这份定制后又更新过。</p>}
-      </section>
-
-      <div className={styles.scroll}>
-        <ResumePreview resume={preview} resumeStyle={style} changeMarks={marks} label="定制版简历草稿" />
+          </>
+        )}
       </div>
-    </div>
+    </section>
   );
 }

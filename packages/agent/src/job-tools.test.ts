@@ -360,6 +360,7 @@ describe("定制简历工具", () => {
     expect(toolResult()).toContain("生成定制版草稿，共 2 处调整");
     expect(toolResult()).toContain("1 处因出现简历里没有的内容被拦下");
     expect(toolResult()).toContain("不要说已经改好");
+    expect(toolResult()).toContain("不要问任何建档问题（包括难点）");
     expect(state.history.at(-1)?.meta?.tailor).toEqual(card);
     expect(events.some((e) => e.type === "ask")).toBe(false);
   });
@@ -414,6 +415,25 @@ describe("定制简历工具", () => {
     expect(events.some((e) => e.type === "tailor")).toBe(false);
     expect(toolResult()).toContain("没有得到可采用的调整");
     expect(events.some((e) => e.type === "about_job")).toBe(true);
+  });
+
+  it("重新生成 0 处可用时保留旧版提示，不推新卡片", async () => {
+    const { events, toolResult } = await run({
+      tailor: async () => ({
+        card: { ...card, changes: 5 },
+        lines: [],
+        kept: { changes: 5, status: "revoked" },
+      }),
+      select: async () => null,
+      revoke: async () => null,
+    });
+    expect(events.some((e) => e.type === "tailor")).toBe(false);
+    expect(events.some((e) => e.type === "about_job")).toBe(true);
+    expect(toolResult()).toContain("0 处可用");
+    expect(toolResult()).toContain("之前那版 5 处改动");
+    expect(toolResult()).toContain("当前状态：已改回");
+    expect(toolResult()).toContain("select_tailor_changes（adopt=true）");
+    expect(toolResult()).toContain("不要重新 tailor_resume");
   });
 
   it("按话调整选中项并采用，推出更新后的卡片；参数原样交给服务端", async () => {
@@ -472,6 +492,8 @@ describe("定制简历工具", () => {
     expect(events.find((e) => e.type === "tailor")).toMatchObject({ tailor: { jobId: "demo:2" } });
     expect(state.history.at(-1)?.meta?.tailor?.items?.[0]?.selected).toBe(false);
     expect(toolResult).toContain("已采用");
+    expect(toolResult).toContain("不要列清单");
+    expect(toolResult).toContain("不要问任何建档问题（包括难点）");
   });
 
   it("改回主简历也推出卡片；失败时如实告诉模型没有生效", async () => {
@@ -481,12 +503,26 @@ describe("定制简历工具", () => {
       title: "Java 后台开发实习",
       changes: 2,
       rejected: 0,
+      items: [
+        {
+          id: "summary",
+          number: 1,
+          title: "摘要",
+          summary: "补一句缓存经历",
+          selected: true,
+          blocked: false,
+        },
+      ],
     };
+    let revokedResult = "";
     let failed = "";
     const { controller } = fake(
       [
         toolTurn(fauxToolCall("revoke_tailoring", { jobId: "demo:2" })),
-        fauxAssistantMessage([fauxText("好，改回主简历了。")]),
+        (context) => {
+          revokedResult = JSON.stringify(context.messages.at(-1));
+          return fauxAssistantMessage([fauxText("好，改回主简历了。")]);
+        },
       ],
       fakeJobs().jobs,
       [],
@@ -500,6 +536,9 @@ describe("定制简历工具", () => {
       controller.handleUserMessage(createIntakeState(), { id: "u1", text: "改回主简历" }),
     );
     expect(events.find((e) => e.type === "tailor")).toBeTruthy();
+    expect(revokedResult).toContain("- 1. 摘要 [summary] · 补一句缓存经历");
+    expect(revokedResult).toContain("select_tailor_changes（adopt=true）");
+    expect(revokedResult).toContain("不要重新 tailor_resume");
 
     const { controller: broken } = fake(
       [
@@ -544,6 +583,9 @@ describe("岗位相关的系统提示", () => {
     const prompt = buildSystemPrompt(input(true));
     expect(prompt).toContain("## 岗位问题");
     expect(prompt).toContain("不要推说「等画像补完再推荐」");
+    expect(prompt).toContain("不要先叙述要找岗位");
+    expect(prompt).not.toContain("不要向用户叙述正在调用工具");
+    expect(prompt).not.toContain("先用一句话告诉用户你要做什么");
     expect(prompt).toContain("recommend_jobs");
     expect(prompt).toContain("岗位详情页");
     expect(prompt).not.toContain("比如生成简历、改写措辞、重点突出某条、投递");
@@ -557,6 +599,10 @@ describe("岗位相关的系统提示", () => {
     expect(prompt).toContain("revoke_tailoring 改回主简历");
     expect(prompt).toContain("只有 tailor_resume 返回「已生成定制版草稿」时");
     expect(prompt).toContain("这一轮最多问一个问题");
+    expect(prompt).toContain("不要再问建档问题（包括难点）");
+    expect(prompt).toContain("回复只用一两句话确认改了什么");
+    expect(prompt).toContain("还是用定制版");
+    expect(prompt).toContain("select_tailor_changes adopt=true");
     expect(prompt).not.toContain("改写措辞、重点突出某条");
   });
 });

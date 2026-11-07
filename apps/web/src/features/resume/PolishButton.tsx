@@ -8,7 +8,7 @@ import { PolishReview } from "./PolishReview.tsx";
 import { usePolishActions, usePolishState } from "./polishQueries.ts";
 import type { TriggerSize } from "./queries.ts";
 
-export function PolishButton({ size = "sm" }: { size?: TriggerSize }) {
+export function PolishButton({ size = "sm", icon = false }: { size?: TriggerSize; icon?: boolean }) {
   const state = usePolishState();
   const { polish } = usePolishActions();
   const toast = useToast();
@@ -56,8 +56,11 @@ export function PolishButton({ size = "sm" }: { size?: TriggerSize }) {
     <>
       <button
         type="button"
-        className={size === "md" ? `${styles.trigger} ${styles.md}` : styles.trigger}
+        className={[styles.trigger, size === "md" && styles.md, icon && styles.icon]
+          .filter(Boolean)
+          .join(" ")}
         disabled={!state.data || !!disabledReason}
+        aria-label={icon ? "润色" : undefined}
         title={
           disabledReason ??
           (stale > 0 ? `${stale} 条要点原文已更新，可以重新润色` : "把经历要点改写成简历风格")
@@ -65,7 +68,7 @@ export function PolishButton({ size = "sm" }: { size?: TriggerSize }) {
         onClick={start}
       >
         <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />
-        润色
+        {!icon && "润色"}
         {stale > 0 && <span className={styles.dot} aria-hidden="true" />}
       </button>
       {open && <PolishReview polishingAll={polish.isPending} onClose={() => setOpen(false)} />}

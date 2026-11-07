@@ -10,7 +10,7 @@ const OPTIONS: { format: ExportFormat; label: string }[] = [
   { format: "docx", label: "Word（.docx）" },
 ];
 
-export function ExportMenu({ size = "sm" }: { size?: TriggerSize }) {
+export function ExportMenu({ size = "sm", icon = false }: { size?: TriggerSize; icon?: boolean }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const { exportAs, busy } = useExportResume();
@@ -36,14 +36,17 @@ export function ExportMenu({ size = "sm" }: { size?: TriggerSize }) {
     <div className={styles.root} ref={root}>
       <button
         type="button"
-        className={size === "md" ? `${styles.trigger} ${styles.md}` : styles.trigger}
+        className={[styles.trigger, size === "md" && styles.md, icon && styles.icon]
+          .filter(Boolean)
+          .join(" ")}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={icon ? "导出" : undefined}
         disabled={busy !== null}
         onClick={() => setOpen((v) => !v)}
       >
         {busy ? <Spinner label="正在导出" /> : <Download size={15} strokeWidth={1.8} aria-hidden="true" />}
-        导出
+        {!icon && "导出"}
       </button>
       {open && (
         <div className={styles.menu} role="menu">

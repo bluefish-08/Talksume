@@ -60,6 +60,8 @@ export interface RunContext {
     styled?: boolean;
     /** 本轮已经把几版设计展示给用户挑选。 */
     designs?: boolean;
+    /** 本轮调用过定制工具：不再追加建档问题和快捷回复。 */
+    tailored?: boolean;
   };
   /** 本轮已经说出口的正文。 */
   spoken?: () => string;
