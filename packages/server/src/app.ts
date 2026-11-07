@@ -53,6 +53,8 @@ export interface AppDeps {
   matching?: MatchingServiceOptions;
   /** 按岗位定制简历用的结构化输出模型；null 显式关闭，不传按环境变量。 */
   resumeLlm?: StructuredLlm | null;
+  /** 润色的 per-user busy guard；REST 和对话工具共用同一个集合。 */
+  polishBusy?: Set<string>;
   /** 每轮对话的耗时，同时写进请求日志。 */
   onTurnMetrics?: (metrics: TurnReport) => void;
   /** 身份来源；不传时本地版是固定的本机用户，TALKSUME_DEV_AUTH=1 用开发身份，cloud 版必须注入。 */
@@ -102,7 +104,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const identity = deps.identity ?? defaultIdentity(deps.edition, db);
     installIdentity(app, identity, db);
     const resumeLlm = deps.resumeLlm === undefined ? structuredLlmFromEnv() : deps.resumeLlm;
-    for (const register of routes) register(app, { ...deps, db, resumeLlm, devAuth: identity.dev === true });
+    const polishBusy = deps.polishBusy ?? new Set<string>();
+    for (const register of routes)
+      register(app, { ...deps, db, resumeLlm, polishBusy, devAuth: identity.dev === true });
   }
 
   return app;

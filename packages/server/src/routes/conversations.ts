@@ -30,6 +30,7 @@ import { openSse, sendError } from "../http.ts";
 import { imageNotes } from "../image-notes.ts";
 import { loadChatImages } from "../image-store.ts";
 import { matchingJobTools, storeResumeTailor } from "../job-tools.ts";
+import { storeResumePolisher } from "../polish-tools.ts";
 import { storeResumeStyler } from "../resume-style.ts";
 import { fontRoutes } from "./fonts.ts";
 import { imageRoutes } from "./images.ts";
@@ -73,6 +74,9 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   const chatTools = (userId: string, profile: () => Profile, conversationId: string) => ({
     jobs: matchingJobTools(jobService, userId),
     ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId, conversationId) }),
+    ...(deps.resumeLlm && {
+      polisher: storeResumePolisher(db, deps.resumeLlm, userId, deps.polishBusy),
+    }),
     styles: storeResumeStyler(db, userId, { profile, log: app.log }),
   });
 
@@ -148,6 +152,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
         jobs: m.meta.jobs ?? [],
         ...(m.meta.about && { about: m.meta.about }),
         ...(m.meta.tailor && { tailor: m.meta.tailor }),
+        ...(m.meta.polish && { polish: m.meta.polish }),
         ...(m.meta.designs && { designs: m.meta.designs }),
         ...(m.meta.resumeImport && { resumeImport: m.meta.resumeImport }),
         ...(m.meta.images && { images: m.meta.images }),

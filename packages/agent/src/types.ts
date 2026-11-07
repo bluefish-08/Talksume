@@ -130,6 +130,71 @@ export interface TailorOutcome {
   kept?: TailorKept;
 }
 
+/** 对话里展示的润色卡片；update 合并进最近一次 generation。 */
+export interface PolishCardItem {
+  id: string;
+  /** 卡片上的编号，被拦下的建议没有编号。 */
+  number?: number;
+  heading: string;
+  before: string;
+  after: string;
+  state: "pending" | "accepted" | "dismissed";
+  blocked: boolean;
+  violations?: string[];
+}
+
+export interface PolishCard {
+  kind?: "generation" | "update";
+  status?: "draft" | "adopted" | "partial" | "none";
+  items: PolishCardItem[];
+}
+
+/** LLM 原样返回的要点，不落库、不进卡片。 */
+export interface PolishNoop {
+  heading: string;
+  before: string;
+}
+
+export type PolishState = "pending" | "accepted" | "dismissed";
+
+export interface PolishOutcome {
+  card: PolishCard;
+  /** 给模型看的一行一处，编号与卡片一致；不传时由卡片生成。 */
+  lines?: string[];
+  /** 这次实际润色的要点数；不传时按卡片条目数。 */
+  polished?: number;
+  /** 用户点名但简历里没有的条目标题。 */
+  unknownItems?: string[];
+  /** 当前可润色的全部条目标题。 */
+  headings?: string[];
+  /** 本次操作没有改到的 id。 */
+  unknownIds?: string[];
+  /** 被拦下、不能采用的建议 id。 */
+  blockedIds?: string[];
+  /** 模型原样返回、没有改动，因此没有落库的要点。 */
+  noopItems?: PolishNoop[];
+}
+
+export interface PolishOptions {
+  /** 条目名称，对应简历上的条目小标题；不传则所有还没有建议的要点。 */
+  items?: readonly string[];
+  /** 风格要求，只作为提示，不能突破不新增事实的约束。 */
+  instruction?: string;
+}
+
+export interface PolishDecisionOptions {
+  accept?: readonly string[];
+  dismiss?: readonly string[];
+  revert?: readonly string[];
+  all?: "accept" | "dismiss" | "revert";
+}
+
+/** 服务端注入的简历润色；profile 是本轮对话里最新的画像。 */
+export interface ResumePolisher {
+  polish(profile: Profile, options: PolishOptions): Promise<PolishOutcome>;
+  decide(profile: Profile, options: PolishDecisionOptions): Promise<PolishOutcome>;
+}
+
 /** 服务端注入的按岗位定制简历；找不到岗位返回 null。 */
 export interface ResumeTailor {
   tailor(
@@ -237,6 +302,7 @@ export type TurnMeta = {
   /** 这条回复在讲的具体岗位（解读或定制过），只在回复顶部显示一行标签。 */
   about?: JobCard;
   tailor?: TailorCard;
+  polish?: PolishCard;
   tools?: ToolRecord[];
   /** 这条回复展示给用户挑选的几版设计。 */
   designs?: DesignOption[];
@@ -312,6 +378,7 @@ export type IntakeEvent =
   | { type: "jobs"; source: "recommend" | "search"; jobs: JobCard[] }
   | { type: "about_job"; job: JobCard }
   | { type: "tailor"; tailor: TailorCard }
+  | { type: "polish"; polish: PolishCard }
   | { type: "resume_style"; style: ResumeStyle }
   | { type: "style_options"; options: DesignOption[] }
   | { type: "style_progress"; stage: "styling" | "previewing" | "designing"; round: number; max: number }

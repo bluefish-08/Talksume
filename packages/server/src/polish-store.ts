@@ -1,6 +1,7 @@
 import {
   type AcceptedPolish,
   applyPolish,
+  isPolishNoop,
   type PolishTarget,
   polishTargets,
   type ResumeContent,
@@ -67,6 +68,15 @@ export function polishEntries(resume: ResumeContent, rows: readonly PolishRow[])
         : null,
     };
   });
+}
+
+/** 原样返回的「建议」不算改动；REST 和对话工具都先过这一步。 */
+export function splitPolishOutcomes(outcomes: readonly PolishOutcome[]) {
+  const changed: PolishOutcome[] = [];
+  const noops: PolishOutcome[] = [];
+  for (const outcome of outcomes)
+    (isPolishNoop(outcome.target.text, outcome.text) ? noops : changed).push(outcome);
+  return { changed, noops };
 }
 
 export async function savePolishOutcomes(db: Db, userId: string, outcomes: readonly PolishOutcome[]) {

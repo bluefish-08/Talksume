@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileUp, MessageSquare, PanelRightOpen } from "lucide-react";
+import { FileUp, MessageSquare, PanelRightOpen, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api/client.ts";
@@ -9,7 +9,8 @@ import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { ChatPanel, type LiveResume, type PanelRequest } from "../features/chat/ChatPanel.tsx";
 import type { TailorCard } from "../features/chat/types.ts";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
-import { PolishButton } from "../features/resume/PolishButton.tsx";
+import { PolishPreview } from "../features/resume/PolishPreview.tsx";
+import { POLISH_ASK_MESSAGE } from "../features/resume/polishQueries.ts";
 import { STYLE_ASK_MESSAGE, useResume, useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
 import { placeholderTitles } from "../features/resume/resumeUtils.ts";
@@ -82,6 +83,7 @@ export function ResumePage() {
   const [docked, setDocked] = useState(() => readFlag(CHAT_OPEN_KEY, true));
   const [drawer, setDrawer] = useState(false);
   const [live, setLive] = useState<LiveResume | null>(null);
+  const [polishPreview, setPolishPreview] = useState(false);
   const [request, setRequest] = useState<PanelRequest | null>(null);
   const [tailor, setTailor] = useState<{
     jobId: string;
@@ -99,6 +101,17 @@ export function ResumePage() {
   const importer = useResumeImport();
   const viewport = useViewport(stage);
   const scale = paperScale(zoom, viewport);
+  const startPolishChat = useMutation({
+    mutationFn: () =>
+      api
+        .post<{ id: string; greeting: string | null }>("/api/v1/conversations", { skipGreeting: true })
+        .then((c) => c.id),
+    onSuccess: (id) => {
+      void client.invalidateQueries({ queryKey: qk.conversations });
+      navigate(`/c/${id}`, { state: { initialMessage: POLISH_ASK_MESSAGE } });
+    },
+    onError: (error) => toast(error.message, { tone: "error" }),
+  });
   const startStyleChat = useMutation({
     mutationFn: () =>
       api
@@ -176,7 +189,10 @@ export function ResumePage() {
               导入简历
             </Button>
             <TemplatePicker resume={content} size="md" onAskAi={() => startStyleChat.mutate()} />
-            <PolishButton size="md" />
+            <Button onClick={() => startPolishChat.mutate()}>
+              <Sparkles size={16} strokeWidth={1.7} aria-hidden="true" />
+              润色
+            </Button>
             <ExportMenu size="md" />
             {!narrow && !open && (
               <Button onClick={() => setOpen(true)}>
@@ -206,7 +222,12 @@ export function ResumePage() {
             onShow={(showing) => setTailor((t) => t && { ...t, showing })}
           />
         )}
-        {content && tailor?.showing && (
+        {content && polishPreview && (
+          <div className={styles.tailorView}>
+            <PolishPreview resume={content} resumeStyle={style} onClose={() => setPolishPreview(false)} />
+          </div>
+        )}
+        {content && !polishPreview && tailor?.showing && (
           <div className={styles.tailorView}>
             <TailorDraft
               jobId={tailor.jobId}
@@ -215,7 +236,7 @@ export function ResumePage() {
             />
           </div>
         )}
-        {content && !tailor?.showing && (
+        {content && !polishPreview && !tailor?.showing && (
           <>
             <div className={styles.zoombar}>
               <ZoomControl mode={zoom} scale={scale} onChange={chooseZoom} />
@@ -253,6 +274,7 @@ export function ResumePage() {
           request={request}
           onLive={setLive}
           onOpenTailor={showTailor}
+          onOpenPolish={() => setPolishPreview(true)}
           onClose={() => setOpen(false)}
         />
       </div>

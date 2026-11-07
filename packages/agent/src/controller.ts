@@ -5,6 +5,7 @@ import { errorKindOf, isRetryableKind } from "@talksume/llm-gateway";
 import { computeCompleteness, SECTION_SPECS } from "./completeness.ts";
 import { createIdGenerator, type ProfileChange } from "./facts.ts";
 import { createJobTools, withoutCards } from "./job-tools.ts";
+import { createPolishTools } from "./polish-tools.ts";
 import { buildSystemPrompt, RESUME_HINT } from "./prompt.ts";
 import { cleanQuickReplies } from "./schemas.ts";
 import { createStyleTools } from "./style-tools.ts";
@@ -34,6 +35,8 @@ import type {
   IntakeState,
   JobCard,
   JobTools,
+  PolishCard,
+  ResumePolisher,
   ResumeStyler,
   ResumeTailor,
   TailorCard,
@@ -55,6 +58,8 @@ export interface IntakeDeps {
   jobs?: JobTools;
   /** 按岗位定制简历；需同时提供 jobs。 */
   tailor?: ResumeTailor;
+  /** 对话里润色简历；不传则不开放 polish_resume。 */
+  polisher?: ResumePolisher;
   /** 对话里定制简历样式；不传则不开放 design_resume_style。 */
   styles?: ResumeStyler;
   /** 挑候选设计方向用的随机源，测试里固定它。 */
@@ -495,6 +500,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     let cardSource: "recommend" | "search" = "recommend";
     let about: JobCard | undefined;
     let tailored: TailorCard | undefined;
+    let polished: PolishCard | undefined;
     let designs: DesignOption[] | undefined;
     const toolLog: ToolRecord[] = [];
     const flags: RunContext["flags"] = { asked: false, changed: false };
@@ -510,8 +516,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       genId,
       emit: (event) => {
         if (event.type === "ask") {
-          // 定制轮只确认这个岗位，不接受模型或代码追加的建档提问与快捷回复
-          if (flags.tailored) return;
+          // 定制/润色轮只确认当前操作，不接受模型或代码追加的建档提问与快捷回复
+          if (flags.tailored || flags.polished) return;
           if (event.quickReplies) quickReplies = event.quickReplies;
           if (event.slot) askedSlot = event.slot.key;
           // 每条回复恰好带一个问题：正文已经问了就以正文为准，没问才用 ask_user 的 question
@@ -539,6 +545,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           queue.push({ type: "about_job", job: about });
           return;
         } else if (event.type === "tailor") tailored = event.tailor;
+        else if (event.type === "polish") polished = event.polish;
         else if (event.type === "style_options") designs = event.options;
         queue.push(event);
       },
@@ -596,6 +603,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(state.summaries ? { summaries: state.summaries } : {}),
       jobTools: Boolean(deps.jobs),
       tailorTool: Boolean(deps.jobs && deps.tailor),
+      polishTool: Boolean(deps.polisher),
       styleTool: Boolean(deps.styles),
       designTool: Boolean(deps.styles?.propose),
       designCandidates,
@@ -627,6 +635,8 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       const plan = planNext(state);
       if (closingShown) return false;
       if (isQuestion(plain)) {
+        // 润色轮不提问
+        if (flags.polished) return false;
         // 定制轮最多留一个和岗位 JD 有关的问题，建档问题一律不送出
         if (flags.tailored) return questionsShown === 0 && JOB_GAP_QUESTION.test(plain);
         // 三版缩略图已经摆出来：这一轮只请用户点选，模型顺带追问的建档问题不送出
@@ -685,6 +695,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         tools: [
           ...createIntakeTools(ctx),
           ...(deps.jobs ? createJobTools(ctx, deps.jobs, toolLog, deps.tailor) : []),
+          ...(deps.polisher ? createPolishTools(ctx, deps.polisher, toolLog) : []),
           ...(deps.styles
             ? createStyleTools(ctx, deps.styles, toolLog, {
                 replica,
@@ -721,7 +732,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
           agent.steer({ role: "user", content: REPLICA_NUDGE, timestamp: Date.now() });
           return { action: "continue" };
         }
-        if (user && stopping && !nudged && failures < 2 && modelTurns < turnLimit) {
+        if (user && stopping && !nudged && !flags.polished && failures < 2 && modelTurns < turnLimit) {
           const missed = unrecorded();
           if (missed.length > 0) {
             nudged = true;
@@ -906,7 +917,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
         message: llmError.replace(/^\[llm:[a-z_]+\] /, ""),
         recoverable: kind !== "quota_exhausted" && kind !== "auth",
       };
-    } else if (user && missed.length > 0) {
+    } else if (user && missed.length > 0 && !flags.polished) {
       const words = [...new Set(missed.map((s) => userWordsFor(user.text, s)))]
         .map((w) => `「${w}」`)
         .join("");
@@ -933,7 +944,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       clarified = failedWords;
       askedSlot ??= lastAskedKey(state);
       yield { type: "ask", kind: "clarify", question };
-    } else if (plan.kind === "ask" && !flags.asked && !flags.jobs && !flags.tailored) {
+    } else if (plan.kind === "ask" && !flags.asked && !flags.jobs && !flags.tailored && !flags.polished) {
       // 问哪一项是规划器定的：模型问了就记在这一项上，没问就由代码问
       const { slot } = plan;
       const replies = cleanQuickReplies(slot.replies);
@@ -960,7 +971,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
     }
 
     if (llmError) shown = withoutFragment(shown);
-    if (flags.tailored) {
+    if (flags.tailored || flags.polished) {
       asks.length = 0;
       quickReplies = [];
     }
@@ -973,6 +984,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       ...(closed ? { closed } : {}),
       ...(about ? { about } : cards.length > 0 ? { jobs: cards } : {}),
       ...(tailored ? { tailor: tailored } : {}),
+      ...(polished ? { polish: polished } : {}),
       ...(designs ? { designs } : {}),
       ...(toolLog.length > 0 ? { tools: about ? withoutCards(toolLog) : toolLog } : {}),
     };
@@ -983,6 +995,7 @@ export function createIntakeController(deps: IntakeDeps): IntakeController {
       cards.length > 0 ||
       about ||
       tailored ||
+      polished ||
       designs
     ) {
       if (user) state.history.push(userTurn(user));

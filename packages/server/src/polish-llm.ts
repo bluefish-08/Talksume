@@ -40,12 +40,16 @@ function groundingOf(target: PolishTarget): string {
   return [target.text, target.heading, target.subheading ?? ""].join("\n");
 }
 
-function promptOf(batch: { id: string; target: PolishTarget; note?: string }[]): string {
+function promptOf(
+  batch: { id: string; target: PolishTarget; note?: string }[],
+  instruction?: string,
+): string {
   const lines = batch.map(({ id, target, note }) =>
     JSON.stringify({
       id,
       所属条目: [target.heading, target.subheading].filter(Boolean).join(" · "),
       原文: target.text,
+      ...(instruction && { 润色要求: instruction }),
       ...(note && { 要求: note }),
     }),
   );
@@ -57,12 +61,13 @@ async function runBatch(
   batch: { id: string; target: PolishTarget; note?: string }[],
   temperature: number,
   signal?: AbortSignal,
+  instruction?: string,
 ): Promise<{ texts: Map<string, string>; model: string }> {
   const ids = new Set(batch.map((b) => b.id));
   const res = await llm.completeStructured({
     purpose: "polish",
     system: SYSTEM,
-    prompt: promptOf(batch),
+    prompt: promptOf(batch, instruction),
     schema: z.toJSONSchema(Output) as Record<string, unknown>,
     validate: (value) => {
       const parsed = Output.parse(value);
@@ -86,7 +91,7 @@ async function runBatch(
 export async function polishTargetsWithLlm(
   llm: StructuredLlm,
   targets: readonly PolishTarget[],
-  options: { previous?: ReadonlyMap<string, string>; signal?: AbortSignal } = {},
+  options: { previous?: ReadonlyMap<string, string>; instruction?: string; signal?: AbortSignal } = {},
 ): Promise<PolishOutcome[]> {
   const outcomes: PolishOutcome[] = [];
   const retry = !!options.previous?.size;
@@ -95,7 +100,7 @@ export async function polishTargetsWithLlm(
       const prev = options.previous?.get(target.sourceHash);
       return { id: `b${i + 1}`, target, ...(prev && { note: `换一种写法，不要和这一版雷同：${prev}` }) };
     });
-    const first = await runBatch(llm, batch, retry ? 0.8 : 0.2, options.signal);
+    const first = await runBatch(llm, batch, retry ? 0.8 : 0.2, options.signal, options.instruction);
     const results = batch.map(({ id, target }) => {
       const text = first.texts.get(id) ?? target.text;
       return {
@@ -118,6 +123,7 @@ export async function polishTargetsWithLlm(
         })),
         0.2,
         options.signal,
+        options.instruction,
       ).catch(() => undefined);
       for (const r of failed) {
         const text = second?.texts.get(r.id);

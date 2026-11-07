@@ -3,8 +3,15 @@ import { z } from "zod";
 import type { RouteModule } from "../app.ts";
 import { loadProfile } from "../conversation-store.ts";
 import { sendError } from "../http.ts";
-import { polishTargetsWithLlm, type StructuredLlm, structuredLlmFromEnv } from "../polish-llm.ts";
-import { decidePolishes, loadPolishRows, polishEntries, savePolishOutcomes } from "../polish-store.ts";
+import { polishTargetsWithLlm, type StructuredLlm } from "../polish-llm.ts";
+import {
+  decidePolishes,
+  loadPolishRows,
+  polishEntries,
+  savePolishOutcomes,
+  splitPolishOutcomes,
+} from "../polish-store.ts";
+import { polishBusyFor } from "../polish-tools.ts";
 
 const PolishBody = z
   .object({
@@ -21,11 +28,14 @@ const DecisionBody = z.object({
   action: z.enum(["accept", "dismiss", "revert"]),
 });
 
-/** 传 llm 为 null 显式关闭；不传则按环境变量决定。 */
-export function createPolishRoutes(options: { llm?: StructuredLlm | null } = {}): RouteModule {
-  return (app, { db }) => {
-    const llm = options.llm === undefined ? structuredLlmFromEnv() : options.llm;
-    const busy = new Set<string>();
+/** 传 llm 为 null 显式关闭；不传则用应用配置的结构化模型。 */
+export function createPolishRoutes(
+  options: { llm?: StructuredLlm | null; busy?: Set<string> } = {},
+): RouteModule {
+  return (app, deps) => {
+    const { db } = deps;
+    const llm = options.llm === undefined ? (deps.resumeLlm ?? null) : options.llm;
+    const busy = options.busy ?? deps.polishBusy ?? polishBusyFor(db);
 
     const snapshot = async (userId: string) => {
       const [{ profile }, rows] = await Promise.all([loadProfile(db, userId), loadPolishRows(db, userId)]);
@@ -53,7 +63,7 @@ export function createPolishRoutes(options: { llm?: StructuredLlm | null } = {})
       busy.add(req.userId);
       try {
         const outcomes = await polishTargetsWithLlm(llm, picked, { previous });
-        await savePolishOutcomes(db, req.userId, outcomes);
+        await savePolishOutcomes(db, req.userId, splitPolishOutcomes(outcomes).changed);
       } catch (error) {
         req.log.error({ err: error }, "resume polish failed");
         return sendError(reply, 503, "polish_failed", "润色暂时失败，请稍后重试", true);

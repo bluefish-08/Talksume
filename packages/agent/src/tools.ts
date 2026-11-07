@@ -62,6 +62,8 @@ export interface RunContext {
     designs?: boolean;
     /** 本轮调用过定制工具：不再追加建档问题和快捷回复。 */
     tailored?: boolean;
+    /** 本轮调用过润色工具：不问建档问题，也不追加问题。 */
+    polished?: boolean;
   };
   /** 本轮已经说出口的正文。 */
   spoken?: () => string;

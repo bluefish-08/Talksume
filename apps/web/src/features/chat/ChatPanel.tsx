@@ -43,10 +43,21 @@ interface Props {
   onLive: (live: LiveResume | null) => void;
   /** 定制卡片被点开，或本轮刚生成了定制版；页面负责在简历预览里展示。 */
   onOpenTailor: (card: TailorCard) => void;
+  /** 润色卡片被点开；页面负责展示润色预览。 */
+  onOpenPolish?: (() => void) | undefined;
   onClose: () => void;
 }
 
-export function ChatPanel({ visible, prompts, suggestions, request, onLive, onOpenTailor, onClose }: Props) {
+export function ChatPanel({
+  visible,
+  prompts,
+  suggestions,
+  request,
+  onLive,
+  onOpenTailor,
+  onOpenPolish,
+  onClose,
+}: Props) {
   const client = useQueryClient();
   const toast = useToast();
   const conversations = useConversations();
@@ -135,6 +146,7 @@ export function ChatPanel({ visible, prompts, suggestions, request, onLive, onOp
           onLive={onLive}
           onAttach={() => importer.open()}
           onOpenTailor={onOpenTailor}
+          onOpenPolish={onOpenPolish}
         />
       ) : noConversation ? (
         <PanelStart
@@ -254,6 +266,7 @@ function PanelSession({
   onLive,
   onAttach,
   onOpenTailor,
+  onOpenPolish,
 }: {
   detail: ConversationDetail;
   visible: boolean;
@@ -264,6 +277,7 @@ function PanelSession({
   onLive: (live: LiveResume | null) => void;
   onAttach: () => void;
   onOpenTailor: (card: TailorCard) => void;
+  onOpenPolish?: (() => void) | undefined;
 }) {
   const session = useChatSession(detail);
   const resume = usePolishedResume(session.resume);
@@ -317,6 +331,7 @@ function PanelSession({
           onResolve={(c, choice) => void session.resolveConflict(c, choice)}
           onQuickReply={talk}
           onOpenTailor={onOpenTailor}
+          onOpenPolish={onOpenPolish}
         />
         {fresh && !session.streaming && (
           <StarterPrompts prompts={prompts} suggestions={suggestions} onPick={talk} />

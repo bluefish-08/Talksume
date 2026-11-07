@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { TurnMetrics } from "../../src/index.ts";
-import { fakeJobs, fakeStyler, fakeTailor } from "../lib/fake-jobs.ts";
+import { fakeJobs, fakePolisher, fakeStyler, fakeTailor } from "../lib/fake-jobs.ts";
 import { agentGateway, MODEL, Usage } from "../lib/llm.ts";
 import { pool, quantile } from "../lib/stats.ts";
 import { loadEnv, loadTarget, type Target } from "../lib/target.ts";
@@ -68,6 +68,7 @@ async function runTrial(target: Target, probe: Probe, replay: Replay, usage: Usa
       model: gw.primaryModel,
       jobs: fakeJobs,
       tailor: fakeTailor,
+      polisher: fakePolisher,
       styles: fakeStyler,
       onMetrics: (m) => metrics.push(m),
     });

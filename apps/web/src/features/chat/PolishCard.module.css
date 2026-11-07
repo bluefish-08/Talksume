@@ -1,0 +1,167 @@
+.card {
+  max-width: 560px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 27, 46, 0.04);
+}
+
+.card[data-status="adopted"] {
+  border-color: var(--success-soft);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.chip {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.chip[data-status="adopted"] {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.chip[data-status="partial"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.list {
+  margin: 0;
+  padding: 10px 14px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13.5px;
+}
+
+.item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.item strong {
+  font-weight: 600;
+}
+
+.itemText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.num {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.blocked {
+  color: var(--placeholder);
+  font-size: 12.5px;
+}
+
+.fallback {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.older {
+  max-width: 560px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--placeholder);
+}
+
+@media (max-width: 560px) {
+  .card,
+  .older {
+    max-width: none;
+  }
+}
+
+.item[data-state="dismissed"] .itemText {
+  color: var(--placeholder);
+}
+
+.item[data-state="dismissed"] .num {
+  border: 1px solid var(--border-strong);
+  background: none;
+  color: var(--placeholder);
+  box-sizing: border-box;
+}
+
+.item[data-state="accepted"] .num {
+  background: var(--success);
+}
+
+.state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.state[data-state="accepted"] {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.state[data-state="dismissed"] {
+  background: var(--surface-sunken);
+  color: var(--placeholder);
+}
+
+.after {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--placeholder);
+  text-decoration: line-through;
+  overflow-wrap: anywhere;
+}

@@ -66,6 +66,21 @@ export function polishTargets(resume: ResumeContent): PolishTarget[] {
     );
 }
 
+/** 比较润色前后是否只是原样返回：忽略空白、全角标点和大小写差异。 */
+export function normalizePolishText(text: string): string {
+  return text
+    .normalize("NFKC")
+    .replace(/[。．]/g, ".")
+    .replace(/、/g, ",")
+    .replace(/\s+/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function isPolishNoop(source: string, polished: string): boolean {
+  return normalizePolishText(source) === normalizePolishText(polished);
+}
+
 /** 只替换文字，factIds 原样保留；原文已变的润色找不到对应哈希，回退原文。 */
 export function applyPolish(resume: ResumeContent, accepted: readonly AcceptedPolish[]): ResumeContent {
   if (accepted.length === 0) return resume;

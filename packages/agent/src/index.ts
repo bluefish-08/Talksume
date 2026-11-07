@@ -4,6 +4,7 @@ export * from "./facts.ts";
 export * from "./interview/index.ts";
 export * from "./job-tools.ts";
 export * from "./memory.ts";
+export * from "./polish-tools.ts";
 export * from "./prompt.ts";
 export * from "./resume-import.ts";
 export * from "./schemas.ts";

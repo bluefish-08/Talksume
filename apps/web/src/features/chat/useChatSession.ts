@@ -6,10 +6,12 @@ import { qk } from "../../api/queries.ts";
 import { postSse } from "../../api/sse.ts";
 import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
+import { applyPolishUpdate } from "../resume/polishQueries.ts";
 import { resumeDesignsKey, resumeStyleKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
 import { applyTailorUpdate } from "../tailor/queries.ts";
 import { useModelChoice } from "./modelChoice.ts";
+import { mergePolishCard } from "./polishCards.ts";
 import { mergeTailorCard } from "./tailorCards.ts";
 import type {
   ChatMessage,
@@ -18,6 +20,7 @@ import type {
   DesignOption,
   JobCard,
   MessageImage,
+  PolishCard,
   ProfileChange,
   StyleProgress,
   TailorCard,
@@ -46,6 +49,7 @@ function seed(detail: ConversationDetail): ChatMessage[] {
     jobs: m.jobs ?? [],
     ...(m.about && { about: m.about }),
     ...(m.tailor && { tailor: m.tailor }),
+    ...(m.polish && { polish: m.polish }),
     ...(m.designs && { designs: m.designs }),
     ...(m.resumeImport && { resumeImport: m.resumeImport }),
     ...(m.images && { images: m.images }),
@@ -151,6 +155,22 @@ export function useChatSession(detail: ConversationDetail) {
                 });
               } else {
                 patch(replyKey, (m) => ({ ...m, tailor: incoming }));
+              }
+              break;
+            }
+            case "polish": {
+              const incoming = data.polish as PolishCard;
+              applyPolishUpdate(client, incoming);
+              if (incoming.kind === "update") {
+                setMessages((all) => {
+                  const at = all.findLastIndex((m) => m.polish && m.polish.kind !== "update");
+                  if (at < 0) return all;
+                  return all.map((m, i) =>
+                    i === at && m.polish ? { ...m, polish: mergePolishCard(m.polish, incoming) } : m,
+                  );
+                });
+              } else {
+                patch(replyKey, (m) => ({ ...m, polish: incoming }));
               }
               break;
             }

@@ -119,6 +119,8 @@ function renderPane(options: { layout: "narrow" | "wide"; showing: boolean; revo
               highlights={new Set()}
               tailorJob={job}
               tailor={{ ...job, showing: options.showing, at: 1 }}
+              polishOpen={false}
+              onPolishClose={() => {}}
               onTailorShow={() => {}}
               onTailorDiscard={() => {}}
               onAskAi={() => {}}
@@ -132,7 +134,7 @@ function renderPane(options: { layout: "narrow" | "wide"; showing: boolean; revo
 }
 
 describe("简历面板头部", () => {
-  it("没有定制版时只有「简历」标题和样式/润色/导出三个图标，没有原话记录页签", () => {
+  it("没有定制版时只有「简历」标题和样式/导出两个图标，没有润色图标和原话记录页签", () => {
     const html = renderHeader(null);
     expect(html).toContain("简历 <span");
     expect(html).toContain("79%");
@@ -140,25 +142,20 @@ describe("简历面板头部", () => {
     expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain('role="tab"');
     expect(html).toContain('aria-label="简历样式：');
-    expect(html).toContain('aria-label="润色"');
+    expect(html).not.toContain('aria-label="润色"');
     expect(html).toContain('aria-label="导出"');
     expect(html).not.toContain("定制版 ·");
     expect(html).not.toContain("用这版");
   });
 
-  it("润色图标在样式和导出之间，主简历时可见、定制版显示时隐藏", () => {
+  it("润色图标已从头部移除，主简历和定制版都不再出现", () => {
     const main = renderHeader(job, { showing: false });
-    const styleAt = main.indexOf('aria-label="简历样式：');
-    const polishAt = main.indexOf('aria-label="润色"');
-    const exportAt = main.indexOf('aria-label="导出"');
-    expect(styleAt).toBeGreaterThanOrEqual(0);
-    expect(polishAt).toBeGreaterThan(styleAt);
-    expect(exportAt).toBeGreaterThan(polishAt);
-
     const tailored = renderHeader(job, { showing: true });
-    expect(tailored).not.toContain('aria-label="润色"');
-    expect(tailored).toContain('aria-label="简历样式：');
-    expect(tailored).toContain('aria-label="导出"');
+    for (const html of [main, tailored]) {
+      expect(html).not.toContain('aria-label="润色"');
+      expect(html).toContain('aria-label="简历样式：');
+      expect(html).toContain('aria-label="导出"');
+    }
   });
 
   it("有草稿时同一行加版本按钮和用这版", () => {
@@ -185,13 +182,13 @@ describe("聊天简历面板的版本入口", () => {
       const html = renderPane({ layout, showing: false });
       expect((html.match(/<header/g) ?? []).length).toBe(1);
       expect(html).toContain("美团定制版 · 草稿");
-      expect(html).toContain('aria-label="润色"');
+      expect(html).not.toContain('aria-label="润色"');
       expect(html).not.toContain('aria-label="简历版本"');
       expect(html).not.toContain("aria-pressed");
     });
   }
 
-  it("显示定制版时同样没有旧切换器，且润色隐藏", () => {
+  it("显示定制版时同样没有旧切换器，也没有润色图标", () => {
     const html = renderPane({ layout: "wide", showing: true });
     expect(html).toContain("美团定制版 · 草稿");
     expect(html).not.toContain('aria-label="简历版本"');

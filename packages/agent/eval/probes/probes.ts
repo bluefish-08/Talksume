@@ -368,6 +368,50 @@ export const PROBES: Probe[] = [
     checks: [C.noWrite(), C.noSkip(), C.maxQuestions(1), C.questions(1, false)],
   },
   {
+    id: "polish-experience",
+    title: "点名润色一段实习",
+    note: "画像里已有一条云图数据的实习要点，用户点名要润色这一段并给了风格要求。应调用 polish_resume（items 含云图数据），不要 upsert_facts。",
+    script: {
+      turns: [
+        {
+          user: "我在云图数据做过后端开发实习生，2025年6月到9月，用 Redis 缓存热点数据，接口响应从 800ms 降到 200ms",
+          reply: "云图数据这段实习挺完整。还有别的经历想补充吗？",
+          facts: [
+            {
+              section: "experiences",
+              quote:
+                "我在云图数据做过后端开发实习生，2025年6月到9月，用 Redis 缓存热点数据，接口响应从 800ms 降到 200ms",
+              payload: {
+                kind: "internship",
+                company: "云图数据",
+                title: "后端开发实习生",
+                start: "2025-06",
+                end: "2025-09",
+                highlights: [
+                  {
+                    title: "缓存优化",
+                    detail: "用 Redis 缓存热点数据，接口响应从 800ms 降到 200ms",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+    message: "帮我把云图数据那段润色得更专业一点",
+    checks: [
+      C.custom("polishTool", "调用了 polish_resume", (o) => o.outcome.toolCalls.includes("polish_resume")),
+      C.custom("polish:items", "items 含云图数据", (o) => {
+        const args = o.after.tools.findLast((t) => t.name === "polish_resume")?.args;
+        return Array.isArray(args?.items) && args.items.some((x) => String(x).includes("云图数据"));
+      }),
+      C.noWrite(),
+      C.custom("noUpsert", "没有调用 upsert_facts", (o) => !o.outcome.toolCalls.includes("upsert_facts")),
+      C.maxQuestions(0),
+    ],
+  },
+  {
     id: "style-request",
     title: "对话定制简历样式",
     note: "建档中途用户提简历外观要求。应调用 design_resume_style：两栏、标题或主色是深绿；不写画像，最多一个问句。",

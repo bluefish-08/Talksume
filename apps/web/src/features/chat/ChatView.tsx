@@ -28,6 +28,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const imageDraft = useImageDraft();
   const [paneOpen, setPaneOpen] = useState(false);
   const [tailor, setTailor] = useState<TailorTarget | null>(null);
+  const [polishOpen, setPolishOpen] = useState(false);
   const client = useQueryClient();
   const input = useRef<HTMLTextAreaElement>(null);
   const initialSent = useRef(false);
@@ -110,6 +111,10 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
               showTailor(card);
               setPaneOpen(true);
             }}
+            onOpenPolish={() => {
+              setPolishOpen(true);
+              setPaneOpen(true);
+            }}
           />
           {!session.streaming && !messages.some((m) => m.role === "user") && (
             <ImportPrompt onImport={() => importer.open()} />
@@ -147,6 +152,8 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           highlights={session.highlights}
           tailorJob={tailorJob}
           tailor={tailor}
+          polishOpen={polishOpen}
+          onPolishClose={() => setPolishOpen(false)}
           onTailorShow={(showing) =>
             setTailor((t) => {
               if (t) return { ...t, showing };

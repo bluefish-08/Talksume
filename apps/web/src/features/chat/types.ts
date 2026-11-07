@@ -62,6 +62,24 @@ export interface TailorCard {
   status?: "draft" | "adopted" | "revoked";
 }
 
+/** 与 packages/agent 的 PolishCard 保持一致：助手润色建议的卡片。 */
+export interface PolishCardItem {
+  id: string;
+  number?: number;
+  heading: string;
+  before: string;
+  after: string;
+  state: "pending" | "accepted" | "dismissed";
+  blocked: boolean;
+  violations?: string[];
+}
+
+export interface PolishCard {
+  kind?: "generation" | "update";
+  status?: "draft" | "adopted" | "partial" | "none";
+  items: PolishCardItem[];
+}
+
 /** 与 packages/agent 的 DesignOption 保持一致：助手一次给出的几版设计之一。 */
 export interface DesignOption {
   id: string;
@@ -103,6 +121,7 @@ export interface ConversationDetail {
     jobs?: JobCard[];
     about?: JobCard;
     tailor?: TailorCard;
+    polish?: PolishCard;
     designs?: DesignOption[];
     resumeImport?: ResumeImportNote;
     images?: MessageImage[];
@@ -128,6 +147,7 @@ export interface ChatMessage {
   /** 这条回复在讲的具体岗位，顶部显示一行标签；有它时不出岗位卡片。 */
   about?: JobCard;
   tailor?: TailorCard;
+  polish?: PolishCard;
   designs?: DesignOption[];
   resumeImport?: ResumeImportNote;
   images?: MessageImage[];

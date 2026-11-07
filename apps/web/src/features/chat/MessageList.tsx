@@ -7,12 +7,15 @@ import { DesignOptions } from "./DesignOptions.tsx";
 import { describeChange } from "./describe.ts";
 import { JobAbout, JobCards } from "./JobCards.tsx";
 import styles from "./MessageList.module.css";
+import { PolishCardView } from "./PolishCard.tsx";
+import { type PlacedPolishCard, placePolishCards } from "./polishCards.ts";
 import { TailorCardView } from "./TailorCard.tsx";
 import { type PlacedTailorCard, placeTailorCards } from "./tailorCards.ts";
 import {
   type ChatMessage,
   type Conflict,
   messageText,
+  type PolishCard,
   type ProfileChange,
   type StyleProgress,
   type TailorCard,
@@ -27,6 +30,7 @@ interface Props {
   onResolve: (conflict: Conflict, choice: "proposed" | "previous") => void;
   onQuickReply: (text: string) => void;
   onOpenTailor: (card: TailorCard) => void;
+  onOpenPolish?: ((card: PolishCard) => void) | undefined;
 }
 
 export function MessageList({
@@ -38,10 +42,12 @@ export function MessageList({
   onResolve,
   onQuickReply,
   onOpenTailor,
+  onOpenPolish,
 }: Props) {
   const pending = !streaming ? conflicts[0] : undefined;
   const last = messages.at(-1);
   const tailors = placeTailorCards(messages);
+  const polishes = placePolishCards(messages);
   const quickReplies =
     !streaming && !pending && last?.role === "assistant" && last.state === "done" ? last.quickReplies : [];
   return (
@@ -69,7 +75,14 @@ export function MessageList({
             )}
           </div>
         ) : (
-          <Assistant key={m.key} message={m} placement={tailors.get(m.key)} onOpenTailor={onOpenTailor} />
+          <Assistant
+            key={m.key}
+            message={m}
+            placement={tailors.get(m.key)}
+            polish={polishes.get(m.key)}
+            onOpenTailor={onOpenTailor}
+            onOpenPolish={onOpenPolish}
+          />
         ),
       )}
       {pending && (
@@ -106,11 +119,15 @@ export function MessageList({
 function Assistant({
   message,
   placement,
+  polish,
   onOpenTailor,
+  onOpenPolish,
 }: {
   message: ChatMessage;
   placement: PlacedTailorCard | undefined;
+  polish: PlacedPolishCard | undefined;
   onOpenTailor: (card: TailorCard) => void;
+  onOpenPolish?: ((card: PolishCard) => void) | undefined;
 }) {
   const text = messageText(message);
   const waiting =
@@ -119,7 +136,8 @@ function Assistant({
     message.changes.length === 0 &&
     message.jobs.length === 0 &&
     !message.about &&
-    !message.tailor;
+    !message.tailor &&
+    !message.polish;
   return (
     <div className={styles.assistant}>
       {message.about && <JobAbout job={message.about} />}
@@ -146,6 +164,7 @@ function Assistant({
       {placement && (
         <TailorCardView card={placement.card} superseded={placement.superseded} onOpen={onOpenTailor} />
       )}
+      {polish && <PolishCardView card={polish.card} superseded={polish.superseded} onOpen={onOpenPolish} />}
     </div>
   );
 }

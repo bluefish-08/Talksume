@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyPolish, polishItemKey, polishSourceHash, polishTargets, ungroundedTokens } from "./polish.ts";
+import {
+  applyPolish,
+  isPolishNoop,
+  polishItemKey,
+  polishSourceHash,
+  polishTargets,
+  ungroundedTokens,
+} from "./polish.ts";
 import { Profile } from "./profile.ts";
 import { profileToResume } from "./profile-to-resume.ts";
 
@@ -141,5 +148,19 @@ describe("ungroundedTokens", () => {
   it("小数、百分比按数值比较", () => {
     expect(ungroundedTokens("GPA 3.80，排名前 5%", "GPA 3.8，专业前 5%")).toEqual([]);
     expect(ungroundedTokens("GPA 3.8", "GPA 3.9")).toEqual(["3.9"]);
+  });
+});
+
+describe("isPolishNoop", () => {
+  it("原样返回、只改空白或全角标点都算没改", () => {
+    expect(isPolishNoop("编写 40 多个单元测试", "编写 40 多个单元测试")).toBe(true);
+    expect(isPolishNoop("编写 40 多个单元测试", " 编写  40 多个单元测试 ")).toBe(true);
+    expect(isPolishNoop("完成登录，注册功能", "完成登录,注册功能")).toBe(true);
+    expect(isPolishNoop("完成登录。", "完成登录.")).toBe(true);
+  });
+
+  it("真的改了措辞就不算 no-op", () => {
+    expect(isPolishNoop("编写 40 多个单元测试", "编写并维护 40 多个单元测试")).toBe(false);
+    expect(isPolishNoop("我用 Redis 搞了个缓存", "基于 Redis 实现缓存")).toBe(false);
   });
 });

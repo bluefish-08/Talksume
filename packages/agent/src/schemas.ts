@@ -210,6 +210,34 @@ export const RevokeTailoringArgs = z.object({
 });
 export type RevokeTailoringArgs = z.infer<typeof RevokeTailoringArgs>;
 
+export const PolishResumeArgs = z.object({
+  items: z
+    .array(z.string().trim().min(1))
+    .optional()
+    .describe(
+      "要点所在的条目标题，用简历上显示的名字（如「云图数据」「校园二手交易平台」）；不填则润色所有还没有建议的要点",
+    ),
+  instruction: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe("风格要求，如「更专业」「突出数据」「精简一点」；只影响措辞，不能新增事实"),
+});
+export type PolishResumeArgs = z.infer<typeof PolishResumeArgs>;
+
+export const DecidePolishArgs = z.object({
+  accept: z.array(z.string().trim().min(1)).optional().describe("要采用的润色 id"),
+  dismiss: z.array(z.string().trim().min(1)).optional().describe("不要的润色 id"),
+  revert: z.array(z.string().trim().min(1)).optional().describe("要改回原文的润色 id"),
+  all: z
+    .enum(["accept", "dismiss", "revert"])
+    .optional()
+    .describe("对卡片里所有待定建议（accept/dismiss）或所有已采用建议（revert）操作"),
+});
+export type DecidePolishArgs = z.infer<typeof DecidePolishArgs>;
+
 export const DesignResumeStyleArgs = z.object({
   name: z.string().trim().min(1).max(12).optional().describe("这套样式的短名字，如「稳重深绿」「清爽蓝」"),
   accent: HexColor.optional().describe(
@@ -312,6 +340,8 @@ export type ToolName =
   | "tailor_resume"
   | "select_tailor_changes"
   | "revoke_tailoring"
+  | "polish_resume"
+  | "decide_polish"
   | "design_resume_style"
   | "set_resume_css"
   | "preview_resume"
@@ -397,6 +427,18 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description:
       "把某个岗位改回主简历（撤销已采用的定制版）。用户说「改回主简历」「这个岗位不用定制版了」时调用。",
     schema: RevokeTailoringArgs,
+  },
+  {
+    name: "polish_resume",
+    description:
+      "润色简历里的经历要点：只改写措辞，不新增事实，出现原文没有的数字或英文词的建议会被拦下。用户说「润色一下」「写得更专业/更有力」「把某段改得好一点」时调用；点名了条目就填 items（用简历上的条目标题），说了风格就填 instruction。结果会以卡片展示，用户在卡片或右侧预览里采用后才生效。",
+    schema: PolishResumeArgs,
+  },
+  {
+    name: "decide_polish",
+    description:
+      "按用户的话采用、放弃或改回润色建议。用户说「都用上」用 all=accept，「第2条不要」用 dismiss 传对应 id，「改回去」「还是原来的好」用 revert。id 取自润色卡片或上一次工具结果；被拦下（出现原文没有的内容）的建议永远不能采用。",
+    schema: DecidePolishArgs,
   },
   {
     name: "design_resume_style",

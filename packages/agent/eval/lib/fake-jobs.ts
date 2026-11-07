@@ -1,5 +1,13 @@
 import { applyThemePatch, DEFAULT_RESUME_STYLE } from "@talksume/core";
-import type { JobCard, JobInsight, JobTools, ResumeStyler, ResumeTailor } from "../../src/index.ts";
+import type {
+  JobCard,
+  JobInsight,
+  JobTools,
+  PolishCard,
+  ResumePolisher,
+  ResumeStyler,
+  ResumeTailor,
+} from "../../src/index.ts";
 
 /** 虚构岗位库：让提示词和工具集与线上一致（线上总带岗位工具），结果固定。 */
 const CATALOG: (JobCard & { keywords: string[] })[] = [
@@ -96,4 +104,36 @@ export const fakeStyler: ResumeStyler = {
     return change;
   },
   reset: async () => DEFAULT_RESUME_STYLE,
+};
+
+/** 评测里不落库：按点名的条目标题给出固定的润色建议，保证工具调用链能跑通。 */
+export const fakePolisher: ResumePolisher = {
+  async polish(profile, options) {
+    const headings = [
+      ...profile.experiences.map((item) => item.company),
+      ...profile.projects.map((item) => item.name),
+    ];
+    const names = options.items?.length ? [...options.items] : headings.slice(0, 1);
+    const card: PolishCard = {
+      kind: "generation",
+      status: "draft",
+      items: names.map((heading, i) => ({
+        id: `polish_${i + 1}`,
+        number: i + 1,
+        heading,
+        before: "用 Redis 缓存热点数据",
+        after: "基于 Redis 缓存热点数据，优化接口响应",
+        state: "pending",
+        blocked: false,
+      })),
+    };
+    return { card, lines: [], polished: names.length, headings };
+  },
+  async decide() {
+    return {
+      card: { kind: "update", status: "draft", items: [] },
+      lines: [],
+      polished: 0,
+    };
+  },
 };

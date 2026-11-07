@@ -2,7 +2,7 @@ import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
-import { PolishButton } from "../resume/PolishButton.tsx";
+import { PolishPreview } from "../resume/PolishPreview.tsx";
 import { useResumeStyle } from "../resume/queries.ts";
 import { ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
@@ -27,6 +27,9 @@ interface Props {
   /** 这场对话里最近一次定制的岗位；没有定制版时为空。 */
   tailorJob: TailorJob | null;
   tailor: TailorTarget | null;
+  /** 打开润色预览（由「在右边看」触发）。 */
+  polishOpen: boolean;
+  onPolishClose: () => void;
   onTailorShow: (showing: boolean) => void;
   onTailorDiscard: () => void;
   onAskAi: () => void;
@@ -48,6 +51,8 @@ export function ResumePane({
   highlights,
   tailorJob,
   tailor,
+  polishOpen,
+  onPolishClose,
   onTailorShow,
   onTailorDiscard,
   onAskAi,
@@ -100,7 +105,9 @@ export function ResumePane({
         }
       />
 
-      {onTailored && tailorJob ? (
+      {polishOpen ? (
+        <PolishPreview resume={resume} resumeStyle={style} onClose={onPolishClose} />
+      ) : onTailored && tailorJob ? (
         <TailorDraft jobId={tailorJob.jobId} />
       ) : (
         <div className={styles.body}>
@@ -176,7 +183,6 @@ export function ResumePaneHeader({
         </>
       )}
       <TemplatePicker resume={resume} icon onAskAi={onAskAi} askAiDisabled={askAiDisabled} />
-      {!showing && <PolishButton icon />}
       <ExportMenu icon />
     </header>
   );

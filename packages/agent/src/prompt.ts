@@ -20,6 +20,8 @@ export interface PromptInput {
   jobTools?: boolean;
   /** 是否开放按岗位定制简历，依赖岗位工具。 */
   tailorTool?: boolean;
+  /** 是否开放对话润色简历。 */
+  polishTool?: boolean;
   /** 是否开放对话定制简历样式。 */
   styleTool?: boolean;
   designTool?: boolean;
@@ -85,6 +87,15 @@ const TAILOR_LINES = [
   "- 调用过 tailor_resume / select_tailor_changes / revoke_tailoring 的这一轮，不要再问建档问题（包括难点），也不要提用户还没说过的其他经历；最多只问一个这个岗位 JD 里缺的东西。",
   "- 调整或采用后，回复只用一两句话确认改了什么（或已采用），不要列清单，不要开启新的建档话题。",
   "- 用户想加的内容简历里本来没有（如岗位要的某项技能），定制补不上：先如实说明，再问用户有没有相关经历，有就照常用 upsert_facts 记下，之后再定制。",
+];
+
+const POLISH_LINES = [
+  "",
+  "## 简历润色",
+  "- 用户说「润色一下」「写得更专业/更有力」「把 X 那段改得好一点」时调用 polish_resume；点名了条目就把简历上的标题填进 items，说了风格就把「更专业」「突出数据」「精简一点」这类填进 instruction。",
+  "- 「都用上」调用 decide_polish all=accept；「第 2 条不要」按卡片编号找到 id 填 dismiss；「改回去」「还是原来的好」填 revert。",
+  "- 润色只改措辞不加事实，出现原文没有的内容会被拦下；用户想加内容（新技能、新结果）走 upsert_facts，不要让润色工具去编。",
+  "- 只有工具返回成功才说已采用；被拦下的如实告诉用户没改。回复一两句，不复述清单；这一轮不问建档问题。改动在对话里的卡片上，需要对照简历时提「在右边看」，不要说「右边卡片」。",
 ];
 
 const STYLE_LINES = [
@@ -154,7 +165,7 @@ export function buildSystemPrompt(input: PromptInput): string {
       : "你是「简聊」的求职顾问，通过聊天帮用户整理出一份完整、真实的求职画像，后续会据此生成简历。",
     "",
     "## 工作方式",
-    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历、select_tailor_changes 按话调整选中项、revoke_tailoring 改回主简历" : ""}` : ""}${input.styleTool ? `；样式工具：design_resume_style 定制简历外观${input.designTool ? "、propose_resume_designs 一次出 3 版供选" : ""}${input.replica ? "、set_resume_css 写受限 CSS、preview_resume 预览渲染结果" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
+    `- 建档工具：${INTAKE_TOOLS}${input.jobTools ? `；岗位工具：recommend_jobs 推荐岗位、search_jobs 搜索岗位、explain_job 解读匹配${input.tailorTool ? "、tailor_resume 按岗位定制简历、select_tailor_changes 按话调整选中项、revoke_tailoring 改回主简历" : ""}` : ""}${input.polishTool ? `；润色工具：polish_resume 润色经历要点、decide_polish 采用/放弃/改回润色` : ""}${input.styleTool ? `；样式工具：design_resume_style 定制简历外观${input.designTool ? "、propose_resume_designs 一次出 3 版供选" : ""}${input.replica ? "、set_resume_css 写受限 CSS、preview_resume 预览渲染结果" : ""}` : ""}。先用一句话回应用户；有信息就接着调用 upsert_facts 写入，再按返回的「下一个目标」问下一个问题，问完调用 ask_user，question 填你刚问的那句。`,
     "- 用户每说完一段话，先把其中明确出现的信息用 upsert_facts 批量写入，再用 ask_user 问下一个问题。一句话含多个事实就一次写入。",
     "- 每条事实必须带 quote：用户消息里的原话片段，逐字摘抄，不要改写。一条事实的依据分散在不相邻的几处时，分别摘抄后用 … 连接，如「2021年9月入学…2025年6月毕业」；每段至少两个字。",
     "- 只写用户明确说过的内容，不要推测、补全或美化；用户没说的字段留空，用追问获取。",
@@ -206,6 +217,9 @@ export function buildSystemPrompt(input: PromptInput): string {
   if (input.jobTools) {
     const jobLines = input.tailorTool ? [...JOB_LINES, ...TAILOR_LINES] : JOB_LINES;
     lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...jobLines);
+  }
+  if (input.polishTool) {
+    lines.splice(lines.indexOf("## 当前画像（已记录的内容）") - 1, 0, ...POLISH_LINES);
   }
   if (input.styleTool) {
     lines.splice(

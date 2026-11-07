@@ -122,6 +122,14 @@ describe("简历润色", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("模型原样返回时不保存为待定建议", async () => {
+    const { llm } = fakeLlm((original) => original);
+    const app = appWith(llm);
+    const res = await call(app, "POST", "/api/v1/resume/polish");
+    expect(res.status).toBe(200);
+    expect(res.body.entries.every((e: { polish: unknown }) => e.polish === null)).toBe(true);
+  });
+
   it("编造的数字和技术词：重试一次仍不合格就标出违规词且不能采用", async () => {
     const { llm, calls } = fakeLlm((original) =>
       original.includes("Redis")
@@ -190,7 +198,9 @@ describe("简历润色", () => {
   });
 
   it("原文变了：润色失效回退原文，并标记可重新润色", async () => {
-    const { llm } = fakeLlm((original) => POLISHED[original] ?? original);
+    const { llm } = fakeLlm((original) =>
+      original.includes("限流") ? "基于 Redis 实现缓存与限流" : (POLISHED[original] ?? original),
+    );
     const app = appWith(llm);
     const first = await call(app, "POST", "/api/v1/resume/polish");
     await call(app, "POST", "/api/v1/resume/polish/decisions", {
