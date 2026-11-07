@@ -24,6 +24,7 @@ import {
   sampleResume,
 } from "@talksume/resume-render";
 import { eq, sql } from "drizzle-orm";
+import { recordResumeStyleDesign, type StyleDesignSource } from "./style-designs.ts";
 
 export async function loadResumeStyle(db: Db, userId: string): Promise<ResumeStyle> {
   const [row] = await db
@@ -50,11 +51,22 @@ export interface StylerOptions {
   /** 导出成 PDF 再做网申可读性自检。 */
   ats?: (content: ResumeContent, style: ResumeStyle) => Promise<{ ok: boolean; issues: string[] }>;
   random?: () => number;
+  record?: typeof recordResumeStyleDesign;
+  log?: { warn: (obj: unknown, message: string) => void };
 }
 
 export function storeResumeStyler(db: Db, userId: string, options: StylerOptions = {}): ResumeStyler {
   const save = async (style: ResumeStyle) => {
     if (!(await saveResumeStyle(db, userId, style))) throw new Error("用户不存在");
+  };
+  const record = options.record ?? recordResumeStyleDesign;
+  // 历史记录只是附加能力，写失败不能影响用户已经保存的样式
+  const remember = async (style: ResumeStyle, source: StyleDesignSource, name?: string) => {
+    try {
+      await record(db, userId, style, source, name);
+    } catch (error) {
+      options.log?.warn({ err: error }, "resume style design record failed");
+    }
   };
   const render = options.render ?? renderResumePng;
   const { profile } = options;
@@ -69,6 +81,7 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
       const change = applyThemePatch(await loadResumeStyle(db, userId), patch);
       if (!change) throw new Error("样式参数不合法");
       await save(change.style);
+      await remember(change.style, "chat");
       return change;
     },
     async reset() {
@@ -82,6 +95,7 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
       if (css === null) {
         const style = clearCustomCss(current);
         await save(style);
+        await remember(style, "chat");
         return { ok: true, style, rules: 0, dropped: [] };
       }
       const result = applyCustomCss(current, css);
@@ -90,6 +104,7 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
       const audited = await audit(mine.sections.length === 0 ? sampleResume : mine, result.style);
       if (!audited.ok) return { ok: false, errors: audited.problems };
       await save(result.style);
+      await remember(result.style, "chat");
       return { ok: true, style: result.style, rules: result.rules, dropped: result.dropped };
     },
     async recentDirections() {
@@ -142,8 +157,11 @@ export function storeResumeStyler(db: Db, userId: string, options: StylerOptions
           return { index, option, notes: built.notes };
         }),
       );
+      const options = settled.flatMap((r) => ("option" in r ? [r.option] : []));
+      // 顺序记录，避免同一轮里两版相同的样式在去重查询时互相看不见
+      for (const option of options) await remember(option.style, "options", option.name);
       return {
-        options: settled.flatMap((r) => ("option" in r ? [r.option] : [])),
+        options,
         rejected: settled.flatMap((r) => ("errors" in r ? [{ index: r.index, errors: r.errors }] : [])),
       };
     },

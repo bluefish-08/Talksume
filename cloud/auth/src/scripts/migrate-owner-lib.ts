@@ -24,6 +24,7 @@ export const OWNED_TABLES: OwnedTable[] = [
   { table: schema.notifications, keys: ["kind", "ref_id"] },
   { table: schema.llmCallLogs, keys: [] },
   { table: schema.userImages, keys: [] },
+  { table: schema.resumeStyleDesigns, keys: [] },
   { table: schema.interviewPreps, keys: ["job_id"] },
   { table: schema.interviewSessions, keys: [] },
 ];

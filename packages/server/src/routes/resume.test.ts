@@ -1,6 +1,7 @@
 import { Profile } from "@talksume/core";
 import { createDb, type DbHandle, migrate, schema } from "@talksume/db";
 import { close } from "@talksume/resume-render";
+import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.ts";
@@ -283,4 +284,160 @@ describe("对话定制样式", () => {
     expect(await styler.reset()).toEqual({ template: "tech", accent: "teal" });
     expect((await loadResumeStyle(handle.db, userId)).theme).toBeUndefined();
   }, 30_000);
+});
+
+describe("设计历史接口", () => {
+  const theme = {
+    name: "清爽蓝",
+    accent: "#2563eb",
+    bodyFont: "sans" as const,
+    headingFont: "sans" as const,
+    header: "plain" as const,
+    headerAlign: "left" as const,
+    headingStyle: "underline" as const,
+    layout: "single" as const,
+    bullet: "dot" as const,
+    skills: "line" as const,
+    density: "auto" as const,
+  };
+
+  const style = { template: "tech" as const, accent: "teal" as const, theme };
+
+  async function seedDesign(userId: string, name: string, design = style) {
+    const [row] = await handle.db
+      .insert(schema.resumeStyleDesigns)
+      .values({ userId, name, style: design, source: "options" })
+      .returning({ id: schema.resumeStyleDesigns.id });
+    return row?.id ?? "";
+  }
+
+  it("没有设计时返回空历史，预设模板不记录", async () => {
+    await seedProfile();
+    const empty = await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers });
+    expect(empty.json()).toEqual({ designs: [], currentId: null });
+    await app.inject({
+      method: "PUT",
+      url: "/api/v1/resume/style",
+      headers,
+      payload: { template: "minimal", accent: "ink" },
+    });
+    const after = await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers });
+    expect(after.json()).toEqual({ designs: [], currentId: null });
+  });
+
+  it("列出当前用户的历史并标出正在使用的那份", async () => {
+    await seedProfile();
+    const userId = headers["x-talksume-user"] ?? "";
+    const id = await seedDesign(userId, "清爽蓝");
+    await handle.db
+      .update(schema.users)
+      .set({ resumeStyle: { template: "tech", accent: "teal", theme } })
+      .where(eq(schema.users.id, userId));
+    const res = await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.designs).toHaveLength(1);
+    expect(body.designs[0]).toMatchObject({ id, name: "清爽蓝", style: { theme: { name: "清爽蓝" } } });
+    expect(Number.isNaN(Date.parse(body.designs[0].createdAt))).toBe(false);
+    expect(body.currentId).toBe(id);
+  });
+
+  it("老用户当前定制样式没有历史时，列表会补一条并标为当前", async () => {
+    await seedProfile();
+    const userId = headers["x-talksume-user"] ?? "";
+    await handle.db
+      .update(schema.users)
+      .set({ resumeStyle: { template: "modern", accent: "wine", theme: { ...theme, name: "旧设计" } } })
+      .where(eq(schema.users.id, userId));
+    const first = (await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers })).json();
+    expect(first.designs).toHaveLength(1);
+    expect(first.designs[0].name).toBe("旧设计");
+    expect(first.currentId).toBe(first.designs[0].id);
+    const second = (await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers })).json();
+    expect(second.designs).toHaveLength(1);
+    expect(second.designs[0].id).toBe(first.designs[0].id);
+  });
+
+  it("应用历史设计后成为当前样式；正在使用的设计不能删", async () => {
+    await seedProfile();
+    const userId = headers["x-talksume-user"] ?? "";
+    const id = await seedDesign(userId, "清爽蓝");
+    const applied = await app.inject({
+      method: "POST",
+      url: `/api/v1/resume/style/designs/${id}/apply`,
+      headers,
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().style.theme.name).toBe("清爽蓝");
+    expect((await loadResumeStyle(handle.db, userId)).theme?.name).toBe("清爽蓝");
+
+    const blocked = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/resume/style/designs/${id}`,
+      headers,
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({
+      code: "style_design_in_use",
+      message: "正在使用的设计不能删，先换一个再删",
+    });
+    expect((await loadResumeStyle(handle.db, userId)).theme?.name).toBe("清爽蓝");
+
+    await app.inject({
+      method: "PUT",
+      url: "/api/v1/resume/style",
+      headers,
+      payload: { template: "minimal", accent: "ink" },
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/resume/style/designs/${id}`,
+      headers,
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect(await loadResumeStyle(handle.db, userId)).toEqual({ template: "minimal", accent: "ink" });
+  });
+
+  it("PUT 非预设样式也进历史，重复保存不会重复", async () => {
+    await seedProfile();
+    const body = { template: "tech", accent: "teal", theme };
+    const first = await app.inject({ method: "PUT", url: "/api/v1/resume/style", headers, payload: body });
+    expect(first.statusCode).toBe(200);
+    const second = await app.inject({ method: "PUT", url: "/api/v1/resume/style", headers, payload: body });
+    expect(second.statusCode).toBe(200);
+    const list = (await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers })).json();
+    expect(list.designs).toHaveLength(1);
+    expect(list.designs[0]).toMatchObject({ name: "清爽蓝" });
+    expect(list.currentId).toBe(list.designs[0].id);
+  });
+
+  it("别人的设计 id 一律 404，列表里也不出现", async () => {
+    await seedProfile();
+    const [other] = await handle.db
+      .insert(schema.users)
+      .values({ email: "design-other@example.com" })
+      .returning({ id: schema.users.id });
+    const otherId = other?.id ?? "";
+    const id = await seedDesign(otherId, "别人的设计");
+    const list = (await app.inject({ method: "GET", url: "/api/v1/resume/style/designs", headers })).json();
+    expect(list.designs).toEqual([]);
+
+    const applied = await app.inject({
+      method: "POST",
+      url: `/api/v1/resume/style/designs/${id}/apply`,
+      headers,
+    });
+    expect(applied.statusCode).toBe(404);
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/resume/style/designs/${id}`,
+      headers,
+    });
+    expect(deleted.statusCode).toBe(404);
+    const [row] = await handle.db
+      .select({ id: schema.resumeStyleDesigns.id })
+      .from(schema.resumeStyleDesigns)
+      .where(eq(schema.resumeStyleDesigns.id, id));
+    expect(row?.id).toBe(id);
+  });
 });

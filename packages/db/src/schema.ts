@@ -93,6 +93,22 @@ export const userImages = pgTable(
   (t) => [index("user_images_user_idx").on(t.userId, t.createdAt)],
 );
 
+/** 用户保留的 AI 设计稿；preset-only 样式不进这张表。 */
+export const resumeStyleDesigns = pgTable(
+  "resume_style_designs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    style: jsonb("style").$type<ResumeStyle>().notNull(),
+    source: text("source").$type<"options" | "chat">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("resume_style_designs_user_idx").on(t.userId, t.createdAt)],
+);
+
 export const profiles = pgTable("profiles", {
   userId: uuid("user_id")
     .primaryKey()

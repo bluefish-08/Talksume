@@ -4,9 +4,9 @@ import { useCallback, useRef, useState } from "react";
 import { ApiError } from "../../api/client.ts";
 import { qk } from "../../api/queries.ts";
 import { postSse } from "../../api/sse.ts";
-import type { Completeness, ProfileSection, ResumeContent } from "../../api/types.ts";
+import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
-import { factsKey, resumeStyleKey } from "../resume/queries.ts";
+import { factsKey, resumeDesignsKey, resumeStyleKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
 import { applyTailorUpdate } from "../tailor/queries.ts";
 import { useModelChoice } from "./modelChoice.ts";
@@ -60,9 +60,6 @@ export function useChatSession(detail: ConversationDetail) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => seed(detail));
   const [resume, setResume] = useState<ResumeContent>(detail.resume);
   const [completeness, setCompleteness] = useState<Completeness>(detail.completeness);
-  const [focus, setFocus] = useState<ProfileSection | undefined>(
-    () => (detail.completeness.missing.find((m) => m.required) ?? detail.completeness.missing[0])?.section,
-  );
   const [conflicts, setConflicts] = useState<Conflict[]>(detail.conflicts);
   const [highlights, setHighlights] = useState<ReadonlySet<string>>(new Set());
   const [streaming, setStreaming] = useState(false);
@@ -160,9 +157,11 @@ export function useChatSession(detail: ConversationDetail) {
             }
             case "style_options":
               patch(replyKey, (m) => ({ ...m, designs: data.options as DesignOption[] }));
+              void client.invalidateQueries({ queryKey: resumeDesignsKey });
               break;
             case "resume_style":
               client.setQueryData(resumeStyleKey, data.style as ResumeStyle);
+              void client.invalidateQueries({ queryKey: resumeDesignsKey });
               break;
             case "style_progress":
               patch(replyKey, (m) => ({ ...m, progress: data as unknown as StyleProgress }));
@@ -185,7 +184,6 @@ export function useChatSession(detail: ConversationDetail) {
             }
             case "completeness":
               setCompleteness(data.completeness as Completeness);
-              setFocus((data.nextSlot as { section: ProfileSection } | null)?.section);
               break;
             case "error":
               failure = String(data.message ?? "对话处理失败，请重试");
@@ -313,7 +311,6 @@ export function useChatSession(detail: ConversationDetail) {
     resume,
     completeness,
     conflicts,
-    focus,
     highlights,
     streaming,
     resolving,

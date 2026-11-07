@@ -1,12 +1,16 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileUp, MessageSquare, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { useProfile } from "../api/queries.ts";
+import { useNavigate } from "react-router";
+import { api } from "../api/client.ts";
+import { qk, useProfile } from "../api/queries.ts";
+import { useToast } from "../components/Toast.tsx";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { ChatPanel, type LiveResume, type PanelRequest } from "../features/chat/ChatPanel.tsx";
 import type { TailorCard } from "../features/chat/types.ts";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
 import { PolishButton } from "../features/resume/PolishButton.tsx";
-import { useFacts, useResume, useResumeStyle } from "../features/resume/queries.ts";
+import { STYLE_ASK_MESSAGE, useFacts, useResume, useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
 import { factQuotes, placeholderTitles } from "../features/resume/resumeUtils.ts";
 import { SuggestionsMenu } from "../features/resume/SuggestionsMenu.tsx";
@@ -68,6 +72,9 @@ function useViewport(node: HTMLElement | null) {
 }
 
 export function ResumePage() {
+  const navigate = useNavigate();
+  const client = useQueryClient();
+  const toast = useToast();
   const resume = useResume();
   const profile = useProfile();
   const facts = useFacts();
@@ -93,6 +100,17 @@ export function ResumePage() {
   const importer = useResumeImport();
   const viewport = useViewport(stage);
   const scale = paperScale(zoom, viewport);
+  const startStyleChat = useMutation({
+    mutationFn: () =>
+      api
+        .post<{ id: string; greeting: string | null }>("/api/v1/conversations", { skipGreeting: true })
+        .then((c) => c.id),
+    onSuccess: (id) => {
+      void client.invalidateQueries({ queryKey: qk.conversations });
+      navigate(`/c/${id}`, { state: { initialMessage: STYLE_ASK_MESSAGE } });
+    },
+    onError: (error) => toast(error.message, { tone: "error" }),
+  });
   const chooseZoom = (mode: ZoomMode) => {
     setZoom(mode);
     writeZoom(ZOOM_KEY, mode);
@@ -158,7 +176,7 @@ export function ResumePage() {
               <FileUp size={16} strokeWidth={1.7} aria-hidden="true" />
               导入简历
             </Button>
-            <TemplatePicker resume={content} size="md" />
+            <TemplatePicker resume={content} size="md" onAskAi={() => startStyleChat.mutate()} />
             <PolishButton size="md" />
             <ExportMenu size="md" />
             {!narrow && !open && (

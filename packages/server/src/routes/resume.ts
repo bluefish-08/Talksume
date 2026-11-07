@@ -8,6 +8,14 @@ import { latestCompletedSections, listFacts, loadProfile } from "../conversation
 import { sendError } from "../http.ts";
 import { polishedResume } from "../polish-store.ts";
 import { loadResumeStyle, saveResumeStyle } from "../resume-style.ts";
+import {
+  applyResumeStyleDesign,
+  currentStyleDesignId,
+  deleteResumeStyleDesign,
+  isCustomStyle,
+  listResumeStyleDesigns,
+  recordResumeStyleDesign,
+} from "../style-designs.ts";
 
 const FORMATS = {
   pdf: { mime: "application/pdf", render: renderPdf },
@@ -45,6 +53,35 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
 
   app.get("/api/v1/resume/style", async (req) => ({ style: await loadResumeStyle(db, req.userId) }));
 
+  app.get("/api/v1/resume/style/designs", async (req) => {
+    const designs = await listResumeStyleDesigns(db, req.userId);
+    return {
+      designs: designs.map(({ id, name, style, createdAt }) => ({ id, name, style, createdAt })),
+      currentId: await currentStyleDesignId(db, req.userId, designs),
+    };
+  });
+
+  app.post("/api/v1/resume/style/designs/:id/apply", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return sendError(reply, 404, "style_design_not_found", "这份设计不存在或已删除");
+    const style = await applyResumeStyleDesign(db, req.userId, id);
+    if (!style) return sendError(reply, 404, "style_design_not_found", "这份设计不存在或已删除");
+    return { style };
+  });
+
+  app.delete("/api/v1/resume/style/designs/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return sendError(reply, 404, "style_design_not_found", "这份设计不存在或已删除");
+    const result = await deleteResumeStyleDesign(db, req.userId, id);
+    if (result === "current") {
+      return sendError(reply, 409, "style_design_in_use", "正在使用的设计不能删，先换一个再删");
+    }
+    if (result === "not_found") {
+      return sendError(reply, 404, "style_design_not_found", "这份设计不存在或已删除");
+    }
+    return reply.code(204).send();
+  });
+
   app.put("/api/v1/resume/style", async (req, reply) => {
     const parsed = ResumeStyle.safeParse(req.body);
     if (!parsed.success) return sendError(reply, 400, "invalid_request", "模板、强调色或定制样式不合法");
@@ -57,6 +94,13 @@ export const resumeRoutes: RouteModule = (app, { db, templateAdvisor }) => {
     }
     if (!(await saveResumeStyle(db, req.userId, style))) {
       return sendError(reply, 404, "user_not_found", "用户不存在");
+    }
+    if (isCustomStyle(style)) {
+      try {
+        await recordResumeStyleDesign(db, req.userId, style, "chat");
+      } catch (error) {
+        req.log.warn({ err: error }, "resume style design record failed");
+      }
     }
     return { style };
   });

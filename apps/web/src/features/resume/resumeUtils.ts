@@ -67,14 +67,24 @@ export function factQuotes(
   const out: Record<string, FactQuote> = {};
   for (const f of facts ?? []) {
     if (f.status === "superseded" || !f.quote) continue;
+    const pending = f.status === "pending" ? { pending: true } : {};
     if (f.source === "resume") {
-      out[f.id] = { quote: f.quote, fromResume: true };
+      out[f.id] = { quote: f.quote, fromResume: true, ...pending };
       continue;
     }
     const round = f.sourceMessageId ? roundOf?.(f.sourceMessageId) : undefined;
-    out[f.id] = round ? { quote: f.quote, round } : { quote: f.quote };
+    out[f.id] = round ? { quote: f.quote, round, ...pending } : { quote: f.quote, ...pending };
   }
   return out;
+}
+
+const QUOTE_PREVIEW = 12;
+
+/** 「改这条」预填到输入框的内容，只保留原话开头。 */
+export function editQuoteDraft(quote: string): string {
+  const text = quote.trim();
+  const snippet = text.length > QUOTE_PREVIEW ? `${text.slice(0, QUOTE_PREVIEW)}…` : text;
+  return `「${snippet}」这条要改：`;
 }
 
 const READY_SCORE = 0.85;

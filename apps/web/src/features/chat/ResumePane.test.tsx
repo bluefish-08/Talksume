@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { ToastProvider } from "../../components/Toast.tsx";
 import { polishKey } from "../resume/polishQueries.ts";
-import { resumeStyleKey } from "../resume/queries.ts";
+import { resumeDesignsKey, resumeStyleKey } from "../resume/queries.ts";
 import { applyTailorUpdate, type TailoringView, tailoringKey, tailoringsKey } from "../tailor/queries.ts";
 import { ResumePane, ResumePaneHeader, type TailorJob } from "./ResumePane.tsx";
 import { TailorCardView } from "./TailorCard.tsx";
@@ -55,6 +55,7 @@ const generationCard: TailorCard = {
 function clientFor(revoked = false): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(resumeStyleKey, DEFAULT_RESUME_STYLE);
+  client.setQueryData(resumeDesignsKey, { designs: [], currentId: null });
   client.setQueryData([...tailoringsKey, "adopted"], []);
   client.setQueryData(polishKey, { available: true, entries: [] });
   client.setQueryData(tailoringKey(job.jobId), {
@@ -76,7 +77,7 @@ function clientFor(revoked = false): QueryClient {
 
 function renderHeader(
   tailorJob: TailorJob | null,
-  options: { status?: "draft" | "adopted" | "revoked"; showing?: boolean; tab?: "resume" | "facts" } = {},
+  options: { status?: "draft" | "adopted" | "revoked"; showing?: boolean } = {},
 ): string {
   const status = options.status ?? "draft";
   return renderToStaticMarkup(
@@ -85,10 +86,7 @@ function renderHeader(
         <ToastProvider>
           <ResumePaneHeader
             resume={resume}
-            tab={options.tab ?? "resume"}
-            onTab={() => {}}
             pct={Math.round(completeness.score * 100)}
-            factCount={0}
             tailorJob={tailorJob}
             status={status}
             changes={tailorJob ? 1 : 0}
@@ -100,6 +98,8 @@ function renderHeader(
             onDiscard={() => {}}
             onAdopt={() => {}}
             onRevoke={() => {}}
+            onAskAi={() => {}}
+            askAiDisabled={false}
           />
         </ToastProvider>
       </QueryClientProvider>
@@ -117,13 +117,14 @@ function renderPane(options: { layout: "narrow" | "wide"; showing: boolean; revo
               resume={resume}
               completeness={completeness}
               highlights={new Set()}
-              facts={[]}
               quotes={{}}
-              roundOf={() => undefined}
               tailorJob={job}
               tailor={{ ...job, showing: options.showing, at: 1 }}
               onTailorShow={() => {}}
               onTailorDiscard={() => {}}
+              onAskAi={() => {}}
+              onEditQuote={() => {}}
+              streaming={false}
             />
           </div>
         </ToastProvider>
@@ -133,17 +134,18 @@ function renderPane(options: { layout: "narrow" | "wide"; showing: boolean; revo
 }
 
 describe("简历面板头部", () => {
-  it("没有定制版时只有两个页签和样式/润色/导出三个图标，完整度进页签", () => {
+  it("没有定制版时只有「简历」标题和样式/润色/导出三个图标，没有原话记录页签", () => {
     const html = renderHeader(null);
     expect(html).toContain("简历 <span");
     expect(html).toContain("79%");
-    expect(html).toContain("原话记录");
+    expect(html).not.toContain("原话记录");
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('role="tab"');
     expect(html).toContain('aria-label="简历样式：');
     expect(html).toContain('aria-label="润色"');
     expect(html).toContain('aria-label="导出"');
     expect(html).not.toContain("定制版 ·");
     expect(html).not.toContain("用这版");
-    expect(html).toContain('role="tablist"');
   });
 
   it("润色图标在样式和导出之间，主简历时可见、定制版显示时隐藏", () => {
@@ -238,10 +240,7 @@ describe("流式定制更新", () => {
           <ToastProvider>
             <ResumePaneHeader
               resume={resume}
-              tab="resume"
-              onTab={() => {}}
               pct={79}
-              factCount={0}
               tailorJob={job}
               status={cardStatus(patched?.tailoring)}
               changes={1}
@@ -253,6 +252,8 @@ describe("流式定制更新", () => {
               onDiscard={() => {}}
               onAdopt={() => {}}
               onRevoke={() => {}}
+              onAskAi={() => {}}
+              askAiDisabled={false}
             />
           </ToastProvider>
         </QueryClientProvider>
@@ -280,10 +281,7 @@ describe("流式定制更新", () => {
           <ToastProvider>
             <ResumePaneHeader
               resume={resume}
-              tab="resume"
-              onTab={() => {}}
               pct={79}
-              factCount={0}
               tailorJob={job}
               status={cardStatus(patched?.tailoring)}
               changes={0}
@@ -295,6 +293,8 @@ describe("流式定制更新", () => {
               onDiscard={() => {}}
               onAdopt={() => {}}
               onRevoke={() => {}}
+              onAskAi={() => {}}
+              askAiDisabled={false}
             />
           </ToastProvider>
         </QueryClientProvider>

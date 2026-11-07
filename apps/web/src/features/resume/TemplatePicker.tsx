@@ -3,43 +3,218 @@ import {
   RESUME_ACCENTS,
   RESUME_TEMPLATES,
   type ResumeAccent,
+  type ResumeStyle,
   type ResumeTemplate,
   TEMPLATE_INFO,
   templateUsesAccent,
 } from "@talksume/core";
 import { sampleResume } from "@talksume/resume-render/browser";
-import { Check, ChevronDown, Palette, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Palette, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ApiError } from "../../api/client.ts";
 import type { ResumeContent } from "../../api/types.ts";
-import { Spinner } from "../../components/ui.tsx";
 import {
-  type StyleRecommendation,
+  type ResumeStyleDesign,
   type TriggerSize,
-  useRecommendStyle,
+  useApplyResumeStyleDesign,
+  useDeleteResumeStyleDesign,
   useResumeStyle,
+  useResumeStyleDesigns,
   useSaveResumeStyle,
 } from "./queries.ts";
 import { ResumePreview } from "./ResumePreview.tsx";
 import styles from "./TemplatePicker.module.css";
 
+/** 非图标触发器显示：定制样式用主题名，否则用模板名。 */
+export function styleLabel(style: ResumeStyle): string {
+  const custom = Boolean(style.theme || style.css);
+  return custom && style.theme ? style.theme.name : TEMPLATE_INFO[style.template].label;
+}
+
+export interface StylePanelProps {
+  resume: ResumeContent | undefined;
+  style: ResumeStyle;
+  designs: readonly ResumeStyleDesign[];
+  currentId: string | null;
+  onPickTemplate: (template: ResumeTemplate) => void;
+  onPickAccent: (accent: ResumeAccent) => void;
+  onApplyDesign: (id: string) => void;
+  onDeleteDesign: (id: string) => void;
+  onAskAi: () => void;
+  askAiDisabled?: boolean;
+}
+
+export function StylePanel({
+  resume,
+  style,
+  designs,
+  currentId,
+  onPickTemplate,
+  onPickAccent,
+  onApplyDesign,
+  onDeleteDesign,
+  onAskAi,
+  askAiDisabled = false,
+}: StylePanelProps) {
+  const accentOn = templateUsesAccent(style.template);
+  const custom = Boolean(style.theme || style.css);
+  const thumbContent = resume && (resume.basics.name || resume.sections.length > 0) ? resume : sampleResume;
+
+  return (
+    <>
+      <div className={styles.scroll}>
+        <div className={styles.top}>
+          <span className={styles.heading}>简历样式</span>
+        </div>
+
+        {designs.length > 0 && (
+          <section className={styles.section} aria-label="我的设计">
+            <h3 className={styles.sectionTitle}>我的设计</h3>
+            <div className={styles.designGrid}>
+              {designs.map((design) => {
+                const current = design.id === currentId;
+                return (
+                  <div key={design.id} className={styles.designCard}>
+                    <button
+                      type="button"
+                      className={styles.designApply}
+                      aria-pressed={current}
+                      aria-label={`应用设计「${design.name}」`}
+                      data-current={current ? "true" : undefined}
+                      onClick={() => onApplyDesign(design.id)}
+                    >
+                      <span className={styles.designThumb}>
+                        <ResumePreview
+                          as="span"
+                          resume={thumbContent}
+                          resumeStyle={design.style}
+                          decorated={false}
+                          label={`${design.name}缩略图`}
+                          className={styles.mini}
+                        />
+                        {current && (
+                          <span className={styles.check}>
+                            <Check size={12} strokeWidth={2.5} />
+                          </span>
+                        )}
+                      </span>
+                      <span className={styles.designName}>{design.name}</span>
+                    </button>
+                    {!current && (
+                      <button
+                        type="button"
+                        className={styles.designDelete}
+                        aria-label={`删除设计「${design.name}」`}
+                        onClick={() => onDeleteDesign(design.id)}
+                      >
+                        <X size={12} strokeWidth={2.2} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        <section className={styles.section} aria-label="预设模板">
+          <h3 className={styles.sectionTitle}>预设模板</h3>
+          <fieldset className={`${styles.designGrid} ${styles.presetGrid}`} aria-label="模板">
+            {RESUME_TEMPLATES.map((template) => {
+              const selected = !custom && template === style.template;
+              const hint = TEMPLATE_INFO[template].hint;
+              return (
+                <div key={template} className={styles.designCard}>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={`使用模板「${TEMPLATE_INFO[template].label}」`}
+                    aria-description={hint}
+                    title={hint}
+                    className={styles.designApply}
+                    onClick={() => onPickTemplate(template)}
+                  >
+                    <span className={styles.designThumb} aria-hidden="true">
+                      <ResumePreview
+                        as="span"
+                        resume={thumbContent}
+                        resumeStyle={{ template, accent: style.accent }}
+                        decorated={false}
+                        label={`${TEMPLATE_INFO[template].label}缩略图`}
+                        className={styles.mini}
+                      />
+                      {selected && (
+                        <span className={styles.check}>
+                          <Check size={12} strokeWidth={2.5} />
+                        </span>
+                      )}
+                    </span>
+                    <span className={styles.designName}>{TEMPLATE_INFO[template].label}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </fieldset>
+
+          <div className={styles.accents}>
+            <span className={styles.accentLabel}>强调色</span>
+            <fieldset className={styles.swatches} aria-label="强调色" disabled={!accentOn}>
+              {RESUME_ACCENTS.map((accent) => (
+                <button
+                  key={accent}
+                  type="button"
+                  aria-pressed={!custom && accent === style.accent}
+                  aria-label={ACCENT_INFO[accent].label}
+                  title={ACCENT_INFO[accent].label}
+                  className={styles.swatch}
+                  style={{ background: ACCENT_INFO[accent].hex }}
+                  onClick={() => onPickAccent(accent)}
+                />
+              ))}
+            </fieldset>
+            <span className={styles.accentName}>
+              {accentOn ? ACCENT_INFO[style.accent].label : "极简黑白不使用强调色"}
+            </span>
+          </div>
+        </section>
+      </div>
+
+      <div className={styles.footer}>
+        <button
+          type="button"
+          className={styles.askAi}
+          disabled={askAiDisabled}
+          title={askAiDisabled ? "等这条回复完再试" : undefined}
+          aria-description={askAiDisabled ? "等这条回复完再试" : undefined}
+          onClick={askAiDisabled ? undefined : onAskAi}
+        >
+          <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />让 AI 再设计几版
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function TemplatePicker({
   resume,
   size = "sm",
   icon = false,
+  onAskAi,
+  askAiDisabled = false,
 }: {
   resume: ResumeContent | undefined;
   size?: TriggerSize;
   icon?: boolean;
+  onAskAi: () => void;
+  askAiDisabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [advice, setAdvice] = useState<StyleRecommendation | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const { style } = useResumeStyle();
   const save = useSaveResumeStyle();
-  const recommend = useRecommendStyle();
+  const designList = useResumeStyleDesigns();
+  const applyDesign = useApplyResumeStyleDesign();
+  const deleteDesign = useDeleteResumeStyleDesign();
   const accentOn = templateUsesAccent(style.template);
-  const thumbContent = resume && (resume.basics.name || resume.sections.length > 0) ? resume : sampleResume;
 
   useEffect(() => {
     if (!open) return;
@@ -59,20 +234,14 @@ export function TemplatePicker({
 
   const { theme, css, ...preset } = style;
   const custom = Boolean(theme || css);
-  const pickTemplate = (template: ResumeTemplate) => save.mutate({ ...preset, template });
-  const pickAccent = (accent: ResumeAccent) => save.mutate({ ...preset, accent });
-  const runRecommend = () => {
-    setAdvice(null);
-    recommend.mutate(undefined, {
-      onSuccess: (result) => {
-        setAdvice(result);
-        save.mutate({ template: result.template, accent: result.accent });
-      },
-    });
+  const pickTemplate = (next: ResumeTemplate) => save.mutate({ ...preset, template: next });
+  const pickAccent = (next: ResumeAccent) => save.mutate({ ...preset, accent: next });
+  const askAi = () => {
+    if (askAiDisabled) return;
+    setOpen(false);
+    onAskAi();
   };
-  const failure =
-    recommend.error instanceof ApiError ? recommend.error.message : "智能推荐暂时不可用，请稍后再试";
-  const styleName = custom ? `AI 定制 · ${theme?.name ?? "参考图复刻"}` : TEMPLATE_INFO[style.template].label;
+  const label = styleLabel(style);
 
   return (
     <div className={styles.root} ref={root}>
@@ -83,7 +252,7 @@ export function TemplatePicker({
           .join(" ")}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={icon ? `简历样式：${styleName}` : undefined}
+        aria-label={icon ? `简历样式：${label}` : undefined}
         onClick={() => setOpen((v) => !v)}
       >
         {icon ? (
@@ -103,103 +272,26 @@ export function TemplatePicker({
               }}
               aria-hidden="true"
             />
-            {styleName}
+            {label}
             <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
           </>
         )}
       </button>
 
       {open && (
-        <div className={styles.panel} role="dialog" aria-label="选择简历模板">
-          <div className={styles.top}>
-            <span className={styles.heading}>简历模板</span>
-            <button
-              type="button"
-              className={styles.smart}
-              disabled={recommend.isPending}
-              onClick={runRecommend}
-            >
-              {recommend.isPending ? (
-                <Spinner label="正在推荐" />
-              ) : (
-                <Sparkles size={14} strokeWidth={1.8} aria-hidden="true" />
-              )}
-              {recommend.isPending ? "正在推荐…" : "智能推荐"}
-            </button>
-          </div>
-
-          {advice && (
-            <p className={styles.advice} role="status">
-              <strong>
-                已为你换成「{TEMPLATE_INFO[advice.template].label} · {ACCENT_INFO[advice.accent].label}」
-              </strong>
-              {advice.reason}
-            </p>
-          )}
-          <p className={styles.custom}>
-            {custom
-              ? `当前是对话里定制的样式「${theme?.name ?? "参考图复刻"}」。选任一预设模板即可换回。`
-              : "也可以直接在对话里说想要的风格，比如「稳重一点，标题用深绿，做成两栏」。"}
-          </p>
-          {recommend.isError && (
-            <p className={`${styles.advice} ${styles.adviceError}`} role="alert">
-              {failure}
-            </p>
-          )}
-
-          <fieldset className={styles.grid} aria-label="模板">
-            {RESUME_TEMPLATES.map((template) => {
-              const selected = !custom && template === style.template;
-              return (
-                <button
-                  key={template}
-                  type="button"
-                  aria-pressed={selected}
-                  className={styles.card}
-                  onClick={() => pickTemplate(template)}
-                >
-                  <span className={styles.thumb} aria-hidden="true">
-                    <ResumePreview
-                      as="span"
-                      resume={thumbContent}
-                      resumeStyle={{ template, accent: style.accent }}
-                      decorated={false}
-                      label={`${TEMPLATE_INFO[template].label}缩略图`}
-                      className={styles.mini}
-                    />
-                    {selected && (
-                      <span className={styles.check}>
-                        <Check size={12} strokeWidth={2.5} />
-                      </span>
-                    )}
-                  </span>
-                  <span className={styles.name}>{TEMPLATE_INFO[template].label}</span>
-                  <span className={styles.hint}>{TEMPLATE_INFO[template].hint}</span>
-                </button>
-              );
-            })}
-          </fieldset>
-
-          <div className={styles.accents}>
-            <span className={styles.accentLabel}>强调色</span>
-            <fieldset className={styles.swatches} aria-label="强调色" disabled={!accentOn}>
-              {RESUME_ACCENTS.map((accent) => (
-                <button
-                  key={accent}
-                  type="button"
-                  aria-pressed={!custom && accent === style.accent}
-                  aria-label={ACCENT_INFO[accent].label}
-                  title={ACCENT_INFO[accent].label}
-                  className={styles.swatch}
-                  style={{ background: ACCENT_INFO[accent].hex }}
-                  onClick={() => pickAccent(accent)}
-                />
-              ))}
-            </fieldset>
-            <span className={styles.accentName}>
-              {accentOn ? ACCENT_INFO[style.accent].label : "极简黑白不使用强调色"}
-            </span>
-          </div>
+        <div className={styles.panel} role="dialog" aria-label="简历样式">
+          <StylePanel
+            resume={resume}
+            style={style}
+            designs={designList.data?.designs ?? []}
+            currentId={designList.data?.currentId ?? null}
+            onPickTemplate={pickTemplate}
+            onPickAccent={pickAccent}
+            onApplyDesign={(id) => applyDesign.mutate(id)}
+            onDeleteDesign={(id) => deleteDesign.mutate(id)}
+            onAskAi={askAi}
+            askAiDisabled={askAiDisabled}
+          />
         </div>
       )}
     </div>

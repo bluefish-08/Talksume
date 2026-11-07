@@ -37,6 +37,23 @@ describe("sanitizeResumeCss 接受", () => {
     expect(css).toContain("h2::before");
   });
 
+  it("重复归一化不再叠加 .resume 前缀，用户写了 .resume 也一样", () => {
+    let css = ok(`
+      .head { color: #111 }
+      h2 { letter-spacing: 1px }
+      .resume .head, .resume .item { color: #222 }
+      .resume.resume .item { margin-top: 2pt }
+    `);
+    for (let i = 0; i < 3; i++) {
+      const next = ok(css);
+      expect(next).toBe(css);
+      css = next;
+    }
+    expect(css).not.toContain(".resume.resume.resume");
+    expect(css).toContain(".resume.resume .head{");
+    expect(css).toContain(".resume.resume .item{");
+  });
+
   it(".photo 可以显示并用占位图", () => {
     const css = ok(
       `.photo { display: block; position: absolute; right: 10mm; top: 8mm; width: 24mm; height: 32mm; background: asset(photo-placeholder) center / cover no-repeat }`,

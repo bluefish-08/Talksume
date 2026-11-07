@@ -120,6 +120,13 @@
       "when": 1794052332786,
       "tag": "0016_tailoring_revoked_at",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794059266050,
+      "tag": "0017_resume_style_designs",
+      "breakpoints": true
     }
   ]
 }

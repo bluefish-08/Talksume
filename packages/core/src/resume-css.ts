@@ -696,7 +696,9 @@ function checkSelector(
   const onlyPhoto =
     last.some((n) => n.type === "ClassSelector" && n.name === "photo") &&
     !last.some((n) => n.type === "ClassSelector" && n.name !== "photo");
-  const scoped = text.startsWith(".resume") ? `.resume${text}` : `.resume.resume ${text}`;
+  // 已有 .resume 前缀的 CSS 再次归一化时不能再叠加；用户自己写的 .resume 也只留一个
+  const first = text.replace(/^(?:\.resume)+/, ".resume");
+  const scoped = first.startsWith(".resume") ? `.resume${first}` : `.resume.resume ${first}`;
   return {
     text: scoped,
     subject: {

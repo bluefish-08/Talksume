@@ -1,15 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useConversations } from "../../api/queries.ts";
-import { SECTION_LABELS } from "../../api/types.ts";
 import { usePolishedResume } from "../resume/polishQueries.ts";
-import { useFacts } from "../resume/queries.ts";
-import { factQuotes } from "../resume/resumeUtils.ts";
+import { STYLE_ASK_MESSAGE, useFacts } from "../resume/queries.ts";
+import { editQuoteDraft, factQuotes } from "../resume/resumeUtils.ts";
 import { ImportPrompt } from "../resume-import/ImportPrompt.tsx";
 import { useResumeImport } from "../resume-import/useResumeImport.tsx";
 import { tailoringKey } from "../tailor/queries.ts";
+import { ChatHeader } from "./ChatHeader.tsx";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
@@ -85,7 +84,10 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const quotes = factQuotes(facts.data, roundOf);
 
   const title = conversations.data?.find((c) => c.id === detail.id)?.title ?? detail.title;
-  const progress = session.focus ? SECTION_LABELS[session.focus] : "信息已基本完整";
+  const editQuote = (quote: string) => {
+    setDraft(editQuoteDraft(quote));
+    input.current?.focus();
+  };
 
   const submit = () => {
     scroller.pin();
@@ -99,15 +101,11 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   return (
     <div className={styles.layout} data-pane={paneOpen ? "open" : "closed"}>
       <section className={styles.chat} aria-label="对话">
-        <header className={styles.head}>
-          <h1 className={styles.title}>{title ?? "新对话"}</h1>
-          <span className={styles.progress}>{progress}</span>
-          <span className={styles.grow} />
-          <button type="button" className={styles.paneToggle} onClick={() => setPaneOpen(true)}>
-            <FileText size={16} strokeWidth={1.6} aria-hidden="true" />
-            简历 {Math.round(session.completeness.score * 100)}%
-          </button>
-        </header>
+        <ChatHeader
+          title={title ?? "新对话"}
+          pct={Math.round(session.completeness.score * 100)}
+          onOpenPane={() => setPaneOpen(true)}
+        />
 
         <div ref={scroller.ref} className={styles.scroll} onScroll={scroller.onScroll}>
           <MessageList
@@ -163,9 +161,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           resume={polishedResume}
           completeness={session.completeness}
           highlights={session.highlights}
-          facts={facts.data ?? []}
           quotes={quotes}
-          roundOf={roundOf}
           tailorJob={tailorJob}
           tailor={tailor}
           onTailorShow={(showing) =>
@@ -175,6 +171,12 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
             })
           }
           onTailorDiscard={() => setTailor(null)}
+          onAskAi={() => {
+            scroller.pin();
+            session.send(STYLE_ASK_MESSAGE);
+          }}
+          onEditQuote={editQuote}
+          streaming={session.streaming}
         />
       </div>
       {importer.dialog}

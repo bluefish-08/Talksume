@@ -10,6 +10,7 @@ export interface FactQuote {
   /** 这句原话是用户第几轮说的；无法确定时省略。 */
   round?: number;
   fromResume?: boolean;
+  pending?: boolean;
 }
 
 export interface ChangeNote {
@@ -45,6 +46,8 @@ interface Props {
   revealHighlight?: boolean;
   /** 还没内容的分区标题，渲染为浅色占位。 */
   placeholders?: readonly string[];
+  /** 对话页专用：把这条原话带回输入框继续改。 */
+  onEditQuote?: (quote: string) => void;
   /** 缩略图只看版式，不加高亮、溯源和占位。 */
   decorated?: boolean;
   label?: string;
@@ -72,8 +75,11 @@ html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
   flex-direction: column; gap: calc(4px / var(--zoom, 1)); padding: calc(10px / var(--zoom, 1)) calc(12px / var(--zoom, 1));
   border-radius: calc(10px / var(--zoom, 1)); background: #0f1b2e; color: #e8eef8; box-shadow: 0 10px 24px rgba(15, 27, 46, 0.14);
   font: 400 calc(12px / var(--zoom, 1)) / 1.6 -apple-system, "PingFang SC", sans-serif; text-align: left; letter-spacing: 0; }
-.resume .traceable:hover > .pop, .resume .traceable:focus-visible > .pop { display: flex; }
+.resume .traceable:hover > .pop, .resume .traceable:focus > .pop, .resume .traceable:focus-within > .pop, .resume .traceable:active > .pop { display: flex; }
 .resume .pop-head { color: #9fb3d1; }
+.resume .pop-tag { align-self: flex-start; padding: 0 calc(6px / var(--zoom, 1)); border-radius: calc(4px / var(--zoom, 1)); background: #334155; color: #fde68a; font-size: calc(11px / var(--zoom, 1)); line-height: 1.6; }
+.resume .pop-edit { margin-top: calc(2px / var(--zoom, 1)); padding: calc(2px / var(--zoom, 1)) calc(8px / var(--zoom, 1)); border: 1px solid #4b5f7d; border-radius: calc(6px / var(--zoom, 1)); background: transparent; color: #dbeafe; font: inherit; cursor: pointer; }
+.resume .pop-edit:hover { background: #1e2b3f; }
 .resume section > h2, .resume li.changed, .resume .summary.changed { position: relative; }
 .resume .changed { border-left: 2px solid #2563eb; padding-left: calc(6px / var(--zoom, 1)); }
 .resume .change-no { position: absolute; left: calc(-26px / var(--zoom, 1)); top: calc(1px / var(--zoom, 1)); width: calc(14px / var(--zoom, 1)); height: calc(14px / var(--zoom, 1)); border-radius: 50%; background: #2563eb; color: #fff; font: 400 calc(9px / var(--zoom, 1)) / calc(14px / var(--zoom, 1)) -apple-system, "PingFang SC", sans-serif; text-align: center; text-indent: 0; }
@@ -91,6 +97,7 @@ interface Decoration {
   changes: ChangeMarks | undefined;
   placeholders: readonly string[];
   idPrefix: string;
+  editQuote: boolean;
 }
 
 function el(tag: string, className: string, text?: string): HTMLElement {
@@ -98,6 +105,14 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+/** 浮层里的一句出处；轮次未知时只说原话。 */
+export function provenanceLine(source: FactQuote): string {
+  if (source.fromResume) return `来自你导入的简历「${source.quote}」`;
+  return source.round
+    ? `依据：你在第 ${source.round} 轮说的「${source.quote}」`
+    : `依据：你说的「${source.quote}」`;
 }
 
 function attachSources(target: HTMLElement, factIds: readonly string[], d: Decoration, id: string) {
@@ -110,15 +125,19 @@ function attachSources(target: HTMLElement, factIds: readonly string[], d: Decor
     ).values(),
   ].slice(0, 3);
   if (sources.length === 0) return;
-  const round = sources.length === 1 ? sources[0]?.round : undefined;
   const pop = el("span", "pop");
   pop.id = id;
   pop.setAttribute("role", "tooltip");
-  const head = sources.every((s) => s.fromResume)
-    ? "出自你的简历原文"
-    : `出自你的原话${round ? ` · 第 ${round} 轮` : ""}`;
-  pop.append(el("span", "pop-head", head));
-  for (const s of sources) pop.append(el("span", "", `「${s.quote}」`));
+  if (sources.some((s) => s.pending)) pop.append(el("span", "pop-tag", "待确认"));
+  for (const s of sources) pop.append(el("span", "pop-line", provenanceLine(s)));
+  if (d.editQuote) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "pop-edit";
+    edit.dataset.quote = sources[0]?.quote ?? "";
+    edit.textContent = "改这条";
+    pop.append(edit);
+  }
   target.classList.add("traceable");
   // 键盘聚焦也要能看到出处
   target.tabIndex = 0;
@@ -283,6 +302,7 @@ export function ResumePreview({
   facts,
   changeMarks,
   placeholders = [],
+  onEditQuote,
   decorated = true,
   label = "简历预览",
   className,
@@ -291,6 +311,8 @@ export function ResumePreview({
 }: Props) {
   const host = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
+  const editQuote = useRef(onEditQuote);
+  const editQuoteEnabled = Boolean(onEditQuote);
   const zoom = useRef(1);
   const idPrefix = useId().replace(/:/g, "");
   const { template, accent, theme, css } = resumeStyle;
@@ -298,6 +320,10 @@ export function ResumePreview({
     () => renderFragment(resume, { template, accent, theme, css }),
     [resume, template, accent, theme, css],
   );
+  useEffect(() => {
+    editQuote.current = onEditQuote;
+  }, [onEditQuote]);
+
   const highlightKey = [...(highlightTexts ?? [])].join("\u0000");
   const factsKey = JSON.stringify(facts ?? {});
   const placeholdersKey = placeholders.join("\u0000");
@@ -311,9 +337,18 @@ export function ResumePreview({
       buildDocument(
         fragment,
         resume,
-        decorated ? { highlightTexts, facts, changes: changeMarks, placeholders, idPrefix } : undefined,
+        decorated
+          ? {
+              highlightTexts,
+              facts,
+              changes: changeMarks,
+              placeholders,
+              idPrefix,
+              editQuote: editQuoteEnabled,
+            }
+          : undefined,
       ),
-    [fragment, decorated, highlightKey, factsKey, changesKey, placeholdersKey, idPrefix],
+    [fragment, decorated, highlightKey, factsKey, changesKey, placeholdersKey, idPrefix, editQuoteEnabled],
   );
 
   const sync = useCallback(() => {
@@ -327,7 +362,17 @@ export function ResumePreview({
   const onLoad = useCallback(() => {
     sync();
     const doc = frame.current?.contentDocument;
-    if (doc?.documentElement) new ResizeObserver(sync).observe(doc.documentElement);
+    if (!doc?.documentElement) return;
+    new ResizeObserver(sync).observe(doc.documentElement);
+    // iframe 里不跑脚本，由外层委托点击「改这条」
+    doc.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest?.(".pop-edit") as HTMLButtonElement | null;
+      if (!button) return;
+      event.preventDefault();
+      const quote = button.dataset.quote;
+      if (quote) editQuote.current?.(quote);
+    });
   }, [sync]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc 换了要重新滚到高亮处

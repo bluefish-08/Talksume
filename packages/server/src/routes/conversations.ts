@@ -73,7 +73,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   const chatTools = (userId: string, profile: () => Profile, conversationId: string) => ({
     jobs: matchingJobTools(jobService, userId),
     ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId, conversationId) }),
-    styles: storeResumeStyler(db, userId, { profile }),
+    styles: storeResumeStyler(db, userId, { profile, log: app.log }),
   });
 
   const snapshotOf = (state: ReturnType<typeof createIntakeState>) => ({

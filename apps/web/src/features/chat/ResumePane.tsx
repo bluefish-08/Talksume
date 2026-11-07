@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
-import { type Completeness, type ResumeContent, SECTION_LABELS } from "../../api/types.ts";
+import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
 import { PolishButton } from "../resume/PolishButton.tsx";
-import { type FactItem, useResumeStyle } from "../resume/queries.ts";
+import { useResumeStyle } from "../resume/queries.ts";
 import { type FactQuote, ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
 import { TemplatePicker } from "../resume/TemplatePicker.tsx";
@@ -25,17 +24,18 @@ interface Props {
   resume: ResumeContent;
   completeness: Completeness;
   highlights: ReadonlySet<string>;
-  facts: readonly FactItem[];
   quotes: Readonly<Record<string, FactQuote>>;
-  roundOf: (messageId: string) => number | undefined;
   /** 这场对话里最近一次定制的岗位；没有定制版时为空。 */
   tailorJob: TailorJob | null;
   tailor: TailorTarget | null;
   onTailorShow: (showing: boolean) => void;
   onTailorDiscard: () => void;
+  onAskAi: () => void;
+  onEditQuote: (quote: string) => void;
+  streaming: boolean;
 }
 
-/** 面板里打开的定制版；at 每次请求打开都会变，用来切回简历页签。 */
+/** 面板里打开的定制版；at 每次请求打开都会变，用来触发重新展开。 */
 export interface TailorTarget {
   jobId: string;
   company: string;
@@ -44,34 +44,27 @@ export interface TailorTarget {
   at: number;
 }
 
-type Tab = "resume" | "facts";
-
 export function ResumePane({
   resume,
   completeness,
   highlights,
-  facts,
   quotes,
-  roundOf,
   tailorJob,
   tailor,
   onTailorShow,
   onTailorDiscard,
+  onAskAi,
+  onEditQuote,
+  streaming,
 }: Props) {
-  const [tab, setTab] = useState<Tab>("resume");
   const toast = useToast();
   const { style } = useResumeStyle();
   const tailoring = useTailoring(tailorJob?.jobId);
   const { adopt, revoke } = useTailorActions(tailorJob?.jobId ?? "");
-  const openedAt = tailor?.showing ? tailor.at : undefined;
-  useEffect(() => {
-    if (openedAt !== undefined) setTab("resume");
-  }, [openedAt]);
   const view = tailoring.data?.tailoring;
   const status = cardStatus(view);
   const showing = Boolean(tailor && tailor.jobId === tailorJob?.jobId && tailor.showing);
-  const onTailored = tab === "resume" && showing && Boolean(tailorJob);
-  const visible = facts.filter((f) => f.status !== "superseded" && f.quote);
+  const onTailored = showing && Boolean(tailorJob);
   const pct = Math.round(completeness.score * 100);
   const usable = view?.changes.filter((c) => c.violations.length === 0).map((c) => c.id) ?? [];
   const chosen =
@@ -82,10 +75,7 @@ export function ResumePane({
     <aside className={styles.pane} aria-label="简历">
       <ResumePaneHeader
         resume={resume}
-        tab={tab}
-        onTab={setTab}
         pct={pct}
-        factCount={visible.length}
         tailorJob={tailorJob}
         status={status}
         changes={view?.changes.length ?? 0}
@@ -93,10 +83,9 @@ export function ResumePane({
         busy={busy}
         canAdopt={chosen.length > 0}
         adopting={adopt.isPending}
-        onShow={(next) => {
-          setTab("resume");
-          onTailorShow(next);
-        }}
+        onAskAi={onAskAi}
+        askAiDisabled={streaming}
+        onShow={onTailorShow}
         onDiscard={onTailorDiscard}
         onAdopt={() =>
           adopt.mutate(chosen, {
@@ -117,40 +106,16 @@ export function ResumePane({
 
       {onTailored && tailorJob ? (
         <TailorDraft jobId={tailorJob.jobId} />
-      ) : tab === "resume" ? (
-        <div className={styles.body} role="tabpanel" id="panel-resume" aria-labelledby="tab-resume">
+      ) : (
+        <div className={styles.body}>
           <ResumePreview
             resume={resume}
             resumeStyle={style}
             highlightTexts={highlights}
             facts={quotes}
+            onEditQuote={onEditQuote}
             placeholders={placeholderTitles(resume, completeness)}
           />
-        </div>
-      ) : (
-        <div className={styles.facts} role="tabpanel" id="panel-facts" aria-labelledby="tab-facts">
-          {visible.length === 0 ? (
-            <p className={styles.empty}>
-              聊过之后，你说的每一句关键原话都会记在这里，简历里的内容都能找到出处。
-            </p>
-          ) : (
-            <ul className={styles.list}>
-              {visible.map((f) => {
-                const round =
-                  f.source !== "resume" && f.sourceMessageId ? roundOf(f.sourceMessageId) : undefined;
-                return (
-                  <li key={f.id} className={styles.fact}>
-                    <span className={styles.meta}>
-                      {SECTION_LABELS[f.section as keyof typeof SECTION_LABELS] ?? f.section}
-                      {f.source === "resume" ? " · 来自简历原文" : round ? ` · 第 ${round} 轮` : ""}
-                      {f.status === "pending" ? " · 待确认" : ""}
-                    </span>
-                    <span>「{f.quote}」</span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
         </div>
       )}
     </aside>
@@ -159,10 +124,7 @@ export function ResumePane({
 
 interface HeaderProps {
   resume: ResumeContent;
-  tab: Tab;
-  onTab: (tab: Tab) => void;
   pct: number;
-  factCount: number;
   tailorJob: TailorJob | null;
   status: TailorStatus;
   changes: number;
@@ -170,6 +132,8 @@ interface HeaderProps {
   busy: boolean;
   canAdopt: boolean;
   adopting: boolean;
+  onAskAi: () => void;
+  askAiDisabled: boolean;
   onShow: (showing: boolean) => void;
   onDiscard: () => void;
   onAdopt: () => void;
@@ -178,10 +142,7 @@ interface HeaderProps {
 
 export function ResumePaneHeader({
   resume,
-  tab,
-  onTab,
   pct,
-  factCount,
   tailorJob,
   status,
   changes,
@@ -189,6 +150,8 @@ export function ResumePaneHeader({
   busy,
   canAdopt,
   adopting,
+  onAskAi,
+  askAiDisabled,
   onShow,
   onDiscard,
   onAdopt,
@@ -196,30 +159,9 @@ export function ResumePaneHeader({
 }: HeaderProps) {
   return (
     <header className={styles.head}>
-      <div className={styles.tabs} role="tablist">
-        <button
-          type="button"
-          role="tab"
-          id="tab-resume"
-          aria-selected={tab === "resume"}
-          aria-controls="panel-resume"
-          className={styles.tab}
-          onClick={() => onTab("resume")}
-        >
-          简历 <span className={styles.count}>{pct}%</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-facts"
-          aria-selected={tab === "facts"}
-          aria-controls="panel-facts"
-          className={styles.tab}
-          onClick={() => onTab("facts")}
-        >
-          原话记录 <span className={styles.count}>{factCount}</span>
-        </button>
-      </div>
+      <h2 className={styles.title}>
+        简历 <span className={styles.count}>{pct}%</span>
+      </h2>
       <span className={styles.grow} />
       {tailorJob && (
         <>
@@ -239,8 +181,8 @@ export function ResumePaneHeader({
           )}
         </>
       )}
-      <TemplatePicker resume={resume} icon />
-      {!(tab === "resume" && showing) && <PolishButton icon />}
+      <TemplatePicker resume={resume} icon onAskAi={onAskAi} askAiDisabled={askAiDisabled} />
+      {!showing && <PolishButton icon />}
       <ExportMenu icon />
     </header>
   );

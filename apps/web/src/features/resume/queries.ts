@@ -44,6 +44,67 @@ export function useResume() {
 }
 
 export const resumeStyleKey = ["resume-style"] as const;
+export const resumeDesignsKey = ["resume-style-designs"] as const;
+
+export const STYLE_ASK_MESSAGE = "帮我再设计几版简历样式";
+
+export interface ResumeStyleDesign {
+  id: string;
+  name: string;
+  style: ResumeStyle;
+  createdAt: string;
+}
+
+export interface ResumeStyleDesignList {
+  designs: ResumeStyleDesign[];
+  currentId: string | null;
+}
+
+export async function fetchResumeStyleDesigns(): Promise<ResumeStyleDesignList> {
+  return api.get<ResumeStyleDesignList>("/api/v1/resume/style/designs");
+}
+
+export function useResumeStyleDesigns() {
+  return useQuery({ queryKey: resumeDesignsKey, queryFn: fetchResumeStyleDesigns });
+}
+
+export async function applyResumeStyleDesign(id: string): Promise<ResumeStyle> {
+  return api
+    .post<{ style: ResumeStyle }>(`/api/v1/resume/style/designs/${encodeURIComponent(id)}/apply`)
+    .then((r) => r.style);
+}
+
+export function useApplyResumeStyleDesign() {
+  const client = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: applyResumeStyleDesign,
+    onSuccess: (style) => {
+      client.setQueryData(resumeStyleKey, style);
+      void client.invalidateQueries({ queryKey: resumeStyleKey });
+      void client.invalidateQueries({ queryKey: resumeDesignsKey });
+    },
+    onError: (error) =>
+      toast(error instanceof ApiError ? error.message : "应用设计失败，请稍后再试", { tone: "error" }),
+  });
+}
+
+export async function deleteResumeStyleDesign(id: string): Promise<void> {
+  await api.delete<void>(`/api/v1/resume/style/designs/${encodeURIComponent(id)}`);
+}
+
+export function useDeleteResumeStyleDesign() {
+  const client = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: deleteResumeStyleDesign,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: resumeDesignsKey });
+    },
+    onError: (error) =>
+      toast(error instanceof ApiError ? error.message : "删除设计失败，请稍后再试", { tone: "error" }),
+  });
+}
 
 export function useResumeStyle() {
   const query = useQuery({
@@ -70,20 +131,10 @@ export function useSaveResumeStyle() {
       if (context?.previous) client.setQueryData(resumeStyleKey, context.previous);
       toast(error instanceof ApiError ? error.message : "模板保存失败，请稍后再试", { tone: "error" });
     },
-    onSuccess: (style) => client.setQueryData(resumeStyleKey, style),
-  });
-}
-
-export interface StyleRecommendation extends ResumeStyle {
-  reason: string;
-}
-
-export function useRecommendStyle() {
-  return useMutation({
-    mutationFn: () =>
-      api
-        .post<{ recommendation: StyleRecommendation }>("/api/v1/resume/style/recommend")
-        .then((r) => r.recommendation),
+    onSuccess: (style) => {
+      client.setQueryData(resumeStyleKey, style);
+      void client.invalidateQueries({ queryKey: resumeDesignsKey });
+    },
   });
 }
 
