@@ -69,9 +69,9 @@ export const conversationRoutes: RouteModule = (app, deps) => {
   };
   app.addHook("onClose", () => titles.drain());
   const jobService = matchingServiceFor(db, deps.matching ?? {}, app.log);
-  const chatTools = (userId: string, profile: () => Profile) => ({
+  const chatTools = (userId: string, profile: () => Profile, conversationId: string) => ({
     jobs: matchingJobTools(jobService, userId),
-    ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId) }),
+    ...(deps.resumeLlm && { tailor: storeResumeTailor(db, deps.resumeLlm, userId, conversationId) }),
     styles: storeResumeStyler(db, userId, { profile }),
   });
 
@@ -236,7 +236,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
     const controller = createIntakeController({
       ...llm.resolve({ model, thinking }),
       genId,
-      ...chatTools(req.userId, () => loaded.state.profile),
+      ...chatTools(req.userId, () => loaded.state.profile, id),
       onMetrics: (metrics) => reportTurn(req, { conversationId: id, model, ...metrics }),
     });
     const messageId = randomUUID();
@@ -268,7 +268,7 @@ export const conversationRoutes: RouteModule = (app, deps) => {
 
     const controller = createIntakeController({
       ...resolveDefault(),
-      ...chatTools(req.userId, () => loaded.state.profile),
+      ...chatTools(req.userId, () => loaded.state.profile, id),
       onMetrics: (metrics) => reportTurn(req, { conversationId: id, ...metrics }),
     });
     await streamTurn(req, reply, id, loaded, `resolve_${conflictId}:reply`, (signal) =>

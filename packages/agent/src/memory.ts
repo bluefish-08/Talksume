@@ -1,5 +1,5 @@
 import type { Fact, Profile, ProfileSection } from "@talksume/core";
-import { computeCompleteness, SECTION_BY_NAME, type Slot } from "./completeness.ts";
+import { computeCompleteness, SECTION_BY_NAME, type Slot, slotQuestion } from "./completeness.ts";
 import type { ProfileChange } from "./facts.ts";
 import type { IntakeState } from "./types.ts";
 
@@ -191,6 +191,13 @@ export function topicOfFacts(facts: readonly Fact[]): string | undefined {
 export const NEW_USER_GREETING =
   "你好，我是简聊助手。接下来我们边聊边整理简历，聊到哪里都可以先停，下次接着来。";
 
+/** 话头和这次要问的条目对不上时，宁可不回顾，免得把用户带回另一段经历。 */
+function sameTopic(topic: string | undefined, slot: Slot | null): boolean {
+  if (!topic) return true;
+  if (!slot?.itemId) return true;
+  return Boolean(slot.itemLabel && topic.includes(slot.itemLabel));
+}
+
 /** 画像为空时用首次见面的开场；已有内容时接续上次的话题。 */
 export function openingMessage(input: {
   profile: Profile;
@@ -198,10 +205,10 @@ export function openingMessage(input: {
   topic?: string | undefined;
 }): string {
   const hasContent = computeCompleteness(input.profile).score > 0;
-  if (!hasContent) return input.slot ? `${NEW_USER_GREETING}${input.slot.question}` : NEW_USER_GREETING;
+  if (!hasContent) return input.slot ? `${NEW_USER_GREETING}${slotQuestion(input.slot)}` : NEW_USER_GREETING;
   const name = input.profile.basics.name?.trim();
   const hello = name ? `欢迎回来，${name}。` : "欢迎回来。";
-  const recap = input.topic ? `上次聊到${input.topic}，` : "";
-  if (input.slot) return `${hello}${recap}这次接着补充：${input.slot.question}`;
+  const recap = input.topic && sameTopic(input.topic, input.slot) ? `上次聊到${input.topic}，` : "";
+  if (input.slot) return `${hello}${recap}这次接着补充：${slotQuestion(input.slot)}`;
   return `${hello}${recap}这次想补点什么？`;
 }

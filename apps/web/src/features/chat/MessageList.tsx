@@ -8,6 +8,7 @@ import { describeChange } from "./describe.ts";
 import { JobAbout, JobCards } from "./JobCards.tsx";
 import styles from "./MessageList.module.css";
 import { TailorCardView } from "./TailorCard.tsx";
+import { type PlacedTailorCard, placeTailorCards } from "./tailorCards.ts";
 import {
   type ChatMessage,
   type Conflict,
@@ -40,6 +41,7 @@ export function MessageList({
 }: Props) {
   const pending = !streaming ? conflicts[0] : undefined;
   const last = messages.at(-1);
+  const tailors = placeTailorCards(messages);
   const quickReplies =
     !streaming && !pending && last?.role === "assistant" && last.state === "done" ? last.quickReplies : [];
   return (
@@ -67,7 +69,7 @@ export function MessageList({
             )}
           </div>
         ) : (
-          <Assistant key={m.key} message={m} onOpenTailor={onOpenTailor} />
+          <Assistant key={m.key} message={m} placement={tailors.get(m.key)} onOpenTailor={onOpenTailor} />
         ),
       )}
       {pending && (
@@ -103,9 +105,11 @@ export function MessageList({
 
 function Assistant({
   message,
+  placement,
   onOpenTailor,
 }: {
   message: ChatMessage;
+  placement: PlacedTailorCard | undefined;
   onOpenTailor: (card: TailorCard) => void;
 }) {
   const text = messageText(message);
@@ -139,7 +143,9 @@ function Assistant({
       )}
       {message.jobs.length > 0 && <JobCards jobs={message.jobs} />}
       {message.designs && <DesignOptions options={message.designs} />}
-      {message.tailor && <TailorCardView card={message.tailor} onOpen={onOpenTailor} />}
+      {placement && (
+        <TailorCardView card={placement.card} superseded={placement.superseded} onOpen={onOpenTailor} />
+      )}
     </div>
   );
 }

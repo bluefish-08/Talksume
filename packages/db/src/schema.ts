@@ -241,6 +241,8 @@ export const resumeTailorings = pgTable(
     jobId: text("job_id")
       .notNull()
       .references(() => jobs.id, { onDelete: "cascade" }),
+    /** 生成这份定制的对话；老数据为空，页面回退到岗位详情。 */
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
     baseContent: jsonb("base_content").$type<ResumeContent>().notNull(),
     changes: jsonb("changes").$type<TailorChange[]>().notNull().default([]),
     selected: jsonb("selected").$type<string[]>().notNull().default([]),

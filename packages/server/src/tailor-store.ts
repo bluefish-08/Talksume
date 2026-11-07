@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import {
   applyTailoring,
+  DEFAULT_TAILOR_LEVEL,
   type Profile,
   profileToResume,
   type TailorChange,
@@ -57,7 +58,13 @@ export async function generateTailoring(
   llm: StructuredLlm,
   userId: string,
   jobId: string,
-  options: { profile?: Profile; quotes?: readonly string[]; signal?: AbortSignal; level?: TailorLevel } = {},
+  options: {
+    profile?: Profile;
+    quotes?: readonly string[];
+    signal?: AbortSignal;
+    level?: TailorLevel;
+    conversationId?: string;
+  } = {},
 ) {
   const job = await loadTailorJob(db, userId, jobId);
   if (!job) throw new TailorError("job_not_found", "岗位不存在");
@@ -65,6 +72,7 @@ export async function generateTailoring(
   const tailorable = base.sections.some((s) => s.kind !== "education" && s.items.length > 0);
   if (!tailorable) throw new TailorError("profile_empty", "简历里还没有经历或技能，先和助手聊聊再来定制");
   const quotes = options.quotes ?? (await listFacts(db, userId)).map((f) => f.quote).filter(Boolean);
+  const level = options.level ?? DEFAULT_TAILOR_LEVEL;
   const draft = await tailorWithLlm(llm, job, base, {
     quotes,
     ...(options.signal && { signal: options.signal }),
@@ -72,7 +80,14 @@ export async function generateTailoring(
   });
   await db
     .insert(resumeTailorings)
-    .values({ userId, jobId, baseContent: base, changes: draft.changes, model: draft.model })
+    .values({
+      userId,
+      jobId,
+      baseContent: base,
+      changes: draft.changes,
+      model: draft.model,
+      ...(options.conversationId && { conversationId: options.conversationId }),
+    })
     .onConflictDoUpdate({
       target: [resumeTailorings.userId, resumeTailorings.jobId],
       set: {
@@ -80,10 +95,11 @@ export async function generateTailoring(
         changes: draft.changes,
         selected: [],
         model: draft.model,
+        ...(options.conversationId && { conversationId: options.conversationId }),
         updatedAt: new Date(),
       },
     });
-  return { job, changes: draft.changes };
+  return { job, changes: draft.changes, level };
 }
 
 /** 只采用 ids 里没有违规词的调整，冻结成一份针对该岗位的简历版本；主简历不受影响。 */
@@ -113,6 +129,56 @@ export async function adoptTailoring(db: Db, userId: string, jobId: string, ids:
       .where(eq(resumeTailorings.id, row.id));
   });
   return { adopted: chosen.length, rejected: wanted.length - chosen.length };
+}
+
+export interface TailoringSnapshot {
+  job: TailorJob;
+  changes: TailorChange[];
+  selected: string[];
+  conversationId: string | null;
+}
+
+export async function loadTailoring(
+  db: Db,
+  userId: string,
+  jobId: string,
+): Promise<TailoringSnapshot | null> {
+  const [job, row] = await Promise.all([loadTailorJob(db, userId, jobId), loadRow(db, userId, jobId)]);
+  if (!job) throw new TailorError("job_not_found", "岗位不存在");
+  if (!row) return null;
+  return { job, changes: row.changes, selected: row.selected, conversationId: row.conversationId };
+}
+
+/** 按话里的保留/去掉更新选中项；被拦下和未知的 id 只报告，不会写进选中。 */
+export async function selectTailoring(
+  db: Db,
+  userId: string,
+  jobId: string,
+  options: { keep?: readonly string[]; drop?: readonly string[]; adopt?: boolean },
+): Promise<TailoringSnapshot & { unknown: string[]; refused: string[] }> {
+  const snapshot = await loadTailoring(db, userId, jobId);
+  if (!snapshot) throw new TailorError("not_found", "这个岗位还没有定制版");
+  const byId = new Map(snapshot.changes.map((c) => [c.id, c]));
+  const selectable = new Set(snapshot.changes.filter(usable).map((c) => c.id));
+  const requested = [...(options.keep ?? []), ...(options.drop ?? [])];
+  const unknown = [...new Set(requested.filter((id) => !byId.has(id)))];
+  const refused = [...new Set((options.keep ?? []).filter((id) => byId.has(id) && !selectable.has(id)))];
+  const current =
+    snapshot.selected.length > 0 ? snapshot.selected.filter((id) => selectable.has(id)) : [...selectable];
+  const next = new Set(
+    options.keep !== undefined ? options.keep.filter((id) => selectable.has(id)) : current,
+  );
+  for (const id of options.drop ?? []) next.delete(id);
+  if (next.size === 0) throw new TailorError("no_changes", "至少要保留一处改动");
+
+  const selected = [...next];
+  if (options.adopt) await adoptTailoring(db, userId, jobId, selected);
+  else
+    await db
+      .update(resumeTailorings)
+      .set({ selected, updatedAt: new Date() })
+      .where(and(eq(resumeTailorings.userId, userId), eq(resumeTailorings.jobId, jobId)));
+  return { ...snapshot, selected, unknown, refused };
 }
 
 export async function revokeTailoring(db: Db, userId: string, jobId: string) {
@@ -148,6 +214,7 @@ export async function tailoringView(db: Db, userId: string, jobId: string) {
       base: row.baseContent,
       changes: row.changes,
       selected: row.selected,
+      conversationId: row.conversationId,
       adopted: adopted[0]
         ? { resumeVersionId: adopted[0].id, adoptedAt: adopted[0].createdAt.toISOString() }
         : null,
@@ -164,6 +231,7 @@ export async function listAdoptedTailorings(db: Db, userId: string) {
       jobId: jobs.id,
       company: jobs.company,
       title: jobs.title,
+      conversationId: resumeTailorings.conversationId,
       resumeVersionId: resumeVersions.id,
       adoptedAt: resumeVersions.createdAt,
     })

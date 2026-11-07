@@ -101,6 +101,15 @@ describe("专业维度", () => {
     expect(scoreMajor(art, design).score).toBeGreaterThan(0.8);
   });
 
+  it("证据只写专业，不把学校当成专业", () => {
+    const profile = makeProfile({
+      education: [{ id: "e", school: "江城大学", degree: "bachelor", major: "计算机科学与技术" }],
+    });
+    const res = scoreMajor(profile, makeJob({ title: "后端开发" }));
+    expect(res.evidence[0]).toContain("专业「计算机科学与技术」");
+    expect(res.evidence[0]).not.toContain("江城大学");
+  });
+
   it("没有专业信息时不适用；「专业不限」给中等分", () => {
     const noMajor = makeProfile({ education: [{ id: "e", school: "A", degree: "bachelor" }] });
     expect(scoreMajor(noMajor, makeJob({ title: "后端开发" })).applicable).toBe(false);
@@ -126,19 +135,22 @@ describe("多段教育", () => {
       ],
     });
     const res = scoreMajor(profile, job);
-    expect(res.evidence[0]).toContain("浙江大学 计算机科学");
+    expect(res.evidence[0]).toContain("专业「计算机科学」");
+    expect(res.evidence[0]).not.toContain("浙江大学");
     expect(res.score).toBeLessThan(0.3);
   });
 
   it("学历相同时取毕业时间晚的；没有时间则取后加入的", () => {
     const early = edu({ school: "同济大学", major: "软件工程", start: "2020-09", end: "2024-06" });
     const late = edu({ school: "浙江大学", major: "视觉传达设计", start: "2024-09", end: "2026-06" });
-    expect(scoreMajor(makeProfile({ education: [late, early] }), job).evidence[0]).toContain("浙江大学");
+    expect(scoreMajor(makeProfile({ education: [late, early] }), job).evidence[0]).toContain(
+      "专业「视觉传达设计」",
+    );
     const undated = [
       edu({ school: "同济大学", major: "软件工程" }),
       edu({ school: "浙江大学", major: "计算机科学" }),
     ];
-    expect(scoreMajor(makeProfile({ education: undated }), job).evidence[0]).toContain("浙江大学");
+    expect(scoreMajor(makeProfile({ education: undated }), job).evidence[0]).toContain("专业「计算机科学」");
   });
 
   it("最新一段没有填专业时退到下一段", () => {
@@ -148,7 +160,7 @@ describe("多段教育", () => {
         edu({ school: "浙江大学", degree: "master" }),
       ],
     });
-    expect(scoreMajor(profile, makeJob({ title: "后端开发" })).evidence[0]).toContain("同济大学");
+    expect(scoreMajor(profile, makeJob({ title: "后端开发" })).evidence[0]).toContain("专业「软件工程」");
   });
 });
 

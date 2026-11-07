@@ -10,6 +10,7 @@
 .head {
   height: 60px;
   flex: none;
+  min-width: 0;
   padding: 0 20px;
   display: flex;
   align-items: center;
@@ -18,12 +19,14 @@
 }
 
 .tabs {
+  flex: none;
   display: flex;
   gap: 20px;
   height: 100%;
 }
 
 .tab {
+  flex: none;
   height: 100%;
   display: flex;
   align-items: center;
@@ -34,6 +37,7 @@
   background: none;
   color: var(--text-3);
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .tab[aria-selected="true"] {

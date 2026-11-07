@@ -191,6 +191,25 @@ export const TailorResumeArgs = z.object({
 });
 export type TailorResumeArgs = z.infer<typeof TailorResumeArgs>;
 
+export const SelectTailorChangesArgs = z.object({
+  jobId: z.string().trim().min(1).describe("岗位 id，取自之前 tailor_resume 的 jobId"),
+  keep: z
+    .array(z.string().trim().min(1))
+    .optional()
+    .describe("要保留的改动 id；用户说「只留摘要和技能」时，传这些 id，其余取消"),
+  drop: z
+    .array(z.string().trim().min(1))
+    .optional()
+    .describe("要去掉的改动 id；用户说「摘要那条不要」时传对应 id"),
+  adopt: z.boolean().optional().describe("用户说「用这版」「就按这个来」时填 true，立即采用选中的改动"),
+});
+export type SelectTailorChangesArgs = z.infer<typeof SelectTailorChangesArgs>;
+
+export const RevokeTailoringArgs = z.object({
+  jobId: z.string().trim().min(1).describe("岗位 id，取自之前 tailor_resume 的 jobId"),
+});
+export type RevokeTailoringArgs = z.infer<typeof RevokeTailoringArgs>;
+
 export const DesignResumeStyleArgs = z.object({
   name: z.string().trim().min(1).max(12).optional().describe("这套样式的短名字，如「稳重深绿」「清爽蓝」"),
   accent: HexColor.optional().describe(
@@ -291,6 +310,8 @@ export type ToolName =
   | "search_jobs"
   | "explain_job"
   | "tailor_resume"
+  | "select_tailor_changes"
+  | "revoke_tailoring"
   | "design_resume_style"
   | "set_resume_css"
   | "preview_resume"
@@ -301,6 +322,8 @@ export const JOB_TOOL_NAMES: readonly ToolName[] = [
   "search_jobs",
   "explain_job",
   "tailor_resume",
+  "select_tailor_changes",
+  "revoke_tailoring",
 ];
 
 export interface ToolSpec {
@@ -362,6 +385,18 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description:
       "针对某个岗位生成一份定制版简历草稿：只调整要点顺序、措辞侧重、技能展示顺序和一句摘要，不新增任何事实，主简历不变。有三档：微调（默认）、嵌入关键词、深度改写，用户提到才选，不确定就用默认。用户说「帮我针对这个岗位改一下简历」「让简历更适配美团那个」时调用，jobId 取自之前的岗位结果；不知道 jobId 时先用 search_jobs 找到。草稿会在右侧简历面板打开，要用户在面板里采用后才生效。",
     schema: TailorResumeArgs,
+  },
+  {
+    name: "select_tailor_changes",
+    description:
+      "按用户的话勾选或去掉当前定制版草稿里的改动，可在同一轮直接采用。用户说「摘要那条不要」「只留技能那条」「用这版」时调用。keep 和 drop 用 tailor_resume 卡片或工具结果里的改动 id；被拦下的改动不能选。",
+    schema: SelectTailorChangesArgs,
+  },
+  {
+    name: "revoke_tailoring",
+    description:
+      "把某个岗位改回主简历（撤销已采用的定制版）。用户说「改回主简历」「这个岗位不用定制版了」时调用。",
+    schema: RevokeTailoringArgs,
   },
   {
     name: "design_resume_style",

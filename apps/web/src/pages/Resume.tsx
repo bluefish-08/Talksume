@@ -182,16 +182,20 @@ export function ResumePage() {
             </Button>
           </EmptyState>
         )}
-        {content && tailor && (
+        {content && tailor && !tailor.showing && (
           <VersionSwitch
-            label={`${tailor.company} · ${tailor.title}`}
-            showing={tailor.showing}
+            label={`${tailor.company}定制版`}
+            showing={false}
             onShow={(showing) => setTailor((t) => t && { ...t, showing })}
           />
         )}
         {content && tailor?.showing && (
           <div className={styles.tailorView}>
-            <TailorDraft jobId={tailor.jobId} onDiscard={() => setTailor(null)} />
+            <TailorDraft
+              jobId={tailor.jobId}
+              onShowMain={() => setTailor((t) => t && { ...t, showing: false })}
+              onDiscard={() => setTailor(null)}
+            />
           </div>
         )}
         {content && !tailor?.showing && (

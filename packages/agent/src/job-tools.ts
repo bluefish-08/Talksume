@@ -6,12 +6,14 @@ import {
   ExplainJobArgs,
   MAX_JOB_RESULTS,
   RecommendJobsArgs,
+  RevokeTailoringArgs,
   SearchJobsArgs,
+  SelectTailorChangesArgs,
   TailorResumeArgs,
   type ToolName,
 } from "./schemas.ts";
 import { type RunContext, text, tool } from "./tools.ts";
-import type { JobCard, JobTools, MatchKeyword, ResumeTailor, ToolRecord } from "./types.ts";
+import type { JobCard, JobTools, MatchKeyword, ResumeTailor, TailorCard, ToolRecord } from "./types.ts";
 
 const JOB_TYPE_LABEL = { internship: "实习", campus: "校招", experienced: "社招" } as const;
 
@@ -58,12 +60,31 @@ const clampLimit = (n: number | undefined) => Math.min(MAX_JOB_RESULTS, Math.max
 const plain = (args: object) => JSON.parse(JSON.stringify(args)) as Record<string, unknown>;
 
 const TAILOR_NOTE =
-  "定制版草稿已在右侧简历面板打开，还没有生效，面板上标着「定制版草稿 · 未采用」，改动处高亮、可逐条取消；用户在面板里点「采用」后，投递这个岗位时才会默认用定制版，主简历不变。用一两句话说明这次调整了哪些侧重，请用户在右边的简历上看一下、满意再采用；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。";
+  "定制版草稿已在右侧简历面板打开，还没有生效，面板上标着「定制版草稿 · 未采用」，改动处高亮、可逐条取消；用户在面板里点「采用」后，投递这个岗位时才会默认用定制版，主简历不变。先用一句话说这个岗位最看重什么、用户哪段经历最对口，这是回复里唯一需要复述的内容；改动已经列在卡片上，不要再逐条复述；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。";
 
-const failedNote = (name: ToolName, reason: string) =>
-  name === "tailor_resume"
-    ? `定制简历失败：${reason}。如实告诉用户这次没有生成成功，可以稍后再试，或去岗位详情页点「定制简历」；绝对不要说已经改好或已经定制。`
+const TAILOR_UPDATE_NOTE =
+  "只有工具返回成功时才能说已经改好、已经采用或已经改回主简历；工具失败或返回找不到时如实告诉用户，不要说已经生效。";
+
+const failedNote = (name: ToolName, reason: string) => {
+  if (name === "select_tailor_changes")
+    return `这次没有改成功：${reason}。如实告诉用户哪一处没改，不要说自己已经勾选或已经采用。`;
+  if (name === "revoke_tailoring")
+    return `改回主简历失败：${reason}。如实告诉用户这次没有撤销，仍按原来的定制版。`;
+  return name === "tailor_resume"
+    ? `定制简历失败：${reason}。如实告诉用户这次没有生成成功，可以稍后再试，或去岗位详情页点「让 AI 按这个岗位改简历」；绝对不要说已经改好或已经定制。`
     : `岗位服务出错：${reason}。如实告诉用户暂时查不到，可以稍后再试或去「职位推荐」页看看，不要编造岗位。`;
+};
+
+/** 后续调整沿用同一条定制卡片的档位，避免历史卡片换档后没有档位名。 */
+function earlierTailor(state: RunContext["state"], jobId: string): TailorCard | undefined {
+  return state.history
+    .flatMap((t) => (t.meta?.tailor ? [t.meta.tailor] : []))
+    .findLast((c) => c.jobId === jobId);
+}
+
+function withLevel(card: TailorCard, level: TailorCard["level"] | undefined): TailorCard {
+  return card.level || !level ? card : { ...card, level };
+}
 
 /** 岗位工具不写画像，出错也不计入 failures，避免触发「没听懂」的兜底追问。 */
 export function createJobTools(
@@ -203,5 +224,67 @@ export function createJobTools(
       }),
   );
 
-  return [recommendJobs, searchJobs, explainJob, ...(tailor ? [tailorResume] : [])];
+  const selectChanges = tool(
+    "select_tailor_changes",
+    "调整定制版",
+    SelectTailorChangesArgs,
+    (args: z.infer<typeof SelectTailorChangesArgs>) =>
+      run("select_tailor_changes", args, async () => {
+        if (!tailor) throw new Error("定制服务未开启");
+        const outcome = await tailor.select(args.jobId, {
+          ...(args.keep && { keep: args.keep }),
+          ...(args.drop && { drop: args.drop }),
+          ...(args.adopt !== undefined && { adopt: args.adopt }),
+        });
+        if (!outcome) {
+          return `找不到 jobId=${args.jobId} 的定制版，改动没有生效。先 tailor_resume 生成草稿，再按用户的说法调整；不要说已经改了。`;
+        }
+        const card = withLevel(outcome.card, earlierTailor(state, args.jobId)?.level);
+        ctx.emit({ type: "tailor", tailor: card });
+        const list =
+          card.items && card.items.length > 0
+            ? card.items.map((item) =>
+                item.blocked
+                  ? `- ${item.title} [${item.id}]：不能选（没改：${(item.violations ?? []).join("、")} 你没说过）`
+                  : `- ${item.number}. ${item.title} [${item.id}]：${item.selected ? "已选" : "未选"} · ${item.summary}`,
+              )
+            : outcome.lines;
+        const head = args.adopt
+          ? `已采用「${card.company} · ${card.title}」这版定制简历。`
+          : `已更新「${card.company} · ${card.title}」定制版的选中项。`;
+        return [
+          head,
+          list.length > 0 ? "每处改动的 id 和状态（编号与卡片、简历标记一致）：" : "",
+          ...list,
+          ...(outcome.notes ?? []),
+          TAILOR_UPDATE_NOTE,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }),
+  );
+
+  const revokeTailoring = tool(
+    "revoke_tailoring",
+    "改回主简历",
+    RevokeTailoringArgs,
+    (args: z.infer<typeof RevokeTailoringArgs>) =>
+      run("revoke_tailoring", args, async () => {
+        if (!tailor) throw new Error("定制服务未开启");
+        const outcome = await tailor.revoke(args.jobId);
+        if (!outcome) {
+          return `找不到 jobId=${args.jobId} 的定制版，没有可撤销的内容；投递这个岗位本来就用主简历。不要编造已经改回。`;
+        }
+        const card = withLevel(outcome.card, earlierTailor(state, args.jobId)?.level);
+        ctx.emit({ type: "tailor", tailor: card });
+        return `已把「${card.company} · ${card.title}」改回主简历，投递这个岗位时不再使用定制版，主简历没有改动。${TAILOR_UPDATE_NOTE}`;
+      }),
+  );
+
+  return [
+    recommendJobs,
+    searchJobs,
+    explainJob,
+    ...(tailor ? [tailorResume, selectChanges, revokeTailoring] : []),
+  ];
 }

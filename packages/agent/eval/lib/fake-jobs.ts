@@ -82,7 +82,11 @@ export const fakeJobs: JobTools = {
   },
 };
 
-export const fakeTailor: ResumeTailor = { tailor: async () => null };
+export const fakeTailor: ResumeTailor = {
+  tailor: async () => null,
+  select: async () => null,
+  revoke: async () => null,
+};
 
 /** 线上总带样式工具；评测里不落库，每次都在默认样式上合并。 */
 export const fakeStyler: ResumeStyler = {

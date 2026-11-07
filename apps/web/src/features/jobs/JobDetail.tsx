@@ -3,6 +3,8 @@ import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { Button, IconButton, Spinner } from "../../components/ui.tsx";
 import { PrepareInterviewButton } from "../interview/PrepareButton.tsx";
+import { tailorEntry } from "../tailor/entry.ts";
+import { useTailoring } from "../tailor/queries.ts";
 import { TailorLine } from "../tailor/TailorLine.tsx";
 import {
   dimRows,
@@ -39,11 +41,11 @@ export interface DetailProps {
   onRetryReport: () => void;
 }
 
-function applyButton({ job, application, busy, onApply }: DetailProps) {
+function applyButton({ job, application, busy, onApply }: DetailProps, variant: "primary" | "secondary") {
   const official = isOfficialJob(job);
   if (!application) {
     return (
-      <Button variant="primary" size="lg" className={styles.apply} disabled={busy.apply} onClick={onApply}>
+      <Button variant={variant} size="lg" className={styles.apply} disabled={busy.apply} onClick={onApply}>
         {busy.apply && <Spinner label="投递中" />}
         {official ? "去官网投递" : "投递"}
         {official && <ExternalLink size={14} strokeWidth={1.6} aria-hidden="true" />}
@@ -52,14 +54,14 @@ function applyButton({ job, application, busy, onApply }: DetailProps) {
   }
   if (application.status === "pending" && application.channel === "assisted") {
     return (
-      <Button variant="primary" size="lg" className={styles.apply} onClick={onApply}>
+      <Button variant={variant} size="lg" className={styles.apply} onClick={onApply}>
         完成官网投递
       </Button>
     );
   }
   const done = application.channel === "assisted" ? "已在官网投递" : "已投递";
   return (
-    <Button variant="secondary" size="lg" className={styles.apply} disabled>
+    <Button variant={variant} size="lg" className={styles.apply} disabled>
       {application.status === "closed" ? "投递已结束" : done}
     </Button>
   );
@@ -82,6 +84,8 @@ export function JobDetail(props: DetailProps) {
   const { job, match, excluded, jdText, jdLoading, application, retryingReport, busy } = props;
   const [jdOpen, setJdOpen] = useState(props.jdDefaultOpen ?? false);
   const jdId = useId();
+  const view = useTailoring(job.id).data;
+  const entry = tailorEntry(view);
   const report = match?.report;
   const strengths = report?.strengths?.length ? report.strengths : match ? evidenceLines(match) : [];
   const gaps = report?.gaps ?? [];
@@ -196,7 +200,7 @@ export function JobDetail(props: DetailProps) {
                 <span className={styles.tipTitle}>投之前可以补一句</span>
                 <span className={styles.tipBody}>
                   匹配报告提到：{gaps[0]}
-                  。如果你有相关经历，点下面的「针对这个岗位优化简历」聊聊，补进简历再投。
+                  。如果你有相关经历，点下面的「让 AI 按这个岗位改简历」，聊一句就能补进去。
                 </span>
               </div>
             )}
@@ -231,19 +235,29 @@ export function JobDetail(props: DetailProps) {
       </div>
 
       <div className={styles.foot}>
-        <TailorLine
-          jobId={job.id}
-          appliedTailored={
-            application && application.status !== "pending" ? application.resumeTailored : undefined
-          }
-        />
-        <div className={styles.actions}>
-          <Button size="lg" className={styles.optimize} disabled={busy.optimize} onClick={props.onOptimize}>
-            {busy.optimize && <Spinner label="准备中" />}针对这个岗位优化简历
-          </Button>
-          {applyButton(props)}
-          <PrepareInterviewButton jobId={job.id} size="lg" className={styles.optimize} />
-        </div>
+        <section className={styles.nextStep} data-state={entry.adopted ? "adopted" : "none"}>
+          <TailorLine jobId={job.id} view={view} />
+          {!entry.adopted && (
+            <>
+              <Button
+                variant="dark"
+                size="lg"
+                className={styles.tailorCta}
+                disabled={busy.optimize}
+                onClick={props.onOptimize}
+              >
+                {busy.optimize && <Spinner label="准备中" />}让 AI 按这个岗位改简历
+              </Button>
+              <p className={styles.tailorNote}>
+                会打开一段对话：先说这个岗位看重什么、你还差什么，再改出一版只用于这个岗位的简历。主简历不动，用不用由你定。
+              </p>
+            </>
+          )}
+          <div className={styles.actions}>
+            {applyButton(props, entry.primaryAction === "apply" ? "primary" : "secondary")}
+            <PrepareInterviewButton jobId={job.id} size="lg" className={styles.optimize} />
+          </div>
+        </section>
         {applyNote(props)}
         <div className={styles.minor}>
           <button type="button" className={styles.link} disabled={busy.dislike} onClick={props.onDislike}>

@@ -348,6 +348,8 @@ describe("定制简历工具", () => {
         calls.push(jobId);
         return { card, lines: ["- 个人摘要：熟悉 Java 后端开发", "- 技能展示顺序：Java、MySQL 排在前面"] };
       },
+      select: async () => null,
+      revoke: async () => null,
     });
     expect(calls).toEqual(["demo:2"]);
     expect(events.find((e) => e.type === "tailor")).toEqual({ type: "tailor", tailor: card });
@@ -370,7 +372,11 @@ describe("定制简历工具", () => {
       ],
       fakeJobs().jobs,
       [],
-      { tailor: async () => ({ card, lines: ["- 个人摘要：熟悉 Java 后端开发"] }) },
+      {
+        tailor: async () => ({ card, lines: ["- 个人摘要：熟悉 Java 后端开发"] }),
+        select: async () => null,
+        revoke: async () => null,
+      },
     );
     const state = createIntakeState();
     state.history.push({ id: "a0", role: "assistant", content: "推荐了几个。", meta: { jobs: JOBS } });
@@ -383,12 +389,18 @@ describe("定制简历工具", () => {
       async tailor() {
         throw new Error("模型超时");
       },
+      select: async () => null,
+      revoke: async () => null,
     });
     expect(failed.events.some((e) => e.type === "tailor")).toBe(false);
     expect(failed.toolResult()).toContain("定制简历失败：模型超时");
     expect(failed.state.history.at(-1)?.meta?.tailor).toBeUndefined();
 
-    const missing = await run({ tailor: async () => null });
+    const missing = await run({
+      tailor: async () => null,
+      select: async () => null,
+      revoke: async () => null,
+    });
     expect(missing.events.some((e) => e.type === "tailor")).toBe(false);
     expect(missing.toolResult()).toContain("找不到 jobId=demo:2");
   });
@@ -396,10 +408,122 @@ describe("定制简历工具", () => {
   it("没有可采用的调整时不出卡片", async () => {
     const { events, toolResult } = await run({
       tailor: async () => ({ card: { ...card, changes: 0 }, lines: [] }),
+      select: async () => null,
+      revoke: async () => null,
     });
     expect(events.some((e) => e.type === "tailor")).toBe(false);
     expect(toolResult()).toContain("没有得到可采用的调整");
     expect(events.some((e) => e.type === "about_job")).toBe(true);
+  });
+
+  it("按话调整选中项并采用，推出更新后的卡片；参数原样交给服务端", async () => {
+    let toolResult = "";
+    const calls: unknown[] = [];
+    const updated = {
+      jobId: "demo:2",
+      company: "云帆网络",
+      title: "Java 后台开发实习",
+      level: "light" as const,
+      changes: 2,
+      rejected: 1,
+      items: [
+        {
+          id: "summary",
+          number: 1,
+          title: "摘要",
+          summary: "补一句缓存经历",
+          selected: false,
+          blocked: false,
+        },
+        {
+          id: "bad",
+          title: "项目",
+          summary: "想写独立负责",
+          selected: false,
+          blocked: true,
+          violations: ["独立负责"],
+        },
+      ],
+    };
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("select_tailor_changes", { jobId: "demo:2", drop: ["summary"], adopt: true })),
+        (context) => {
+          toolResult = JSON.stringify(context.messages.at(-1));
+          return fauxAssistantMessage([fauxText("好，就用这版。")]);
+        },
+      ],
+      fakeJobs().jobs,
+      [],
+      {
+        tailor: async () => null,
+        async select(jobId, options) {
+          calls.push([jobId, options]);
+          return { card: updated, lines: ["- 1. 摘要 [summary]：未选 · 补一句缓存经历"] };
+        },
+        revoke: async () => null,
+      },
+    );
+    const state = createIntakeState();
+    const events = await collect(
+      controller.handleUserMessage(state, { id: "u1", text: "摘要那条不要，用这版" }),
+    );
+    expect(calls).toEqual([["demo:2", { drop: ["summary"], adopt: true }]]);
+    expect(events.find((e) => e.type === "tailor")).toMatchObject({ tailor: { jobId: "demo:2" } });
+    expect(state.history.at(-1)?.meta?.tailor?.items?.[0]?.selected).toBe(false);
+    expect(toolResult).toContain("已采用");
+  });
+
+  it("改回主简历也推出卡片；失败时如实告诉模型没有生效", async () => {
+    const card = {
+      jobId: "demo:2",
+      company: "云帆网络",
+      title: "Java 后台开发实习",
+      changes: 2,
+      rejected: 0,
+    };
+    let failed = "";
+    const { controller } = fake(
+      [
+        toolTurn(fauxToolCall("revoke_tailoring", { jobId: "demo:2" })),
+        fauxAssistantMessage([fauxText("好，改回主简历了。")]),
+      ],
+      fakeJobs().jobs,
+      [],
+      {
+        tailor: async () => null,
+        select: async () => null,
+        revoke: async () => ({ card, lines: [] }),
+      },
+    );
+    const events = await collect(
+      controller.handleUserMessage(createIntakeState(), { id: "u1", text: "改回主简历" }),
+    );
+    expect(events.find((e) => e.type === "tailor")).toBeTruthy();
+
+    const { controller: broken } = fake(
+      [
+        toolTurn(fauxToolCall("select_tailor_changes", { jobId: "demo:2", keep: ["summary"] })),
+        (context) => {
+          failed = JSON.stringify(context.messages.at(-1));
+          return fauxAssistantMessage([fauxText("这次没改成。")]);
+        },
+      ],
+      fakeJobs().jobs,
+      [],
+      {
+        tailor: async () => null,
+        select: async () => {
+          throw new Error("没有可采用的调整");
+        },
+        revoke: async () => null,
+      },
+    );
+    const failedEvents = await collect(
+      broken.handleUserMessage(createIntakeState(), { id: "u2", text: "只留摘要" }),
+    );
+    expect(failedEvents.some((e) => e.type === "tailor")).toBe(false);
+    expect(failed).toContain("没有改成功");
   });
 });
 
@@ -429,7 +553,10 @@ describe("岗位相关的系统提示", () => {
   it("开放定制工具后可以按岗位改侧重，但只有工具成功才能说生成了", () => {
     const prompt = buildSystemPrompt({ ...input(true), tailorTool: true });
     expect(prompt).toContain("tailor_resume 按岗位定制简历");
+    expect(prompt).toContain("select_tailor_changes 按话调整选中项");
+    expect(prompt).toContain("revoke_tailoring 改回主简历");
     expect(prompt).toContain("只有 tailor_resume 返回「已生成定制版草稿」时");
+    expect(prompt).toContain("这一轮最多问一个问题");
     expect(prompt).not.toContain("改写措辞、重点突出某条");
   });
 });

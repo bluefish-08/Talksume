@@ -11,6 +11,8 @@ export interface TailoringView {
     /** 最近一次采用的调整。 */
     selected: string[];
     adopted: { resumeVersionId: string; adoptedAt: string } | null;
+    /** 生成这份定制的对话；老数据为空。 */
+    conversationId: string | null;
     /** 定制之后主简历又改过。 */
     stale: boolean;
     updatedAt: string;
@@ -21,6 +23,7 @@ export interface AdoptedTailoring {
   jobId: string;
   company: string;
   title: string;
+  conversationId: string | null;
   resumeVersionId: string;
   adoptedAt: string;
 }
@@ -28,8 +31,6 @@ export interface AdoptedTailoring {
 export const tailoringsKey = ["tailorings"] as const;
 export const tailoringKey = (jobId: string) => ["tailorings", "job", jobId] as const;
 const urlOf = (jobId: string) => `/api/v1/jobs/${encodeURIComponent(jobId)}/tailoring`;
-
-export const tailorPath = (jobId: string) => `/tailor/${encodeURIComponent(jobId)}`;
 
 export function useTailoring(jobId: string | null | undefined) {
   return useQuery({

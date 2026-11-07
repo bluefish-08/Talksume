@@ -1,9 +1,12 @@
 import { ExternalLink } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 import { ApiError } from "../../api/client.ts";
 import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
 import { PrepareInterviewButton } from "../interview/PrepareButton.tsx";
+import { tailoringHref } from "../tailor/links.ts";
+import { useTailoring } from "../tailor/queries.ts";
 import styles from "./ApplicationDrawer.module.css";
 import { cityText, JOB_TYPE_LABELS } from "./format.ts";
 import { Modal } from "./Modal.tsx";
@@ -57,6 +60,7 @@ export function ApplicationDrawer({ id, onClose }: { id: string; onClose: () => 
 
 function Body({ detail }: { detail: ApplicationDetail }) {
   const { application: app, job, timeline } = detail;
+  const view = useTailoring(job.id).data;
   const meta = [cityText(job.cities), job.jobType ? JOB_TYPE_LABELS[job.jobType] : ""].filter(Boolean);
   return (
     <div className={styles.body}>
@@ -68,6 +72,11 @@ function Body({ detail }: { detail: ApplicationDetail }) {
           <ChannelTag channel={app.channel} />
           {app.resumeVersionId && <ResumeTag tailored={!!app.resumeTailored} />}
         </div>
+        {app.resumeTailored && view?.tailoring && (
+          <Link className={styles.link} to={tailoringHref(view.tailoring, job.id)}>
+            在对话里看定制版
+          </Link>
+        )}
         {app.channel === "assisted" && app.status === "pending" && (
           <p className={styles.pending}>
             已记录，但还没有投出去：记得在官网完成投递，再回来点「我已在官网投递」。

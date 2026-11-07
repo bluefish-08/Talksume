@@ -336,9 +336,7 @@ const WRAP_UP =
 export const wrapsUp = (sentence: string) => WRAP_UP.test(sentence);
 
 /** 代码选好的目标，模型没问出口时由代码替它问；有条目名就带上，免得问得像没头没尾。 */
-export function slotQuestion(slot: Slot): string {
-  return slot.itemLabel && slot.kind !== "field" ? `「${slot.itemLabel}」：${slot.question}` : slot.question;
-}
+export { slotQuestion } from "./completeness.ts";
 
 export function noteAsked(state: IntakeState, slot: Slot | null): void {
   if (slot) state.askCounts[slot.key] = (state.askCounts[slot.key] ?? 0) + 1;

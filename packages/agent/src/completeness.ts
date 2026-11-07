@@ -722,6 +722,18 @@ export interface Slot extends MissingField {
   replies?: string[];
 }
 
+/** 代码替模型问出口时带上条目名，免得「做的过程中遇到过什么难点」没头没尾。 */
+export function slotQuestion(slot: Slot): string {
+  if (!slot.itemLabel || slot.kind === "field") return slot.question;
+  const phrase =
+    slot.section === "experiences"
+      ? `${slot.itemLabel}那段经历，`
+      : slot.section === "projects"
+        ? `${slot.itemLabel}那个项目，`
+        : `${slot.itemLabel}，`;
+  return `${phrase}${slot.question}`;
+}
+
 const PROBE_STRATEGY =
   "用户之前说没有项目或实习，多半是觉得课程作业、社团这些不算，这里换个角度只问这一个。附上 quickReplies。" +
   "用户说有但没细讲，就追问做的是什么、自己负责哪块，不要转去问别的角度；讲清楚后照常写入：课程设计、练手作品、帮老师同学做的东西、比赛作品写 projects；社团、学生会、志愿者、组织过的活动也写 projects 并带 kind=campus（简历上单列「校园经历」，不问技术栈）；兼职和勤工俭学写 experiences（kind=parttime），奖项和证书写 awards。" +

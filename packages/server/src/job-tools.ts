@@ -1,4 +1,4 @@
-import type { JobCard, JobInsight, JobTools, ResumeTailor } from "@talksume/agent";
+import type { JobCard, JobInsight, JobTools, ResumeTailor, TailorCard } from "@talksume/agent";
 import type { TailorChange } from "@talksume/core";
 import type { Db } from "@talksume/db";
 import {
@@ -11,7 +11,15 @@ import {
   summarizeKeywords,
 } from "@talksume/matching";
 import type { StructuredLlm } from "./polish-llm.ts";
-import { generateTailoring, TailorError, usable } from "./tailor-store.ts";
+import {
+  generateTailoring,
+  loadTailoring,
+  revokeTailoring,
+  selectTailoring,
+  TailorError,
+  type TailoringSnapshot,
+  usable,
+} from "./tailor-store.ts";
 
 function toCard(
   job: JobSummary,
@@ -146,6 +154,7 @@ export function matchingJobTools(service: MatchingService, userId: string): JobT
 }
 
 const ITEM_SECTION_LABEL = { experiences: "经历", projects: "项目", campus: "校园经历" } as const;
+const CARD_SECTION_LABEL = { experiences: "实习经历", projects: "项目经历", campus: "校园经历" } as const;
 
 export function describeTailorChange(change: TailorChange): string {
   switch (change.kind) {
@@ -162,7 +171,68 @@ export function describeTailorChange(change: TailorChange): string {
   }
 }
 
-export function storeResumeTailor(db: Db, llm: StructuredLlm, userId: string): ResumeTailor {
+const clip = (text: string, limit = 40) =>
+  text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
+
+function cardTitle(change: TailorChange): string {
+  if (change.kind === "summary") return "摘要";
+  if (change.kind === "skill_order") return "技能";
+  if (change.kind === "item_order") return CARD_SECTION_LABEL[change.section];
+  return change.heading;
+}
+
+function cardSummary(change: TailorChange): string {
+  if (change.kind === "summary") return clip(change.reason ?? "补一句和岗位相关的个人摘要");
+  if (change.kind === "bullet") return clip(change.reason ?? "措辞更贴近岗位");
+  if (change.kind === "bullet_order") return clip(`把「${change.after[0] ?? ""}」提到第一条`);
+  if (change.kind === "item_order") return clip(`${change.after[0] ?? ""} 排前面`);
+  return clip(`${change.after.slice(0, 2).join("、")} 提前`);
+}
+
+function tailorCardOf(
+  snapshot: Pick<TailoringSnapshot, "job" | "changes" | "selected">,
+  level?: TailorCard["level"],
+): TailorCard {
+  const usableChanges = snapshot.changes.filter(usable);
+  const chosen =
+    snapshot.selected.length > 0 ? new Set(snapshot.selected) : new Set(usableChanges.map((c) => c.id));
+  const numbers = new Map(usableChanges.map((c, i) => [c.id, i + 1]));
+  const items = snapshot.changes.map((change) => {
+    const number = numbers.get(change.id);
+    const blocked = !number;
+    return {
+      id: change.id,
+      ...(number ? { number } : {}),
+      title: cardTitle(change),
+      summary: cardSummary(change),
+      selected: !blocked && chosen.has(change.id),
+      blocked,
+      ...(blocked && { violations: change.violations }),
+    };
+  });
+  return {
+    jobId: snapshot.job.id,
+    company: snapshot.job.company,
+    title: snapshot.job.title,
+    ...(level && { level }),
+    changes: usableChanges.length,
+    rejected: snapshot.changes.length - usableChanges.length,
+    items,
+  };
+}
+
+function itemLine(item: NonNullable<TailorCard["items"]>[number]): string {
+  if (item.blocked)
+    return `- ${item.title} [${item.id}]：不能选（没改：${(item.violations ?? []).join("、")} 你没说过）`;
+  return `- ${item.number}. ${item.title} [${item.id}]：${item.selected ? "已选" : "未选"} · ${item.summary}`;
+}
+
+export function storeResumeTailor(
+  db: Db,
+  llm: StructuredLlm,
+  userId: string,
+  conversationId?: string,
+): ResumeTailor {
   return {
     async tailor(profile, facts, jobId, level) {
       const quotes = facts.map((f) => f.quote).filter(Boolean);
@@ -170,22 +240,47 @@ export function storeResumeTailor(db: Db, llm: StructuredLlm, userId: string): R
         profile,
         quotes,
         ...(level && { level }),
+        ...(conversationId && { conversationId }),
       }).catch((error: unknown) => {
         if (error instanceof TailorError && error.code === "job_not_found") return null;
         throw error;
       });
       if (!result) return null;
-      const ok = result.changes.filter(usable);
+      const snapshot = { job: result.job, changes: result.changes, selected: [] };
+      const card = tailorCardOf(snapshot, result.level);
       return {
-        card: {
-          jobId: result.job.id,
-          company: result.job.company,
-          title: result.job.title,
-          changes: ok.length,
-          rejected: result.changes.length - ok.length,
-        },
-        lines: ok.map(describeTailorChange),
+        card,
+        lines: result.changes.filter(usable).map(describeTailorChange),
       };
+    },
+
+    async select(jobId, options) {
+      const result = await selectTailoring(db, userId, jobId, options).catch((error: unknown) => {
+        if (error instanceof TailorError && error.code === "not_found") return null;
+        throw error;
+      });
+      if (!result) return null;
+      const card = tailorCardOf(result);
+      const notes = [
+        result.unknown.length > 0 ? `找不到这些改动 id：${result.unknown.join("、")}，没有改它们。` : "",
+        result.refused.length > 0 ? `${result.refused.join("、")} 是被拦下的改动，不能选，已经忽略。` : "",
+        options.adopt ? "采用成功。" : "",
+      ].filter(Boolean);
+      return {
+        card,
+        lines: (card.items ?? []).map(itemLine),
+        ...(notes.length > 0 && { notes }),
+      };
+    },
+
+    async revoke(jobId) {
+      await revokeTailoring(db, userId, jobId);
+      const snapshot = await loadTailoring(db, userId, jobId).catch((error: unknown) => {
+        if (error instanceof TailorError && error.code === "job_not_found") return null;
+        throw error;
+      });
+      if (!snapshot) return null;
+      return { card: tailorCardOf(snapshot), lines: [] };
     },
   };
 }

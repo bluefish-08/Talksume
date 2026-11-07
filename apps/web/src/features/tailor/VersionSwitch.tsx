@@ -15,10 +15,10 @@ export function VersionSwitch({
   return (
     <fieldset className={[styles.versions, className].filter(Boolean).join(" ")} aria-label="简历版本">
       <button type="button" className={styles.version} aria-pressed={!showing} onClick={() => onShow(false)}>
-        通用简历
+        主简历
       </button>
       <button type="button" className={styles.version} aria-pressed={showing} onClick={() => onShow(true)}>
-        {label} 定制版
+        {label}
       </button>
     </fieldset>
   );

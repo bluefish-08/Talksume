@@ -14,6 +14,8 @@ export interface FactQuote {
 
 export interface ChangeNote {
   label: string;
+  /** 与聊天卡片一致的编号。 */
+  number?: number;
   /** 改动前的样子，一行一段。 */
   before: string[];
 }
@@ -73,7 +75,8 @@ html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
 .resume .traceable:hover > .pop, .resume .traceable:focus-visible > .pop { display: flex; }
 .resume .pop-head { color: #9fb3d1; }
 .resume section > h2, .resume li.changed, .resume .summary.changed { position: relative; }
-.resume .changed { background: #fdf6e3; box-shadow: 0 0 0 3pt #fdf6e3, 0 0 0 calc(3pt + 1px) #ecd28f; border-radius: 1px; }
+.resume .changed { background: #fdf6e3; box-shadow: 0 0 0 3pt #fdf6e3, 0 0 0 calc(3pt + 1px) #ecd28f; border-radius: 1px; border-left: 2px solid #2563eb; padding-left: calc(8px / var(--zoom, 1)); }
+.resume .change-no { position: absolute; left: calc(-26px / var(--zoom, 1)); top: calc(1px / var(--zoom, 1)); width: calc(14px / var(--zoom, 1)); height: calc(14px / var(--zoom, 1)); border-radius: 50%; background: #2563eb; color: #fff; font: 400 calc(9px / var(--zoom, 1)) / calc(14px / var(--zoom, 1)) -apple-system, "PingFang SC", sans-serif; text-align: center; text-indent: 0; }
 .resume .changed.traceable:hover, .resume .changed.traceable:focus-visible { background: #fbefcc; box-shadow: 0 0 0 3pt #fbefcc, 0 0 0 calc(3pt + 1px) #ecd28f; }
 .resume .changed .changed { box-shadow: none; }
 .resume .new-tag.tailor-tag { background: #b7791f; }
@@ -127,6 +130,7 @@ function attachSources(target: HTMLElement, factIds: readonly string[], d: Decor
 function markChanged(target: HTMLElement, note: ChangeNote, id: string, tagHost: HTMLElement = target) {
   target.classList.add("changed", "traceable");
   tagHost.append(el("span", "new-tag tailor-tag", "已定制"));
+  if (note.number !== undefined) target.append(el("span", "change-no", String(note.number)));
   const pop = el("span", "pop");
   pop.id = id;
   pop.setAttribute("role", "tooltip");

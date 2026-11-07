@@ -244,7 +244,7 @@ export function scoreMajor(profile: Profile, job: Job): DimensionScore {
   if (jobFamily === "other") return NA("无法判断岗位所属方向");
   const req = jdMajorRequirement(job.jdText);
   const mine = majorField(major);
-  const who = `画像专业「${edu.school} ${major}」`;
+  const who = `专业「${major}」`;
 
   if (req?.any) {
     return { score: 0.7, applicable: true, evidence: [`${who}；JD「${req.quote}」专业不限`] };

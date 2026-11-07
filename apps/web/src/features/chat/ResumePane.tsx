@@ -92,17 +92,21 @@ export function ResumePane({
         <CompletenessBar completeness={completeness} />
       </div>
 
-      {tab === "resume" && tailor && (
+      {tab === "resume" && tailor && !tailor.showing && (
         <VersionSwitch
           className={styles.versionSwitch}
-          label={`${tailor.company} · ${tailor.title}`}
-          showing={tailor.showing}
+          label={`${tailor.company}定制版`}
+          showing={false}
           onShow={onTailorShow}
         />
       )}
 
       {tailoring ? (
-        <TailorDraft jobId={tailor.jobId} onDiscard={onTailorDiscard} />
+        <TailorDraft
+          jobId={tailor.jobId}
+          onShowMain={() => onTailorShow(false)}
+          onDiscard={onTailorDiscard}
+        />
       ) : tab === "resume" ? (
         <div className={styles.body} role="tabpanel" id="panel-resume" aria-labelledby="tab-resume">
           <ResumePreview

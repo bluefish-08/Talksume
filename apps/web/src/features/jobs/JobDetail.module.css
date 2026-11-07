@@ -185,6 +185,31 @@
   gap: 10px;
 }
 
+.nextStep {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+}
+
+.nextStep[data-state="adopted"] {
+  border-color: var(--success-soft);
+}
+
+.tailorCta {
+  width: 100%;
+}
+
+.tailorNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
 .optimize {
   flex: 1 1 160px;
 }

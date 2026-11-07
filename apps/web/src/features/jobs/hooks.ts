@@ -157,7 +157,7 @@ export function useOptimizeResume() {
       void client.invalidateQueries({ queryKey: qk.conversations });
       navigate(`/c/${id}`, {
         state: {
-          initialMessage: `我想投递${job.company}的「${job.title}」，帮我看看简历针对这个岗位还缺什么`,
+          initialMessage: `帮我按「${job.company} · ${job.title}」这个岗位改一版简历`,
         },
       });
     },

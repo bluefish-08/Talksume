@@ -77,19 +77,35 @@ export interface JobTools {
 }
 
 /** 对话里展示的定制简历卡片，点开后由用户逐条确认才会采用。 */
+export interface TailorCardItem {
+  id: string;
+  /** 与简历面板上的编号一致；被拦下的改动没有编号。 */
+  number?: number;
+  title: string;
+  /** 一句话说清改了什么。 */
+  summary: string;
+  selected: boolean;
+  blocked: boolean;
+  violations?: string[];
+}
+
 export interface TailorCard {
   jobId: string;
   company: string;
   title: string;
+  level?: TailorLevel;
   /** 可采用的调整数，不含被拦下的。 */
   changes: number;
   rejected: number;
+  /** 逐条改动，给卡片和模型映射「摘要那条」用。 */
+  items?: TailorCardItem[];
 }
 
 export interface TailorOutcome {
   card: TailorCard;
   /** 给模型看的可采用调整，一行一处。 */
   lines: string[];
+  notes?: string[];
 }
 
 /** 服务端注入的按岗位定制简历；找不到岗位返回 null。 */
@@ -100,6 +116,13 @@ export interface ResumeTailor {
     jobId: string,
     level?: TailorLevel,
   ): Promise<TailorOutcome | null>;
+  /** 按用户的话改选中项；adopt 为 true 时立即采用。 */
+  select(
+    jobId: string,
+    options: { keep?: readonly string[]; drop?: readonly string[]; adopt?: boolean },
+  ): Promise<TailorOutcome | null>;
+  /** 改回主简历。 */
+  revoke(jobId: string): Promise<TailorOutcome | null>;
 }
 
 /** 渲染预览后的版式自检，给模型对照参考图时一并参考。 */

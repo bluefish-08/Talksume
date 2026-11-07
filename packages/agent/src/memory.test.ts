@@ -1,6 +1,6 @@
 import { type Fact, Profile } from "@talksume/core";
 import { describe, expect, it } from "vitest";
-import { computeCompleteness, PROBES } from "./completeness.ts";
+import { computeCompleteness, PROBES, type Slot } from "./completeness.ts";
 import {
   type Ledger,
   MEMORY_PROMPT_BUDGET,
@@ -206,6 +206,48 @@ describe("开场白", () => {
   it("没有要问的了就问这次想补什么", () => {
     const text = openingMessage({ profile: gpaNextState().profile, slot: null, topic: "江城闲置项目" });
     expect(text).toBe("欢迎回来，李明。上次聊到江城闲置项目，这次想补点什么？");
+  });
+
+  it("跨条目时不再回顾话头，问句点名要补的那段经历", () => {
+    const state = createIntakeState({ profile: Profile.parse({ basics: { name: "李明" } }) });
+    const slot: Slot = {
+      key: "experiences:x1:challenge",
+      section: "experiences",
+      itemId: "x1",
+      itemLabel: "云图数据",
+      field: "challenge",
+      label: "难点与做法",
+      weight: 2,
+      required: true,
+      kind: "deepen",
+      depth: 3,
+      question: "做的过程中遇到过什么难点？你是怎么解决的？",
+      strategy: "",
+    };
+    const text = openingMessage({ profile: state.profile, slot, topic: "技能里的「Git」" });
+    expect(text).not.toContain("上次聊到");
+    expect(text).toContain("云图数据那段经历，做的过程中遇到过什么难点？");
+  });
+
+  it("话头和目标条目一致时保留回顾", () => {
+    const state = createIntakeState({ profile: Profile.parse({ basics: { name: "李明" } }) });
+    const slot: Slot = {
+      key: "projects:p1:challenge",
+      section: "projects",
+      itemId: "p1",
+      itemLabel: "江城闲置",
+      field: "challenge",
+      label: "难点与做法",
+      weight: 2,
+      required: true,
+      kind: "deepen",
+      depth: 3,
+      question: "做的过程中遇到过什么难点？你是怎么解决的？",
+      strategy: "",
+    };
+    const text = openingMessage({ profile: state.profile, slot, topic: "项目经历里的「江城闲置」" });
+    expect(text).toContain("上次聊到项目经历里的「江城闲置」");
+    expect(text).toContain("江城闲置那个项目，做的过程中遇到过什么难点？");
   });
 
   it("话头取画像里最近写入的非基本信息条目", () => {

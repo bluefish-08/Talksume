@@ -106,6 +106,13 @@
       "when": 1793991781981,
       "tag": "0014_interview_prep",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794043545081,
+      "tag": "0015_resume_tailoring_conversation",
+      "breakpoints": true
     }
   ]
 }
