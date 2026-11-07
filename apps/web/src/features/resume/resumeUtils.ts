@@ -1,6 +1,4 @@
 import type { Completeness, ProfileSection, ResumeContent } from "../../api/types.ts";
-import type { FactItem } from "./queries.ts";
-import type { FactQuote } from "./ResumePreview.tsx";
 
 const PLACEHOLDER_TITLES: Partial<Record<ProfileSection, string>> = {
   education: "教育背景",
@@ -58,33 +56,6 @@ export function missingText(completeness: Completeness | undefined): string {
   const labels = (completeness?.gaps ?? []).map((g) => g.label);
   if (labels.length === 0) return "";
   return `还缺${labels.slice(0, MISSING_LIMIT).join("、")}${labels.length > MISSING_LIMIT ? "等" : ""}`;
-}
-
-export function factQuotes(
-  facts: readonly FactItem[] | undefined,
-  roundOf?: (messageId: string) => number | undefined,
-): Record<string, FactQuote> {
-  const out: Record<string, FactQuote> = {};
-  for (const f of facts ?? []) {
-    if (f.status === "superseded" || !f.quote) continue;
-    const pending = f.status === "pending" ? { pending: true } : {};
-    if (f.source === "resume") {
-      out[f.id] = { quote: f.quote, fromResume: true, ...pending };
-      continue;
-    }
-    const round = f.sourceMessageId ? roundOf?.(f.sourceMessageId) : undefined;
-    out[f.id] = round ? { quote: f.quote, round, ...pending } : { quote: f.quote, ...pending };
-  }
-  return out;
-}
-
-const QUOTE_PREVIEW = 12;
-
-/** 「改这条」预填到输入框的内容，只保留原话开头。 */
-export function editQuoteDraft(quote: string): string {
-  const text = quote.trim();
-  const snippet = text.length > QUOTE_PREVIEW ? `${text.slice(0, QUOTE_PREVIEW)}…` : text;
-  return `「${snippet}」这条要改：`;
 }
 
 const READY_SCORE = 0.85;

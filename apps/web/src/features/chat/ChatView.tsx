@@ -3,8 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useConversations } from "../../api/queries.ts";
 import { usePolishedResume } from "../resume/polishQueries.ts";
-import { STYLE_ASK_MESSAGE, useFacts } from "../resume/queries.ts";
-import { editQuoteDraft, factQuotes } from "../resume/resumeUtils.ts";
+import { STYLE_ASK_MESSAGE } from "../resume/queries.ts";
 import { ImportPrompt } from "../resume-import/ImportPrompt.tsx";
 import { useResumeImport } from "../resume-import/useResumeImport.tsx";
 import { tailoringKey } from "../tailor/queries.ts";
@@ -24,7 +23,6 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
   const session = useChatSession(detail);
   const polishedResume = usePolishedResume(session.resume);
   const { messages, send } = session;
-  const facts = useFacts();
   const conversations = useConversations();
   const [draft, setDraft] = useState("");
   const imageDraft = useImageDraft();
@@ -73,21 +71,7 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
     return card ? { jobId: card.jobId, company: card.company, title: card.title } : null;
   }, [messages]);
 
-  const userIds = useMemo(
-    () => messages.filter((m) => m.role === "user" && !m.resumeImport).map((m) => m.serverId),
-    [messages],
-  );
-  const roundOf = (messageId: string) => {
-    const i = userIds.indexOf(messageId);
-    return i >= 0 ? i + 1 : undefined;
-  };
-  const quotes = factQuotes(facts.data, roundOf);
-
   const title = conversations.data?.find((c) => c.id === detail.id)?.title ?? detail.title;
-  const editQuote = (quote: string) => {
-    setDraft(editQuoteDraft(quote));
-    input.current?.focus();
-  };
 
   const submit = () => {
     scroller.pin();
@@ -161,7 +145,6 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
           resume={polishedResume}
           completeness={session.completeness}
           highlights={session.highlights}
-          quotes={quotes}
           tailorJob={tailorJob}
           tailor={tailor}
           onTailorShow={(showing) =>
@@ -175,7 +158,6 @@ export function ChatView({ detail }: { detail: ConversationDetail }) {
             scroller.pin();
             session.send(STYLE_ASK_MESSAGE);
           }}
-          onEditQuote={editQuote}
           streaming={session.streaming}
         />
       </div>

@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { qk } from "../../api/queries.ts";
 import { useToast } from "../../components/Toast.tsx";
-import { factsKey } from "../resume/queries.ts";
 import type { ImportResult } from "./api.ts";
 import { type ImportMode, ImportResumeDialog } from "./ImportResumeDialog.tsx";
 
@@ -15,7 +14,7 @@ export function useResumeImport(conversationId?: string) {
 
   const onImported = (result: ImportResult) => {
     setMode(null);
-    for (const queryKey of [qk.conversations, qk.profile, qk.resume, factsKey]) {
+    for (const queryKey of [qk.conversations, qk.profile, qk.resume]) {
       void client.invalidateQueries({ queryKey });
     }
     void client.invalidateQueries({ queryKey: ["conversation-detail", result.conversationId] });

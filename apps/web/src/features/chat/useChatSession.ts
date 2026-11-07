@@ -6,7 +6,7 @@ import { qk } from "../../api/queries.ts";
 import { postSse } from "../../api/sse.ts";
 import type { Completeness, ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
-import { factsKey, resumeDesignsKey, resumeStyleKey } from "../resume/queries.ts";
+import { resumeDesignsKey, resumeStyleKey } from "../resume/queries.ts";
 import { diffAdded } from "../resume/resumeUtils.ts";
 import { applyTailorUpdate } from "../tailor/queries.ts";
 import { useModelChoice } from "./modelChoice.ts";
@@ -83,7 +83,6 @@ export function useChatSession(detail: ConversationDetail) {
     void client.invalidateQueries({ queryKey: qk.conversations });
     void client.invalidateQueries({ queryKey: qk.profile });
     void client.invalidateQueries({ queryKey: qk.resume });
-    void client.invalidateQueries({ queryKey: factsKey });
   }, [client]);
 
   /** 发消息与解决矛盾共用的一轮流式回复：userKey 有值表示由这条用户消息触发。 */

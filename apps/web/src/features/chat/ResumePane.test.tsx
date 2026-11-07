@@ -117,13 +117,11 @@ function renderPane(options: { layout: "narrow" | "wide"; showing: boolean; revo
               resume={resume}
               completeness={completeness}
               highlights={new Set()}
-              quotes={{}}
               tailorJob={job}
               tailor={{ ...job, showing: options.showing, at: 1 }}
               onTailorShow={() => {}}
               onTailorDiscard={() => {}}
               onAskAi={() => {}}
-              onEditQuote={() => {}}
               streaming={false}
             />
           </div>

@@ -4,7 +4,7 @@ import { Button, Spinner } from "../../components/ui.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
 import { PolishButton } from "../resume/PolishButton.tsx";
 import { useResumeStyle } from "../resume/queries.ts";
-import { type FactQuote, ResumePreview } from "../resume/ResumePreview.tsx";
+import { ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
 import { TemplatePicker } from "../resume/TemplatePicker.tsx";
 import { errorText } from "../tailor/changes.tsx";
@@ -24,14 +24,12 @@ interface Props {
   resume: ResumeContent;
   completeness: Completeness;
   highlights: ReadonlySet<string>;
-  quotes: Readonly<Record<string, FactQuote>>;
   /** 这场对话里最近一次定制的岗位；没有定制版时为空。 */
   tailorJob: TailorJob | null;
   tailor: TailorTarget | null;
   onTailorShow: (showing: boolean) => void;
   onTailorDiscard: () => void;
   onAskAi: () => void;
-  onEditQuote: (quote: string) => void;
   streaming: boolean;
 }
 
@@ -48,13 +46,11 @@ export function ResumePane({
   resume,
   completeness,
   highlights,
-  quotes,
   tailorJob,
   tailor,
   onTailorShow,
   onTailorDiscard,
   onAskAi,
-  onEditQuote,
   streaming,
 }: Props) {
   const toast = useToast();
@@ -112,8 +108,6 @@ export function ResumePane({
             resume={resume}
             resumeStyle={style}
             highlightTexts={highlights}
-            facts={quotes}
-            onEditQuote={onEditQuote}
             placeholders={placeholderTitles(resume, completeness)}
           />
         </div>

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Completeness, QualityGap } from "../../api/types.ts";
-import type { FactItem } from "./queries.ts";
-import { editQuoteDraft, factQuotes, isResumeComplete, matchesLabel, missingText } from "./resumeUtils.ts";
+import { isResumeComplete, matchesLabel, missingText } from "./resumeUtils.ts";
 
 const gap = (key: string, label: string): QualityGap => ({ key, label, prompt: `帮我补${label}` });
 
@@ -47,32 +46,5 @@ describe("matchesLabel", () => {
     expect(matchesLabel(undefined)).toBe("看看推荐岗位");
     expect(matchesLabel(0)).toBe("看看推荐岗位");
     expect(matchesLabel(12)).toBe("看看推荐岗位（12 个匹配）");
-  });
-});
-
-describe("原话浮层", () => {
-  const fact = (overrides: Partial<FactItem>): FactItem => ({
-    id: "f1",
-    section: "skills",
-    quote: "我会 Go",
-    sourceMessageId: "m1",
-    status: "confirmed",
-    createdAt: "2026-10-01T00:00:00.000Z",
-    ...overrides,
-  });
-
-  it("带轮次和待确认标记", () => {
-    const quotes = factQuotes([fact({ status: "pending" })], () => 2);
-    expect(quotes.f1).toEqual({ quote: "我会 Go", round: 2, pending: true });
-  });
-
-  it("导入简历来源不带轮次", () => {
-    const quotes = factQuotes([fact({ source: "resume" })]);
-    expect(quotes.f1).toEqual({ quote: "我会 Go", fromResume: true });
-  });
-
-  it("改这条只取原话前 12 个字", () => {
-    expect(editQuoteDraft("一二三四五六七八九十十一十二")).toBe("「一二三四五六七八九十十一…」这条要改：");
-    expect(editQuoteDraft("短话")).toBe("「短话」这条要改：");
   });
 });

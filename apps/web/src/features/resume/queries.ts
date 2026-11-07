@@ -6,35 +6,6 @@ import { qk } from "../../api/queries.ts";
 import type { ResumeContent } from "../../api/types.ts";
 import { useToast } from "../../components/Toast.tsx";
 
-export interface FactItem {
-  id: string;
-  section: string;
-  quote: string;
-  sourceMessageId: string | null;
-  /** resume：导入简历时从原文摘出的；旧后端不返回时按对话处理。 */
-  source?: "chat" | "resume";
-  status: "pending" | "confirmed" | "superseded";
-  createdAt: string;
-}
-
-export const factsKey = ["facts"] as const;
-
-/** 旧后端没有 /facts 时按空列表处理，溯源功能自然隐藏。 */
-export function useFacts() {
-  return useQuery({
-    queryKey: factsKey,
-    retry: false,
-    queryFn: () =>
-      api.get<{ items: FactItem[] }>("/api/v1/facts").then(
-        (r) => r.items,
-        (error: unknown) => {
-          if (error instanceof ApiError && error.status === 404) return [];
-          throw error;
-        },
-      ),
-  });
-}
-
 export function useResume() {
   return useQuery({
     queryKey: qk.resume,

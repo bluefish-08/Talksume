@@ -24,7 +24,6 @@ vi.mock("./useChatSession.ts", () => ({
 vi.mock("../resume/polishQueries.ts", () => ({ usePolishedResume: () => ({ basics: {}, sections: [] }) }));
 vi.mock("../resume/queries.ts", () => ({
   STYLE_ASK_MESSAGE: "帮我再设计几版简历样式",
-  useFacts: () => ({ data: [] }),
 }));
 vi.mock("../../api/queries.ts", () => ({
   useConversations: () => ({ data: [{ id: "c1", title: "后端实习" }] }),

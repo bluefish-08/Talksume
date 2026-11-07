@@ -90,6 +90,7 @@ describe("design_resume_style", () => {
     const tool = state.history.at(-1)?.meta?.tools?.[0];
     expect(tool).toMatchObject({ name: "design_resume_style" });
     expect(tool?.result).toContain("已保存简历样式");
+    expect(tool?.result).toContain("样式按钮（调色板图标）");
     expect(tool?.result).toContain("网申");
   });
 

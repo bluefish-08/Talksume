@@ -10,9 +10,9 @@ import { ChatPanel, type LiveResume, type PanelRequest } from "../features/chat/
 import type { TailorCard } from "../features/chat/types.ts";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
 import { PolishButton } from "../features/resume/PolishButton.tsx";
-import { STYLE_ASK_MESSAGE, useFacts, useResume, useResumeStyle } from "../features/resume/queries.ts";
+import { STYLE_ASK_MESSAGE, useResume, useResumeStyle } from "../features/resume/queries.ts";
 import { ResumePreview } from "../features/resume/ResumePreview.tsx";
-import { factQuotes, placeholderTitles } from "../features/resume/resumeUtils.ts";
+import { placeholderTitles } from "../features/resume/resumeUtils.ts";
 import { SuggestionsMenu } from "../features/resume/SuggestionsMenu.tsx";
 import { TemplatePicker } from "../features/resume/TemplatePicker.tsx";
 import {
@@ -77,7 +77,6 @@ export function ResumePage() {
   const toast = useToast();
   const resume = useResume();
   const profile = useProfile();
-  const facts = useFacts();
   const { style } = useResumeStyle();
   const narrow = useNarrow();
   const [docked, setDocked] = useState(() => readFlag(CHAT_OPEN_KEY, true));
@@ -228,7 +227,6 @@ export function ResumePage() {
                   resumeStyle={style}
                   highlightTexts={live?.highlights}
                   revealHighlight
-                  facts={factQuotes(facts.data)}
                   placeholders={placeholderTitles(content, completeness)}
                   scale={scale}
                 />

@@ -5,14 +5,6 @@ import type { ResumeContent } from "../../api/types.ts";
 import styles from "./ResumePreview.module.css";
 import { PAPER_WIDTH_PX } from "./workbench.ts";
 
-export interface FactQuote {
-  quote: string;
-  /** 这句原话是用户第几轮说的；无法确定时省略。 */
-  round?: number;
-  fromResume?: boolean;
-  pending?: boolean;
-}
-
 export interface ChangeNote {
   label: string;
   /** 与聊天卡片一致的编号。 */
@@ -39,16 +31,12 @@ interface Props {
   resumeStyle?: ResumeStyle | undefined;
   /** 刚写入的条目标题或要点原文，命中的会高亮并带「刚刚添加」标记。 */
   highlightTexts?: ReadonlySet<string>;
-  /** factId → 原话，用于悬停溯源。 */
-  facts?: Readonly<Record<string, FactQuote>>;
   changeMarks?: ChangeMarks | undefined;
   /** 高亮变化时把第一处高亮滚进视野。 */
   revealHighlight?: boolean;
   /** 还没内容的分区标题，渲染为浅色占位。 */
   placeholders?: readonly string[];
-  /** 对话页专用：把这条原话带回输入框继续改。 */
-  onEditQuote?: (quote: string) => void;
-  /** 缩略图只看版式，不加高亮、溯源和占位。 */
+  /** 缩略图只看版式，不加高亮和占位。 */
   decorated?: boolean;
   label?: string;
   className?: string;
@@ -58,7 +46,7 @@ interface Props {
   as?: "article" | "span";
 }
 
-// 高亮、标记、溯源浮层只在网页预览里叠加；字号按缩放反算，保证缩小的纸面上仍可读
+// 高亮、标记浮层只在网页预览里叠加；字号按缩放反算，保证缩小的纸面上仍可读
 export const PREVIEW_CSS = `
 html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
 .page { box-sizing: border-box; width: 210mm; min-height: 297mm; background: #fff; }
@@ -70,16 +58,12 @@ html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
   white-space: nowrap; text-indent: 0; }
 .resume .traceable { cursor: help; border-radius: 1px; outline: none; }
 .resume .traceable:hover, .resume .traceable:focus-visible { background: #f0f4fa; box-shadow: 0 0 0 3pt #f0f4fa; }
-.resume .hl.traceable:hover, .resume .hl.traceable:focus-visible { background: #e3ecfd; box-shadow: 0 0 0 3pt #e3ecfd, 0 0 0 calc(3pt + 1px) #bfd3f8; }
 .resume .pop { display: none; position: absolute; left: 1em; top: calc(100% + 4px); z-index: 3; width: min(calc(300px / var(--zoom, 1)), 92%);
   flex-direction: column; gap: calc(4px / var(--zoom, 1)); padding: calc(10px / var(--zoom, 1)) calc(12px / var(--zoom, 1));
   border-radius: calc(10px / var(--zoom, 1)); background: #0f1b2e; color: #e8eef8; box-shadow: 0 10px 24px rgba(15, 27, 46, 0.14);
   font: 400 calc(12px / var(--zoom, 1)) / 1.6 -apple-system, "PingFang SC", sans-serif; text-align: left; letter-spacing: 0; }
 .resume .traceable:hover > .pop, .resume .traceable:focus > .pop, .resume .traceable:focus-within > .pop, .resume .traceable:active > .pop { display: flex; }
 .resume .pop-head { color: #9fb3d1; }
-.resume .pop-tag { align-self: flex-start; padding: 0 calc(6px / var(--zoom, 1)); border-radius: calc(4px / var(--zoom, 1)); background: #334155; color: #fde68a; font-size: calc(11px / var(--zoom, 1)); line-height: 1.6; }
-.resume .pop-edit { margin-top: calc(2px / var(--zoom, 1)); padding: calc(2px / var(--zoom, 1)) calc(8px / var(--zoom, 1)); border: 1px solid #4b5f7d; border-radius: calc(6px / var(--zoom, 1)); background: transparent; color: #dbeafe; font: inherit; cursor: pointer; }
-.resume .pop-edit:hover { background: #1e2b3f; }
 .resume section > h2, .resume li.changed, .resume .summary.changed { position: relative; }
 .resume .changed { border-left: 2px solid #2563eb; padding-left: calc(6px / var(--zoom, 1)); }
 .resume .change-no { position: absolute; left: calc(-26px / var(--zoom, 1)); top: calc(1px / var(--zoom, 1)); width: calc(14px / var(--zoom, 1)); height: calc(14px / var(--zoom, 1)); border-radius: 50%; background: #2563eb; color: #fff; font: 400 calc(9px / var(--zoom, 1)) / calc(14px / var(--zoom, 1)) -apple-system, "PingFang SC", sans-serif; text-align: center; text-indent: 0; }
@@ -91,13 +75,11 @@ html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
 .resume .blank { margin-top: 28pt; text-align: center; color: #8593a8; font-size: 10.5pt; }
 `;
 
-interface Decoration {
-  highlightTexts: ReadonlySet<string> | undefined;
-  facts: Props["facts"];
-  changes: ChangeMarks | undefined;
-  placeholders: readonly string[];
+export interface PreviewDecoration {
+  highlightTexts?: ReadonlySet<string> | undefined;
+  changeMarks?: ChangeMarks | undefined;
+  placeholders?: readonly string[];
   idPrefix: string;
-  editQuote: boolean;
 }
 
 function el(tag: string, className: string, text?: string): HTMLElement {
@@ -105,44 +87,6 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
-}
-
-/** 浮层里的一句出处；轮次未知时只说原话。 */
-export function provenanceLine(source: FactQuote): string {
-  if (source.fromResume) return `来自你导入的简历「${source.quote}」`;
-  return source.round
-    ? `依据：你在第 ${source.round} 轮说的「${source.quote}」`
-    : `依据：你说的「${source.quote}」`;
-}
-
-function attachSources(target: HTMLElement, factIds: readonly string[], d: Decoration, id: string) {
-  const sources = [
-    ...new Map(
-      factIds.flatMap((fid) => {
-        const f = d.facts?.[fid];
-        return f?.quote ? [[f.quote, f] as const] : [];
-      }),
-    ).values(),
-  ].slice(0, 3);
-  if (sources.length === 0) return;
-  const pop = el("span", "pop");
-  pop.id = id;
-  pop.setAttribute("role", "tooltip");
-  if (sources.some((s) => s.pending)) pop.append(el("span", "pop-tag", "待确认"));
-  for (const s of sources) pop.append(el("span", "pop-line", provenanceLine(s)));
-  if (d.editQuote) {
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.className = "pop-edit";
-    edit.dataset.quote = sources[0]?.quote ?? "";
-    edit.textContent = "改这条";
-    pop.append(edit);
-  }
-  target.classList.add("traceable");
-  // 键盘聚焦也要能看到出处
-  target.tabIndex = 0;
-  target.setAttribute("aria-describedby", id);
-  target.append(pop);
 }
 
 export interface ChangeMarkParts {
@@ -196,7 +140,7 @@ function decorateChanges(root: ParentNode, resume: ResumeContent, marks: ChangeM
   }
 }
 
-function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
+export function decoratePreview(root: ParentNode, resume: ResumeContent, d: PreviewDecoration) {
   const page = root.querySelector<HTMLElement>(".resume");
   if (!page) return;
   const has = (text: string) => d.highlightTexts?.has(text) ?? false;
@@ -205,8 +149,8 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
     return resume.sections[s ?? -1]?.items[i ?? -1];
   };
 
-  if (d.changes) {
-    decorateChanges(root, resume, d.changes, d.idPrefix);
+  if (d.changeMarks) {
+    decorateChanges(root, resume, d.changeMarks, d.idPrefix);
     return;
   }
 
@@ -225,15 +169,7 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
       node.classList.add("hl");
       (node.querySelector(".item-head") ?? node).append(el("span", "new-tag", "刚刚添加"));
     }
-    if (skill) {
-      attachSources(
-        node,
-        item.bullets.flatMap((b) => b.factIds),
-        d,
-        `${d.idPrefix}-${node.dataset.item}`,
-      );
-      continue;
-    }
+    if (skill) continue;
     for (const li of node.querySelectorAll<HTMLElement>("[data-bullet]")) {
       const index = Number(li.dataset.bullet?.split("-")[2]);
       const bullet = item.bullets[index];
@@ -242,13 +178,12 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
         li.classList.add("hl");
         li.append(el("span", "new-tag", "刚刚添加"));
       }
-      attachSources(li, bullet.factIds, d, `${d.idPrefix}-${li.dataset.bullet}`);
     }
   }
 
   const phHost =
     page.querySelector<HTMLElement>(".main") ?? page.querySelector<HTMLElement>(".frame") ?? page;
-  for (const title of d.placeholders) {
+  for (const title of d.placeholders ?? []) {
     const section = el("section", "ph");
     section.setAttribute("aria-hidden", "true");
     const body = el("div", "sec-body");
@@ -261,7 +196,7 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
     phHost.append(section);
   }
 
-  if (!resume.basics.name && resume.sections.length === 0 && d.placeholders.length === 0) {
+  if (!resume.basics.name && resume.sections.length === 0 && (d.placeholders?.length ?? 0) === 0) {
     page.append(el("p", "blank", "聊几句之后，简历会在这里一点点长出来。"));
   }
 }
@@ -270,17 +205,17 @@ function decorate(root: ParentNode, resume: ResumeContent, d: Decoration) {
 const FRAME_CSP =
   "default-src 'none'; style-src 'unsafe-inline' 'self'; img-src data:; font-src 'self' data:";
 
-/** 先在脱离页面的文档里做高亮、溯源这些装饰，再序列化成 srcdoc，iframe 里没有脚本。 */
-function buildDocument(
+/** 先在脱离页面的文档里做高亮和定制标记，再序列化成 srcdoc，iframe 里没有脚本。 */
+export function buildDocument(
   fragment: ReturnType<typeof renderFragment>,
   resume: ResumeContent,
-  decoration: Decoration | undefined,
+  decoration?: PreviewDecoration,
 ): string {
   const parsed = new DOMParser().parseFromString(
     `<!doctype html><body><div class="page" style="padding: ${fragment.margin}">${fragment.html}</div></body>`,
     "text/html",
   );
-  if (decoration) decorate(parsed.body, resume, decoration);
+  if (decoration) decoratePreview(parsed.body, resume, decoration);
   // 样式都是我们生成或白名单过滤过的，仍防一手提前闭合 style 标签
   const css = /<\/style/i.test(fragment.css) ? "" : fragment.css;
   const fonts =
@@ -299,10 +234,8 @@ export function ResumePreview({
   resumeStyle = DEFAULT_RESUME_STYLE,
   highlightTexts,
   revealHighlight = false,
-  facts,
   changeMarks,
   placeholders = [],
-  onEditQuote,
   decorated = true,
   label = "简历预览",
   className,
@@ -311,8 +244,6 @@ export function ResumePreview({
 }: Props) {
   const host = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const editQuote = useRef(onEditQuote);
-  const editQuoteEnabled = Boolean(onEditQuote);
   const zoom = useRef(1);
   const idPrefix = useId().replace(/:/g, "");
   const { template, accent, theme, css } = resumeStyle;
@@ -320,12 +251,7 @@ export function ResumePreview({
     () => renderFragment(resume, { template, accent, theme, css }),
     [resume, template, accent, theme, css],
   );
-  useEffect(() => {
-    editQuote.current = onEditQuote;
-  }, [onEditQuote]);
-
   const highlightKey = [...(highlightTexts ?? [])].join("\u0000");
-  const factsKey = JSON.stringify(facts ?? {});
   const placeholdersKey = placeholders.join("\u0000");
   const changesKey = JSON.stringify(
     changeMarks && Object.values(changeMarks).map((v) => (v instanceof Map ? [...v] : v)),
@@ -337,18 +263,9 @@ export function ResumePreview({
       buildDocument(
         fragment,
         resume,
-        decorated
-          ? {
-              highlightTexts,
-              facts,
-              changes: changeMarks,
-              placeholders,
-              idPrefix,
-              editQuote: editQuoteEnabled,
-            }
-          : undefined,
+        decorated ? { highlightTexts, changeMarks, placeholders, idPrefix } : undefined,
       ),
-    [fragment, decorated, highlightKey, factsKey, changesKey, placeholdersKey, idPrefix, editQuoteEnabled],
+    [fragment, decorated, highlightKey, changesKey, placeholdersKey, idPrefix],
   );
 
   const sync = useCallback(() => {
@@ -364,15 +281,6 @@ export function ResumePreview({
     const doc = frame.current?.contentDocument;
     if (!doc?.documentElement) return;
     new ResizeObserver(sync).observe(doc.documentElement);
-    // iframe 里不跑脚本，由外层委托点击「改这条」
-    doc.addEventListener("click", (event) => {
-      const target = event.target as HTMLElement | null;
-      const button = target?.closest?.(".pop-edit") as HTMLButtonElement | null;
-      if (!button) return;
-      event.preventDefault();
-      const quote = button.dataset.quote;
-      if (quote) editQuote.current?.(quote);
-    });
   }, [sync]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc 换了要重新滚到高亮处
