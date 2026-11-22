@@ -319,13 +319,13 @@ describe("profileToResume", () => {
         heading: "编程语言",
         bullets: [
           { lead: "熟练", text: "Java、Go", factIds: ["s1"] },
-          { text: "Rust", factIds: [] },
+          { lead: "其他", text: "Rust", factIds: [] },
         ],
       },
       { heading: "数据库", bullets: [{ text: "MySQL、Redis", factIds: [] }] },
       { heading: "其他", bullets: [{ text: "Docker", factIds: [] }] },
     ]);
-    expect(section?.items[0] && skillLine(section.items[0]).text).toBe("熟练 Java、Go；Rust");
+    expect(section?.items[0] && skillLine(section.items[0]).text).toBe("熟练 Java、Go；其他 Rust");
   });
 
   it("空字段不输出：空白城市、空技术栈、空要点、空白意向都不留键", () => {

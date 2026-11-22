@@ -56,6 +56,20 @@ describe("planDedupe", () => {
     expect(planDedupe(rows, new Set(["x:3"]))[0]?.canonical).toBe("x:3");
   });
 
+  it("同公司同标题同类型且城市有交集，JD 措辞不同也算重复", () => {
+    const groups = planDedupe(
+      [
+        row("m:1", { jdText: "岗位职责 A", cities: ["北京"] }),
+        row("m:2", { jdText: "岗位职责 B", cities: ["北京", "上海"] }),
+        row("m:3", { jdText: "岗位职责 C", cities: ["成都"] }),
+      ],
+      new Set(),
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.duplicates).toHaveLength(1);
+    expect(groups[0]?.canonical).toBe("m:1");
+  });
+
   it("同一 JD 的实习和校招保留两条", () => {
     expect(planDedupe([row("x:1"), row("x:2", { jobType: "campus" })], new Set())).toEqual([]);
   });
@@ -106,7 +120,7 @@ describe("dedupeJobs", () => {
       job("a", { cities: ["深圳", "北京"] }),
       job("b", { cities: ["深圳", "武汉"] }),
       job("c", { jobType: "campus" }),
-      job("d", { jdText: "另一份 JD" }),
+      job("d", { title: "前端开发", jdText: "另一份 JD" }),
     ]);
     expect(await dedupeJobs(handle.db)).toMatchObject({ groups: 1, duplicates: 1 });
     const r = await rows();

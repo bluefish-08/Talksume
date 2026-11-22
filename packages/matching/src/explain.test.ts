@@ -57,14 +57,23 @@ describe("explainMatch", () => {
     expect(e.bonus.every((i) => i.status === "missing")).toBe(true);
   });
 
-  it("JD 写数据库时，画像里的 MySQL 算覆盖并注明是相近技能", () => {
+  it("JD 写 SQL 时，画像里的 MySQL 只算部分覆盖并注明是相近技能", () => {
     const e = explainMatch(
       makeProfile({ skills: skills("MySQL") }),
-      makeJob({ title: "后端开发", jdText: "任职要求：熟悉数据库原理" }),
+      makeJob({ title: "后端开发", jdText: "任职要求：熟悉SQL" }),
     );
-    const item = e.required.find((i) => i.name === "数据库");
-    expect(item?.status).toBe("have");
+    const item = e.required.find((i) => i.name === "SQL");
+    expect(item?.status).toBe("partial");
     expect(item?.source).toContain("相近技能「MySQL」");
+  });
+
+  it("相近技能不计入已有，不能和画像里没有的技能矛盾", () => {
+    const e = explainMatch(
+      makeProfile({ skills: skills("Kafka") }),
+      makeJob({ title: "后端开发", jdText: "任职要求：熟悉分布式系统，熟悉Kafka" }),
+    );
+    expect(e.required.find((i) => i.name === "分布式")?.status).toBe("partial");
+    expect(e.required.find((i) => i.name === "Kafka")?.status).toBe("have");
   });
 
   it("不可评估的项从权重里剔除，其余之和为 1", () => {

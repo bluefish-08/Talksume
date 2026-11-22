@@ -2,7 +2,7 @@ import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
 import { useResumeStyle } from "../resume/queries.ts";
 import { ResumePreview } from "../resume/ResumePreview.tsx";
-import { errorText, useTailorDraft } from "./changes.tsx";
+import { changeTitle, errorText, useTailorDraft } from "./changes.tsx";
 import { type TailoringView, useTailorActions, useTailoring } from "./queries.ts";
 import styles from "./TailorDraft.module.css";
 import { VersionSwitch } from "./VersionSwitch.tsx";
@@ -56,13 +56,32 @@ function Draft({
 }) {
   const draft = view.tailoring as NonNullable<TailoringView["tailoring"]>;
   const { style } = useResumeStyle();
-  const { preview, marks } = useTailorDraft(draft);
+  const { usable, chosen, numbers, preview, marks, toggle } = useTailorDraft(view.job.id, draft);
   const adopted = Boolean(draft.adopted && draft.selected.length > 0);
 
   return (
     <div className={styles.draft}>
       {onShowMain && onDiscard && <DraftBar view={view} onShowMain={onShowMain} onDiscard={onDiscard} />}
       {draft.stale && <p className={styles.warn}>主简历在生成这份定制后又更新过。</p>}
+      {!adopted && usable.length > 1 && (
+        <fieldset className={styles.picker} aria-label="选择要采用的改动">
+          {usable.map((c) => {
+            const on = chosen.some((x) => x.id === c.id);
+            return (
+              <label key={c.id} className={styles.pick} data-off={!on} title={changeTitle(c)}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={on && chosen.length === 1}
+                  onChange={() => toggle(c.id)}
+                />
+                <span className={styles.pickNo}>{numbers.get(c.id)}</span>
+                {changeTitle(c)}
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
       <div className={styles.scroll}>
         <ResumePreview
           resume={preview}
@@ -88,7 +107,7 @@ function DraftBar({
   const draft = view.tailoring as NonNullable<TailoringView["tailoring"]>;
   const toast = useToast();
   const { adopt, revoke } = useTailorActions(view.job.id);
-  const { chosen } = useTailorDraft(draft);
+  const { chosen } = useTailorDraft(view.job.id, draft);
   const busy = adopt.isPending || revoke.isPending;
   const adopted = Boolean(draft.adopted && draft.selected.length > 0);
 

@@ -1,5 +1,4 @@
 import type { Completeness, ResumeContent } from "../../api/types.ts";
-import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
 import { ExportMenu } from "../resume/ExportMenu.tsx";
 import { PolishPreview } from "../resume/PolishPreview.tsx";
@@ -7,12 +6,11 @@ import { useResumeStyle } from "../resume/queries.ts";
 import { ResumePreview } from "../resume/ResumePreview.tsx";
 import { placeholderTitles } from "../resume/resumeUtils.ts";
 import { TemplatePicker } from "../resume/TemplatePicker.tsx";
-import { errorText } from "../tailor/changes.tsx";
-import { useTailorActions, useTailoring } from "../tailor/queries.ts";
 import { TailorDraft } from "../tailor/TailorDraft.tsx";
+import { useTailorVersion } from "../tailor/useTailorVersion.ts";
 import { VersionMenu } from "../tailor/VersionMenu.tsx";
 import styles from "./ResumePane.module.css";
-import { cardStatus, type TailorStatus } from "./tailorCards.ts";
+import type { TailorStatus } from "./tailorCards.ts";
 
 export interface TailorJob {
   jobId: string;
@@ -58,19 +56,11 @@ export function ResumePane({
   onAskAi,
   streaming,
 }: Props) {
-  const toast = useToast();
   const { style } = useResumeStyle();
-  const tailoring = useTailoring(tailorJob?.jobId);
-  const { adopt, revoke } = useTailorActions(tailorJob?.jobId ?? "");
-  const view = tailoring.data?.tailoring;
-  const status = cardStatus(view);
+  const version = useTailorVersion(tailorJob?.jobId, () => onTailorShow(false));
   const showing = Boolean(tailor && tailor.jobId === tailorJob?.jobId && tailor.showing);
   const onTailored = showing && Boolean(tailorJob);
   const pct = Math.round(completeness.score * 100);
-  const usable = view?.changes.filter((c) => c.violations.length === 0).map((c) => c.id) ?? [];
-  const chosen =
-    view && view.selected.length > 0 ? view.selected.filter((id) => usable.includes(id)) : usable;
-  const busy = adopt.isPending || revoke.isPending;
 
   return (
     <aside className={styles.pane} aria-label="简历">
@@ -78,31 +68,18 @@ export function ResumePane({
         resume={resume}
         pct={pct}
         tailorJob={tailorJob}
-        status={status}
-        changes={view?.changes.length ?? 0}
+        status={version.status}
+        changes={version.changes}
         showing={showing}
-        busy={busy}
-        canAdopt={chosen.length > 0}
-        adopting={adopt.isPending}
+        busy={version.busy}
+        canAdopt={version.chosen.length > 0}
+        adopting={version.adopting}
         onAskAi={onAskAi}
         askAiDisabled={streaming}
         onShow={onTailorShow}
         onDiscard={onTailorDiscard}
-        onAdopt={() =>
-          adopt.mutate(chosen, {
-            onSuccess: () => toast("已采用定制版，投递这个岗位时会默认使用", { tone: "success" }),
-            onError: (e) => toast(errorText(e), { tone: "error" }),
-          })
-        }
-        onRevoke={() =>
-          revoke.mutate(undefined, {
-            onSuccess: () => {
-              onTailorShow(false);
-              toast("已改回主简历，投递这个岗位时不再用定制版");
-            },
-            onError: (e) => toast(errorText(e), { tone: "error" }),
-          })
-        }
+        onAdopt={version.onAdopt}
+        onRevoke={version.onRevoke}
       />
 
       {polishOpen ? (
@@ -165,25 +142,68 @@ export function ResumePaneHeader({
       </h2>
       <span className={styles.grow} />
       {tailorJob && (
-        <>
-          <VersionMenu
-            company={tailorJob.company}
-            changes={changes}
-            status={status}
-            showing={showing}
-            onShow={onShow}
-            onRevoke={onRevoke}
-            onDiscard={onDiscard}
-          />
-          {status === "draft" && (
-            <Button variant="dark" size="sm" disabled={busy || !canAdopt} onClick={onAdopt}>
-              {adopting && <Spinner label="采用中" />}用这版
-            </Button>
-          )}
-        </>
+        <TailorVersionControls
+          company={tailorJob.company}
+          status={status}
+          changes={changes}
+          showing={showing}
+          busy={busy}
+          canAdopt={canAdopt}
+          adopting={adopting}
+          onShow={onShow}
+          onDiscard={onDiscard}
+          onAdopt={onAdopt}
+          onRevoke={onRevoke}
+        />
       )}
       <TemplatePicker resume={resume} icon onAskAi={onAskAi} askAiDisabled={askAiDisabled} />
       <ExportMenu icon />
     </header>
+  );
+}
+
+/** 版本下拉加「用这版」；对话面板和简历页头部共用。 */
+export function TailorVersionControls({
+  company,
+  status,
+  changes,
+  showing,
+  busy,
+  canAdopt,
+  adopting,
+  onShow,
+  onDiscard,
+  onAdopt,
+  onRevoke,
+}: {
+  company: string;
+  status: TailorStatus;
+  changes: number;
+  showing: boolean;
+  busy: boolean;
+  canAdopt: boolean;
+  adopting: boolean;
+  onShow: (showing: boolean) => void;
+  onDiscard: () => void;
+  onAdopt: () => void;
+  onRevoke: () => void;
+}) {
+  return (
+    <>
+      <VersionMenu
+        company={company}
+        changes={changes}
+        status={status}
+        showing={showing}
+        onShow={onShow}
+        onRevoke={onRevoke}
+        onDiscard={onDiscard}
+      />
+      {status === "draft" && (
+        <Button variant="dark" size="sm" disabled={busy || !canAdopt} onClick={onAdopt}>
+          {adopting && <Spinner label="采用中" />}用这版
+        </Button>
+      )}
+    </>
   );
 }

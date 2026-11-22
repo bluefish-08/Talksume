@@ -54,7 +54,7 @@ describe("技能维度", () => {
     expect(scoreSkills(makeProfile({ skills: [skill("Excel")] }), job).score).toBe(0);
   });
 
-  it("项目技术栈与描述里的技能也算，课程只算半分，相近技能按 0.7 折算", () => {
+  it("项目技术栈与描述里的技能也算，课程只算半分，相近技能按 0.5 折算", () => {
     const job = makeJob({ title: "x", jdText: "熟悉Redis" });
     const fromProject = makeProfile({
       skills: [],
@@ -67,7 +67,10 @@ describe("技能维度", () => {
     });
     expect(scoreSkills(fromCourse, job).score).toBe(0.5);
     const ml = makeJob({ title: "x", jdText: "熟悉机器学习" });
-    expect(scoreSkills(makeProfile({ skills: [skill("PyTorch")] }), ml).score).toBeCloseTo(0.7, 5);
+    expect(scoreSkills(makeProfile({ skills: [skill("PyTorch")] }), ml).score).toBeCloseTo(0.5, 5);
+    expect(scoreSkills(makeProfile({ skills: [skill("PyTorch")] }), ml).evidence.at(-1)).toBe(
+      "满足 0/1 项技能要求",
+    );
   });
 
   it("熟悉程度影响得分；JD 没有技能要求时该维度不适用", () => {

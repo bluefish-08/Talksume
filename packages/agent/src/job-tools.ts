@@ -62,7 +62,11 @@ const plain = (args: object) => JSON.parse(JSON.stringify(args)) as Record<strin
 const TAILOR_NO_INTAKE =
   "这一轮只谈这个岗位：不要问任何建档问题（包括难点），也不要提用户还没说过的其他经历；最多只问一个这个岗位 JD 里缺的东西。";
 
-const TAILOR_NOTE = `定制版草稿已在右侧简历面板打开，还没有生效，面板顶部是「<公司>定制版 · 草稿」，改动处高亮、可逐条取消；用户在面板里点「采用」后，投递这个岗位时才会默认用定制版，主简历不变。先用一句话说这个岗位最看重什么、用户哪段经历最对口，这是回复里唯一需要复述的内容；改动已经列在卡片上，不要再逐条复述；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。${TAILOR_NO_INTAKE}`;
+const SAY_FIRST = "先用一句话说这个岗位最看重什么、用户哪段经历最对口，这是回复里唯一需要复述的内容；";
+const SAY_DONE =
+  "你在调用工具前已经对用户说过话，岗位看重什么、哪段经历对口不要再说第二遍，只用一句话说明草稿已就绪；";
+
+const TAILOR_NOTE = `定制版草稿已在右侧简历面板打开，还没有生效，面板顶部是「<公司>定制版 · 草稿」，改动处高亮、可逐条取消；用户在面板里点「采用」后，投递这个岗位时才会默认用定制版，主简历不变。@@SAY@@改动已经列在卡片上，不要再逐条复述；不要说已经改好、已经替换或已经生效，也不要编造上面没有的调整。${TAILOR_NO_INTAKE}`;
 
 const TAILOR_UPDATE_NOTE = `只有工具返回成功时才能说已经改好、已经采用或已经改回主简历；工具失败或返回找不到时如实告诉用户，不要说已经生效。回复只用一两句话确认改了什么（或已采用），不要列清单，不要开启新的建档话题。${TAILOR_NO_INTAKE}`;
 
@@ -223,7 +227,7 @@ export function createJobTools(
           `已为「${target}」生成定制版草稿，共 ${card.changes} 处调整：`,
           ...lines,
           blocked,
-          TAILOR_NOTE,
+          TAILOR_NOTE.replace("@@SAY@@", ctx.spoken?.().trim() ? SAY_DONE : SAY_FIRST),
           ABOUT_NOTE,
         ]
           .filter(Boolean)

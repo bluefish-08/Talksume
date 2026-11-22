@@ -142,3 +142,35 @@
     padding: 14px 16px 0;
   }
 }
+
+.picker {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 20px 0;
+  padding: 0;
+  border: 0;
+}
+
+.pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pick[data-off="true"] {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.pickNo {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

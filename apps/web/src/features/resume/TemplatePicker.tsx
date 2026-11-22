@@ -10,7 +10,8 @@ import {
 } from "@talksume/core";
 import { sampleResume } from "@talksume/resume-render/browser";
 import { Check, ChevronDown, Palette, Sparkles, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ResumeContent } from "../../api/types.ts";
 import {
   type ResumeStyleDesign,
@@ -209,6 +210,8 @@ export function TemplatePicker({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number }>();
   const { style } = useResumeStyle();
   const save = useSaveResumeStyle();
   const designList = useResumeStyleDesigns();
@@ -219,7 +222,8 @@ export function TemplatePicker({
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!root.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -230,6 +234,23 @@ export function TemplatePicker({
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
+  }, [open]);
+
+  // 面板挂到 body 并按触发按钮定位，侧栏的裁切和层级都挡不住
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = root.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(440, window.innerWidth - 24);
+      setPos({
+        top: rect.bottom + 6,
+        left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
   }, [open]);
 
   const { theme, css, ...preset } = style;
@@ -278,22 +299,31 @@ export function TemplatePicker({
         )}
       </button>
 
-      {open && (
-        <div className={styles.panel} role="dialog" aria-label="简历样式">
-          <StylePanel
-            resume={resume}
-            style={style}
-            designs={designList.data?.designs ?? []}
-            currentId={designList.data?.currentId ?? null}
-            onPickTemplate={pickTemplate}
-            onPickAccent={pickAccent}
-            onApplyDesign={(id) => applyDesign.mutate(id)}
-            onDeleteDesign={(id) => deleteDesign.mutate(id)}
-            onAskAi={askAi}
-            askAiDisabled={askAiDisabled}
-          />
-        </div>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            className={styles.panel}
+            ref={panelRef}
+            style={{ top: pos.top, left: pos.left }}
+            role="dialog"
+            aria-label="简历样式"
+          >
+            <StylePanel
+              resume={resume}
+              style={style}
+              designs={designList.data?.designs ?? []}
+              currentId={designList.data?.currentId ?? null}
+              onPickTemplate={pickTemplate}
+              onPickAccent={pickAccent}
+              onApplyDesign={(id) => applyDesign.mutate(id)}
+              onDeleteDesign={(id) => deleteDesign.mutate(id)}
+              onAskAi={askAi}
+              askAiDisabled={askAiDisabled}
+            />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

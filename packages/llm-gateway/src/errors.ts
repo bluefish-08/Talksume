@@ -57,6 +57,24 @@ export function isUnrecoverableKind(kind: LlmErrorKind): boolean {
   return kind === "quota_exhausted" || kind === "auth";
 }
 
+const KIND_TEXT: Record<LlmErrorKind, string> = {
+  quota_exhausted: "模型额度已用完",
+  auth: "模型鉴权失败",
+  invalid_request: "模型请求被拒绝",
+  rate_limited: "模型请求太频繁",
+  server: "模型服务暂时不可用",
+  timeout: "模型响应超时",
+  network: "模型暂时连不上",
+  invalid_output: "模型输出不合法",
+  aborted: "请求已被取消",
+  unknown: "模型调用失败",
+};
+
+/** 展示给用户的中文说明；上游原始英文报错只进日志。 */
+export function describeErrorKind(kind: LlmErrorKind): string {
+  return KIND_TEXT[kind];
+}
+
 const TAG = /^\[llm:([a-z_]+)\] /;
 
 /** 流式接口里错误只能编码在 errorMessage 中，用前缀标签携带错误类型。 */

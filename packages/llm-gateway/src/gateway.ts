@@ -15,6 +15,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import type { GatewayConfig } from "./config.ts";
 import {
   classifyErrorMessage,
+  describeErrorKind,
   isRetryableKind,
   isUnrecoverableKind,
   type LlmErrorKind,
@@ -512,11 +513,11 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
         last = { kind, text: raw, message: terminal, model };
 
         if (flushed) {
-          finishError(terminal, kind, raw, "error");
+          finishError(terminal, kind, describeErrorKind(kind), "error");
           return;
         }
         if (isUnrecoverableKind(kind)) {
-          finishError(terminal, kind, raw, "error");
+          finishError(terminal, kind, describeErrorKind(kind), "error");
           return;
         }
         if (isRetryableKind(kind) && retry < maxRetries) {
@@ -531,8 +532,9 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     }
 
     if (last) {
-      const suffix = chain.length > 1 ? `（主备模型共尝试 ${attempt} 次均失败）` : `（共尝试 ${attempt} 次）`;
-      finishError(last.message, last.kind, `${last.text} ${suffix}`, "error");
+      const suffix =
+        chain.length > 1 ? `，主备模型共尝试 ${attempt} 次均失败` : `，共尝试 ${attempt} 次均失败`;
+      finishError(last.message, last.kind, `${describeErrorKind(last.kind)}${suffix}`, "error");
     }
   }
 
@@ -585,7 +587,7 @@ export function createGateway(config: GatewayConfig, deps: GatewayDeps = {}): Ga
     };
     const message = await streamFn(request.purpose, tuning)(primaryModel, context, options).result();
     if (message.stopReason === "error" || message.stopReason === "aborted") {
-      throw toGatewayError(message.errorMessage ?? "unknown error", message.model);
+      throw toGatewayError(message.errorMessage ?? "模型调用失败", message.model);
     }
     const text = message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
     return { text, message, model: message.model };

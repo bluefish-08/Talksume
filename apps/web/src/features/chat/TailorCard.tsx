@@ -2,6 +2,7 @@ import { useToast } from "../../components/Toast.tsx";
 import { Button, Spinner } from "../../components/ui.tsx";
 import { errorText } from "../tailor/changes.tsx";
 import { useTailorActions, useTailoring } from "../tailor/queries.ts";
+import { useExcluded } from "../tailor/selection.ts";
 import styles from "./TailorCard.module.css";
 import { cardStatus, changeLabel, levelName, withLiveSelection } from "./tailorCards.ts";
 import type { TailorCard } from "./types.ts";
@@ -20,8 +21,12 @@ export function TailorCardView({ card, superseded, onOpen }: Props) {
   const toast = useToast();
   const { adopt } = useTailorActions(card.jobId);
   const status = cardStatus(view.data?.tailoring, card);
-  const items = withLiveSelection(card.items ?? [], view.data?.tailoring, status);
+  const { off, toggle } = useExcluded(card.jobId, view.data?.tailoring?.updatedAt);
+  const items = withLiveSelection(card.items ?? [], view.data?.tailoring, status).map((item) =>
+    status === "draft" && off.has(item.id) ? { ...item, selected: false } : item,
+  );
   const ids = items.filter((item) => item.selected && !item.blocked).map((item) => item.id);
+  const editable = status === "draft" && items.filter((item) => !item.blocked).length > 1;
 
   if (superseded) {
     const level = card.level ? ` · ${levelName(card.level)}` : "";
@@ -52,6 +57,16 @@ export function TailorCardView({ card, superseded, onOpen }: Props) {
               </li>
             ) : (
               <li key={item.id} className={styles.item} data-off={!item.selected} title={item.summary}>
+                {editable ? (
+                  <input
+                    type="checkbox"
+                    className={styles.check}
+                    aria-label={`采用第 ${item.number ?? ""} 处：${item.title}`}
+                    checked={item.selected}
+                    disabled={item.selected && ids.length === 1}
+                    onChange={() => toggle(item.id)}
+                  />
+                ) : null}
                 <span className={styles.num} aria-hidden="true">
                   {item.number ?? "–"}
                 </span>

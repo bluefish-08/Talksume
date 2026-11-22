@@ -7,6 +7,7 @@ import { qk, useProfile } from "../api/queries.ts";
 import { useToast } from "../components/Toast.tsx";
 import { Button, EmptyState, Spinner } from "../components/ui.tsx";
 import { ChatPanel, type LiveResume, type PanelRequest } from "../features/chat/ChatPanel.tsx";
+import { TailorVersionControls } from "../features/chat/ResumePane.tsx";
 import type { TailorCard } from "../features/chat/types.ts";
 import { ExportMenu } from "../features/resume/ExportMenu.tsx";
 import { PolishPreview } from "../features/resume/PolishPreview.tsx";
@@ -31,6 +32,7 @@ import {
 import { ZoomControl } from "../features/resume/ZoomControl.tsx";
 import { useResumeImport } from "../features/resume-import/useResumeImport.tsx";
 import { TailorDraft } from "../features/tailor/TailorDraft.tsx";
+import { useTailorVersion } from "../features/tailor/useTailorVersion.ts";
 import { VersionSwitch } from "../features/tailor/VersionSwitch.tsx";
 import styles from "./Resume.module.css";
 
@@ -95,6 +97,9 @@ export function ResumePage() {
     (card: TailorCard) =>
       setTailor({ jobId: card.jobId, company: card.company, title: card.title, showing: true }),
     [],
+  );
+  const version = useTailorVersion(tailor?.jobId, () =>
+    setTailor((t) => t && { ...t, showing: false }),
   );
   const [zoom, setZoom] = useState<ZoomMode>(() => readZoom(ZOOM_KEY));
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
@@ -184,6 +189,21 @@ export function ResumePage() {
             )}
           </div>
           <div className={styles.tools}>
+            {tailor && (
+              <TailorVersionControls
+                company={tailor.company}
+                status={version.status}
+                changes={version.changes}
+                showing={tailor.showing}
+                busy={version.busy}
+                canAdopt={version.chosen.length > 0}
+                adopting={version.adopting}
+                onShow={(showing) => setTailor((t) => t && { ...t, showing })}
+                onDiscard={() => setTailor(null)}
+                onAdopt={version.onAdopt}
+                onRevoke={version.onRevoke}
+              />
+            )}
             <Button onClick={() => importer.open()} title="上传旧简历，只补缺的内容">
               <FileUp size={16} strokeWidth={1.7} aria-hidden="true" />
               导入简历

@@ -217,17 +217,18 @@ export function explainMatch(profile: Profile, job: Job): MatchExplanation {
     let total = 0;
     const items = groupUnits(skills).map((unit) => {
       const weight = Math.max(...unit.members.map((m) => m.weight));
-      let best: { skill: JdSkill; credit: number; source: string } | undefined;
+      let best: { skill: JdSkill; credit: number; source: string; related: boolean } | undefined;
       for (const m of unit.members) {
         const o = creditFor(m.name, owned);
-        if (o && (!best || o.credit > best.credit)) best = { skill: m, credit: o.credit, source: o.source };
+        if (o && (!best || o.credit > best.credit))
+          best = { skill: m, credit: o.credit, source: o.source, related: o.related === true };
       }
       const credit = best?.credit ?? 0;
       total += weight;
       got += weight * credit;
       return {
         name: unit.name,
-        status: statusOf(credit),
+        status: best?.related ? "partial" : statusOf(credit),
         ...(best && { source: best.source }),
         jd: (best?.skill ?? unit.members[0])?.snippet ?? "",
       } satisfies KeywordItem;

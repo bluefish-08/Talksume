@@ -21,13 +21,33 @@ if (database) {
   await migrateCloudAuth(database);
   const seeded = await seedJobsIfEmpty(database.db);
   if (seeded > 0) console.log(`已写入 ${seeded} 条种子岗位`);
+}
+
+let embedJobs: () => void = () => {};
+if (database) {
   const embedder = createEmbedderFromEnv();
   if (embedder) {
-    void embedPendingJobs(database.db, embedder).catch((err: unknown) =>
-      console.error("岗位向量生成失败", err instanceof Error ? err.message : err),
-    );
+    let running = false;
+    let again = false;
+    embedJobs = () => {
+      if (running) {
+        again = true;
+        return;
+      }
+      running = true;
+      void embedPendingJobs(database.db, embedder)
+        .catch((err: unknown) => console.error("岗位向量生成失败", err instanceof Error ? err.message : err))
+        .finally(() => {
+          running = false;
+          if (again) {
+            again = false;
+            embedJobs();
+          }
+        });
+    };
   }
 }
+embedJobs();
 
 let logCall: (log: LlmCallLog) => void = () => {};
 const gateway = process.env.LLM_API_KEY
@@ -51,7 +71,7 @@ const app = buildApp({
   edition: "cloud",
   version: process.env.APP_VERSION ?? "dev",
   logger: true,
-  flow: { notifier },
+  flow: { notifier, onJobPublished: () => embedJobs() },
   ...(identity && { identity }),
   ...(trustProxy > 0 && { trustProxy }),
   ...(database && { db: database.db }),

@@ -103,6 +103,7 @@ export function registerHrRoutes(app: FastifyInstance, ctx: FlowContext): void {
           fetchedAt: now,
         })
         .returning();
+      ctx.onJobPublished?.();
       return reply.status(201).send({ job: row });
     });
 

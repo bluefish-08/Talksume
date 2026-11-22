@@ -140,10 +140,12 @@ const namesOf = (skills: Skill[]) => skills.map((s) => s.name).join("、");
 /** 同一分组内按熟练度分段：「熟练 Java、Go；了解 Rust」，没写熟练度的放最后。 */
 function categoryBullets(skills: Skill[]): ResumeBullet[] {
   if (skills.every((s) => !s.level)) return [{ text: namesOf(skills), factIds: factIdsOf(skills) }];
+  // 同一分类里混有带熟练度和不带熟练度时，不带的那段单列「其他」，否则读起来像「熟悉」只管前一项。
+  const mixed = skills.some((s) => s.level) && skills.some((s) => !s.level);
   return SKILL_GROUPS.flatMap(({ level, heading }) => {
     const group = skills.filter((s) => s.level === level);
     if (group.length === 0) return [];
-    const lead = level ? { lead: heading } : {};
+    const lead = level ? { lead: heading } : mixed ? { lead: "其他" } : {};
     return [{ ...lead, text: namesOf(group), factIds: factIdsOf(group) }];
   });
 }

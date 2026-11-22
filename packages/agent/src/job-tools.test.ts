@@ -342,6 +342,34 @@ describe("定制简历工具", () => {
     );
   }
 
+  it("工具调用前已经说过话时，结果提醒不要把岗位看重什么再说一遍", async () => {
+    let toolResult = "";
+    const { controller } = fake(
+      [
+        fauxAssistantMessage(
+          [fauxText("这个岗位最看重 Java 后端经验。"), fauxToolCall("tailor_resume", { jobId: "demo:2" })],
+          {
+            stopReason: "toolUse",
+          },
+        ),
+        (context) => {
+          toolResult = JSON.stringify(context.messages.at(-1));
+          return fauxAssistantMessage([fauxText("草稿好了。")]);
+        },
+      ],
+      fakeJobs().jobs,
+      [],
+      {
+        tailor: async () => ({ card, lines: ["- 个人摘要"] }),
+        select: async () => null,
+        revoke: async () => null,
+      },
+    );
+    await collect(controller.handleUserMessage(createIntakeState(), { id: "u1", text: "帮我定制" }));
+    expect(toolResult).toContain("不要再说第二遍");
+    expect(toolResult).not.toContain("唯一需要复述");
+  });
+
   it("成功时推出定制卡片并落进消息，结果提醒模型还没生效", async () => {
     const calls: string[] = [];
     const { events, state, toolResult } = await run({

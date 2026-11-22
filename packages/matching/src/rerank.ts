@@ -29,6 +29,9 @@ export const REPORT_MAX_TOKENS = 1536;
 const clip = (text: string | undefined, max: number) =>
   text && text.length > max ? `${text.slice(0, max)}…` : text;
 
+const highlightLines = (highlights: { title?: string | undefined; detail: string }[] | undefined) =>
+  (highlights ?? []).map((h) => (h.title ? `${h.title}：${h.detail}` : h.detail));
+
 function compactProfile(profile: Profile) {
   return {
     education: educationByRecency(profile)
@@ -38,13 +41,13 @@ function compactProfile(profile: Profile) {
     experiences: profile.experiences.slice(0, 4).map((e) => ({
       company: e.company,
       title: e.title,
-      bullets: e.bullets.slice(0, 3).map((b) => clip(b, 80)),
+      bullets: [...e.bullets, ...highlightLines(e.highlights)].slice(0, 3).map((b) => clip(b, 80)),
     })),
     projects: profile.projects.slice(0, 4).map((p) => ({
       name: p.name,
       role: p.role,
       techStack: p.techStack.slice(0, 8),
-      action: clip(p.action, 100),
+      action: clip(p.action || highlightLines(p.highlights).join("；") || undefined, 100),
     })),
     intention: { roles: profile.intention.roles, cities: profile.intention.cities },
   };

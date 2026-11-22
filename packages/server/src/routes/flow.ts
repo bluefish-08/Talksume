@@ -17,6 +17,7 @@ export const flowRoutes: RouteModule = (app, deps) => {
       notifier: deps.flow?.notifier ?? new InProcessNotifier(),
       connectors: deps.flow?.connectors ?? new ConnectorRegistry(),
       sseHeartbeatMs: deps.flow?.sseHeartbeatMs ?? 25_000,
+      ...(deps.flow?.onJobPublished && { onJobPublished: deps.flow.onJobPublished }),
       log: scope.log,
     });
     registerApplicationRoutes(scope, ctx);

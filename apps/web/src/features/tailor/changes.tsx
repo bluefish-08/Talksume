@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { ApiError } from "../../api/client.ts";
 import type { ChangeMarks } from "../resume/ResumePreview.tsx";
 import type { TailoringView } from "./queries.ts";
+import { selectedChanges, useExcluded, usableChanges } from "./selection.ts";
 
 const KIND_LABEL: Record<TailorChange["kind"], string> = {
   summary: "个人摘要",
@@ -59,16 +60,18 @@ export function changeMarks(
 
 type Draft = NonNullable<TailoringView["tailoring"]>;
 
-/** 选中状态以服务端为准；刚生成时 selected 为空，表示默认全选可用的调整。 */
-export function useTailorDraft(draft: Draft) {
-  const usable = useMemo(() => draft.changes.filter((c) => c.violations.length === 0), [draft.changes]);
-  const chosen = useMemo(() => {
-    if (draft.selected.length === 0) return usable;
-    const picked = new Set(draft.selected);
-    return usable.filter((c) => picked.has(c.id));
-  }, [usable, draft.selected]);
+export function useTailorDraft(jobId: string, draft: Draft) {
+  const { off, toggle } = useExcluded(jobId, draft.updatedAt);
+  const usable = useMemo(() => usableChanges(draft), [draft]);
+  const chosen = useMemo(() => selectedChanges(draft, off), [draft, off]);
   const numbers = useMemo(() => new Map(usable.map((c, i) => [c.id, i + 1] as const)), [usable]);
   const preview = useMemo(() => applyTailoring(draft.base, chosen), [draft.base, chosen]);
   const marks = useMemo(() => changeMarks(chosen, numbers), [chosen, numbers]);
-  return { chosen, preview, marks };
+  return { usable, chosen, numbers, preview, marks, toggle };
+}
+
+export function changeTitle(c: TailorChange): string {
+  if (c.kind === "summary" || c.kind === "skill_order") return KIND_LABEL[c.kind];
+  if (c.kind === "item_order") return KIND_LABEL.item_order;
+  return `${c.heading} · ${KIND_LABEL[c.kind]}`;
 }

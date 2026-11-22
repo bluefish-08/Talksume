@@ -9,6 +9,7 @@ export interface FlowContext {
   notifier: NotificationBus;
   connectors: ConnectorRegistry;
   sseHeartbeatMs: number;
+  onJobPublished?: () => void;
   log: FastifyBaseLogger;
 }
 

@@ -61,7 +61,12 @@ export interface AppDeps {
   identity?: IdentityProvider;
   /** 反向代理层数，用来从 X-Forwarded-For 取真实 IP；不经代理时不要设。 */
   trustProxy?: number;
-  flow?: { notifier?: NotificationBus; connectors?: ConnectorRegistry; sseHeartbeatMs?: number };
+  flow?: {
+    notifier?: NotificationBus;
+    connectors?: ConnectorRegistry;
+    sseHeartbeatMs?: number;
+    onJobPublished?: () => void;
+  };
 }
 
 export type RouteModule = (app: FastifyInstance, deps: AppDeps & { db: Db; devAuth?: boolean }) => void;

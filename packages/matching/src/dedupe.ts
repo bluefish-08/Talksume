@@ -34,13 +34,32 @@ export interface DedupeGroup {
 
 /** 规范岗位：被投递引用过的优先，其次发布时间最新，再次 id 最小；城市取组内并集，规范岗位自己的排在前面。 */
 export function planDedupe(rows: DedupeRow[], applied: ReadonlySet<string>): DedupeGroup[] {
-  const byKey = new Map<string, DedupeRow[]>();
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    const p = parent.get(id) ?? id;
+    return p === id ? id : find(p);
+  };
+  const owner = new Map<string, string>();
+  // JD 逐字一致，或同公司同标题同类型且城市有交集（JD 只是措辞不同的重复发布），都并入同一组
+  const link = (key: string, id: string) => {
+    const seen = owner.get(key);
+    if (seen === undefined) owner.set(key, id);
+    else parent.set(find(id), find(seen));
+  };
   for (const row of rows) {
     const key = dedupeKey(row);
-    if (!key) continue;
-    const list = byKey.get(key);
+    if (!key || !row.jobType) continue;
+    link(`jd\u0000${key}`, row.id);
+    const head = [row.company.trim(), squash(row.title), row.jobType].join("\u0000");
+    for (const city of row.cities) link(`city\u0000${head}\u0000${squash(city)}`, row.id);
+  }
+  const byKey = new Map<string, DedupeRow[]>();
+  for (const row of rows) {
+    if (!row.jobType || !dedupeKey(row)) continue;
+    const root = find(row.id);
+    const list = byKey.get(root);
     if (list) list.push(row);
-    else byKey.set(key, [row]);
+    else byKey.set(root, [row]);
   }
   const groups: DedupeGroup[] = [];
   for (const members of byKey.values()) {

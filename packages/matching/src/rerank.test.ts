@@ -41,6 +41,23 @@ describe("报告提示词", () => {
     expect(prompt.indexOf("浙江大学")).toBeLessThan(prompt.indexOf("同济大学"));
     expect(prompt.length).toBeLessThan(3500);
   });
+
+  it("实习只有 highlights 没有 bullets 时，要点也进画像", () => {
+    const p = makeProfile({
+      experiences: [
+        {
+          id: "e1",
+          kind: "internship",
+          company: "腾讯",
+          title: "后台开发",
+          bullets: [],
+          highlights: [{ title: "核销重构", detail: "P99 从 300ms 降至 80ms" }],
+        },
+      ],
+    });
+    const prompt = buildRerankPrompt(p, ranked[0] as (typeof ranked)[number]);
+    expect(prompt).toContain("核销重构：P99 从 300ms 降至 80ms");
+  });
 });
 
 describe("报告生成：超时、重试、并发", () => {

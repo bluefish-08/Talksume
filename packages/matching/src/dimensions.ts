@@ -57,6 +57,8 @@ export function extractJdSkills(job: Pick<Job, "title" | "jdText">): JdSkill[] {
 export interface Owned {
   credit: number;
   source: string;
+  /** 只靠相近技能推出来的，不能算作已有。 */
+  related?: boolean;
 }
 
 /** 计算机类专业默认学过的基础课，JD 点名时按半分计。 */
@@ -99,14 +101,21 @@ export function collectProfileSkills(profile: Profile): Map<string, Owned> {
   return owned;
 }
 
+/** 低于「已有」的 0.7 门槛，相近技能只能算部分覆盖。 */
+const RELATED_FACTOR = 0.5;
+
 export function creditFor(name: string, owned: Map<string, Owned>): Owned | undefined {
   const own = owned.get(name);
   if (own && own.credit >= 0.7) return own;
   let best: Owned | undefined = own;
   for (const via of PARTIAL_COVERAGE[name] ?? []) {
     const o = owned.get(via);
-    if (o && (!best || o.credit * 0.7 > best.credit)) {
-      best = { credit: o.credit * 0.7, source: `相近技能「${via}」（${o.source}）` };
+    if (o && (!best || o.credit * RELATED_FACTOR > best.credit)) {
+      best = {
+        credit: o.credit * RELATED_FACTOR,
+        source: `相近技能「${via}」（${o.source}）`,
+        related: true,
+      };
     }
   }
   return best;
@@ -141,8 +150,10 @@ export function scoreSkills(profile: Profile, job: Job): DimensionScore {
     const first = members[0];
     if (best) {
       const name = anyOf ? `${best.skill.name}（JD 要求 ${anyOf} 之一）` : best.skill.name;
-      hitLines.push(`命中 ${name}：${best.owned.source}；JD「${best.skill.snippet}」`);
-      hitCount += 1;
+      hitLines.push(
+        `${best.owned.related ? "仅相近" : "命中"} ${name}：${best.owned.source}；JD「${best.skill.snippet}」`,
+      );
+      if (!best.owned.related) hitCount += 1;
     } else if (first) {
       const name = anyOf ? `${anyOf} 之一` : first.name;
       missLines.push(`缺少 ${name}：JD「${first.snippet}」${weight < 1 ? "（加分项）" : ""}`);

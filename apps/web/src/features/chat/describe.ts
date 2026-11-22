@@ -45,6 +45,17 @@ const FIELD_LABELS: Record<ProfileSection, Record<string, string>> = {
   },
 };
 
+const COMMON_LABELS: Record<string, string> = {
+  techStack: "技术栈",
+  honors: "荣誉",
+  rank: "排名",
+  city: "城市",
+  department: "部门",
+  category: "技能分组",
+  languages: "语言能力",
+  links: "链接",
+};
+
 const ENUMS: Record<string, string> = {
   associate: "专科",
   bachelor: "本科",
@@ -112,7 +123,7 @@ export function describeChange(change: ProfileChange): string {
   if (change.section === "projects" && change.field === "kind") {
     return change.value === "campus" ? "归入校园经历" : "归入项目经历";
   }
-  const label = FIELD_LABELS[change.section][change.field] ?? change.field;
+  const label = FIELD_LABELS[change.section][change.field] ?? COMMON_LABELS[change.field] ?? change.field;
   if (Array.isArray(change.value) && Array.isArray(change.previous)) {
     const seen = new Set(change.previous.map((v) => JSON.stringify(v)));
     const added = change.value.filter((v) => !seen.has(JSON.stringify(v)));
