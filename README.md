@@ -1,6 +1,10 @@
 <div align="center">
 
+<img src="apps/web/public/favicon.svg" alt="简聊 logo" width="96">
+
 # 简聊 Talksume
+
+**简体中文** · [English](README.en.md)
 
 **聊出好简历，投中好岗位。**
 
