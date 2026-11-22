@@ -21,7 +21,6 @@ WORKDIR /app
 COPY --from=deps /app ./
 COPY packages packages
 COPY cloud cloud
-COPY data/seed data/seed
 USER node
 EXPOSE 8080
 CMD ["node", "cloud/server/src/main.ts"]

@@ -84,7 +84,12 @@ cp deploy/.env.example deploy/.env
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Then open `http://localhost:8000` and register an account. On first start the database schema is created and 200 seed jobs from public campus recruiting sites are loaded.
+Then open `http://localhost:8000` and register an account. On first start the database schema is created and the job table is empty. To get jobs, fetch them with the ingest tool, then import them through `SEED_JOBS_PATH` (loaded at startup only when the table is empty; mount the file into the server container):
+
+```bash
+pnpm --filter @talksume/jobs-ingest fetch --source <tencent_campus|meituan|...> --limit <count> --out <file.jsonl>
+# set SEED_JOBS_PATH=<path inside the container> in deploy/.env
+```
 
 Common settings (see [`deploy/.env.example`](deploy/.env.example) for all of them):
 
@@ -131,7 +136,6 @@ packages/resume-render Resume template rendering, PDF and Word export
 packages/llm-gateway   Model gateway: fallback, timeouts, retries, redaction
 cloud/                 Cloud edition: sign-up, sessions, email, rate limiting, server and web entry points
 deploy/                Docker Compose, Dockerfiles, nginx config
-data/seed              Seed jobs
 ```
 
 `packages/*` and `apps/*` must not import from `cloud/`. `pnpm check:boundary` checks the imports, and `pnpm verify:open-build` removes `cloud/`, reinstalls dependencies, type-checks and runs the tests.

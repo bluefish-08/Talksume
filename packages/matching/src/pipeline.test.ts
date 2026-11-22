@@ -186,7 +186,7 @@ describe("Embedder", () => {
   });
 });
 
-describe("离线评测回归", () => {
+describe.skipIf(!process.env.SEED_JOBS_PATH)("离线评测回归（需真实岗位文件）", () => {
   it("标注集上规则排序保持在基线之上", () => {
     expect(CASES.length).toBeGreaterThanOrEqual(3);
     const report = evaluate();

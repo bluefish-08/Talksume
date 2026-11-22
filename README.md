@@ -82,7 +82,12 @@ cp deploy/.env.example deploy/.env
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-启动后访问 `http://localhost:8000`，注册账号即可使用。首次启动会自动建表，并写入 200 条来自公开校招渠道的种子岗位。
+启动后访问 `http://localhost:8000`，注册账号即可使用。首次启动会自动建表，岗位库默认为空。需要岗位时先用采集工具抓取，再通过 `SEED_JOBS_PATH` 导入（库里没有岗位时启动导入，需把文件挂载进 server 容器）：
+
+```bash
+pnpm --filter @talksume/jobs-ingest fetch --source <tencent_campus|meituan|...> --limit <数量> --out <文件.jsonl>
+# 在 deploy/.env 里设置 SEED_JOBS_PATH=<容器内的文件路径>
+```
 
 常用配置（完整说明见 [`deploy/.env.example`](deploy/.env.example)）：
 
@@ -129,7 +134,6 @@ packages/resume-render 简历模板渲染、PDF 与 Word 导出
 packages/llm-gateway   大模型网关：主备切换、超时重试、脱敏
 cloud/                 云端版：注册登录、会话、邮件、限流，以及服务与前端入口
 deploy/                Docker Compose、Dockerfile、nginx 配置
-data/seed              种子岗位
 ```
 
 `packages/*` 和 `apps/*` 不能引用 `cloud/`：`pnpm check:boundary` 检查引用，`pnpm verify:open-build` 会剔除 `cloud/` 后重新安装依赖、做类型检查并跑测试。

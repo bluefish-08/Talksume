@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { createDb, type DbHandle, migrate, schema } from "@talksume/db";
 import { count, eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,9 @@ import type { Reranker } from "./reranker.ts";
 import { seedJobs, seedJobsIfEmpty } from "./seed.ts";
 import { createMatchingService, MatchingError, REPORT_STALE_MS, reportStatusOf } from "./service.ts";
 import { tokenize } from "./text.ts";
+
+const FIXTURE_JOBS = fileURLToPath(new URL("./test-fixtures/jobs.jsonl", import.meta.url));
+const FIXTURE_COUNT = 48;
 
 let handle: DbHandle;
 
@@ -34,12 +38,20 @@ const backendProfile = () =>
   });
 
 describe("种子岗位", () => {
-  it("空表时灌入 200 条，重复执行幂等", async () => {
-    expect(await seedJobsIfEmpty(handle.db)).toBe(200);
-    expect(await seedJobsIfEmpty(handle.db)).toBe(0);
-    await seedJobs(handle.db);
+  it("空表时灌入示例岗位，重复执行幂等", async () => {
+    expect(await seedJobsIfEmpty(handle.db, FIXTURE_JOBS)).toBe(FIXTURE_COUNT);
+    expect(await seedJobsIfEmpty(handle.db, FIXTURE_JOBS)).toBe(0);
+    await seedJobs(handle.db, FIXTURE_JOBS);
     const [row] = await handle.db.select({ n: count() }).from(schema.jobs);
-    expect(row?.n).toBe(200);
+    expect(row?.n).toBe(FIXTURE_COUNT);
+  });
+
+  it("没有给出种子文件或文件不存在时返回 0 且不报错", async () => {
+    const empty = await createDb({ pglite: "memory://" });
+    await migrate(empty);
+    expect(await seedJobsIfEmpty(empty.db, undefined)).toBe(0);
+    expect(await seedJobsIfEmpty(empty.db, "/nonexistent/jobs.jsonl")).toBe(0);
+    await empty.close();
   });
 });
 
@@ -362,7 +374,7 @@ describe("岗位搜索", () => {
   it("按关键词、城市、类型、公司过滤并分页", async () => {
     const userId = await newUser();
     const all = await service().searchJobs(userId, { page: 1, pageSize: 5 });
-    expect(all.total).toBe(200);
+    expect(all.total).toBe(FIXTURE_COUNT);
     expect(all.items).toHaveLength(5);
     const page2 = await service().searchJobs(userId, { page: 2, pageSize: 5 });
     expect(page2.items[0]?.id).not.toBe(all.items[0]?.id);
@@ -374,7 +386,7 @@ describe("岗位搜索", () => {
     const filtered = await service().searchJobs(userId, {
       city: "杭州",
       jobType: "internship",
-      company: "网易",
+      company: "北辰网络",
       page: 1,
       pageSize: 50,
     });
@@ -382,7 +394,7 @@ describe("岗位搜索", () => {
     for (const j of filtered.items) {
       expect(j.cities).toContain("杭州");
       expect(j.jobType).toBe("internship");
-      expect(j.company).toBe("网易");
+      expect(j.company).toBe("北辰网络");
     }
   });
 
@@ -410,7 +422,7 @@ describe("向量召回（可选）", () => {
 
   it("补全岗位向量后，相似度召回与刷新都能工作", async () => {
     const done = await embedPendingJobs(handle.db, fake, 64);
-    expect(done).toBeGreaterThanOrEqual(200);
+    expect(done).toBeGreaterThanOrEqual(FIXTURE_COUNT);
     const [row] = await handle.db
       .select({ n: count() })
       .from(schema.jobs)
@@ -419,8 +431,8 @@ describe("向量召回（可选）", () => {
     expect(await embedPendingJobs(handle.db, fake)).toBe(0);
 
     const userId = await newUser(backendProfile());
-    const scores = await vectorScores(handle.db, userId, fake, backendProfile(), 50);
-    expect(scores.size).toBe(50);
+    const scores = await vectorScores(handle.db, userId, fake, backendProfile(), 30);
+    expect(scores.size).toBe(30);
 
     const service = createMatchingService(handle.db, { llm: null, embedder: fake, recallLimit: 30 });
     const res = await service.refresh(userId);

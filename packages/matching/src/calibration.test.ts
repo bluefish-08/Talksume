@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { Job } from "@talksume/core";
 import { describe, expect, it } from "vitest";
 import { CASES } from "../eval/dataset.ts";
@@ -6,7 +7,7 @@ import { MIN_RECOMMEND_SCORE, matchProfile } from "./pipeline.ts";
 import { classifyRole } from "./role.ts";
 import { readSeedJobs } from "./seed.ts";
 
-const seed = readSeedJobs();
+const seed = readSeedJobs(fileURLToPath(new URL("./test-fixtures/jobs.jsonl", import.meta.url)));
 
 function seedJob(company: string, title: string, jobType?: Job["jobType"]): Job {
   const hit = seed.find(
@@ -33,7 +34,7 @@ const genericBackend = makeJob({
     "【岗位职责】\n参与后端业务开发\n【任职要求】\n1、在校学生，每周出勤 4 天以上\n2、有责任心，学习能力强",
 });
 
-/** 计算机本科，美团后端实习（Go/Kafka/Redis），意向后端开发，上海/杭州。 */
+/** 计算机本科，云帆数据后端实习（Go/Kafka/Redis），意向后端开发，上海/杭州。 */
 const backendIntern = makeProfile({
   education: [
     { id: "e1", school: "同济大学", degree: "bachelor", major: "软件工程", start: "2021-09", end: "2025-06" },
@@ -42,7 +43,7 @@ const backendIntern = makeProfile({
     {
       id: "x1",
       kind: "internship",
-      company: "美团",
+      company: "云帆数据",
       title: "后端开发实习生",
       start: "2024-07",
       end: "2024-12",
@@ -75,9 +76,9 @@ describe("后端实习生画像的分数区间", () => {
 
   it("方向对口、技能部分覆盖的后端岗位在 70–90", () => {
     for (const [company, title] of [
-      ["腾讯", "后台开发"],
-      ["米哈游", "平台研发-后端开发工程师（AI 应用方向）"],
-      ["美团", "AI后端开发工程师"],
+      ["星河科技", "后台开发"],
+      ["青禾互娱", "平台研发-后端开发工程师（AI 应用方向）"],
+      ["云帆数据", "AI后端开发工程师"],
     ] as const) {
       const s = score(seedJob(company, title));
       expect(s, `${company} ${title}`).toBeGreaterThanOrEqual(70);
@@ -86,10 +87,10 @@ describe("后端实习生画像的分数区间", () => {
   });
 
   it("相邻方向（Agent、基础架构）在 50–80，不超过对口后端岗位", () => {
-    const backend = score(seedJob("腾讯", "后台开发", "internship"));
+    const backend = score(seedJob("星河科技", "后台开发", "internship"));
     for (const [company, title] of [
-      ["米哈游", "平台研发-Agent开发工程师"],
-      ["腾讯", "技术研究-基础架构方向"],
+      ["青禾互娱", "平台研发-Agent开发工程师"],
+      ["北辰网络", "技术研究-基础架构方向"],
     ] as const) {
       const s = score(seedJob(company, title));
       expect(s, `${company} ${title}`).toBeGreaterThanOrEqual(50);
@@ -99,15 +100,15 @@ describe("后端实习生画像的分数区间", () => {
   });
 
   it("只因专业沾边的游戏策划、算法、测试、运营岗位远低于相关岗位", () => {
-    const related = score(seedJob("腾讯", "后台开发", "internship"));
+    const related = score(seedJob("星河科技", "后台开发", "internship"));
     const weak: [string, string][] = [
-      ["米哈游", "任务策划实习生"],
-      ["米哈游", "技术策划实习生"],
-      ["腾讯", "算法-推荐算法方向"],
-      ["腾讯", "算法-自然语言处理方向"],
-      ["腾讯", "测试开发"],
-      ["网易", "游戏测试实习生（忘川风华录）"],
-      ["美团", "Catpaw 产品运营实习生"],
+      ["青禾互娱", "任务策划实习生"],
+      ["青禾互娱", "技术策划实习生"],
+      ["星河科技", "算法-推荐算法方向"],
+      ["星河科技", "算法-自然语言处理方向"],
+      ["星河科技", "测试开发"],
+      ["北辰网络", "游戏测试实习生"],
+      ["云帆数据", "产品运营实习生（用户增长）"],
     ];
     for (const [company, title] of weak) {
       const s = score(seedJob(company, title));
@@ -117,8 +118,8 @@ describe("后端实习生画像的分数区间", () => {
   });
 
   it("需要多年经验的资深岗位被降分，排在对口的初级岗位之后", () => {
-    const senior = seedJob("网易", "高级/资深服务端开发工程师（遗忘之海）");
-    const entry = seedJob("腾讯", "后台开发", "internship");
+    const senior = seedJob("北辰网络", "高级/资深服务端开发工程师");
+    const entry = seedJob("星河科技", "后台开发", "internship");
     expect(score(senior)).toBeLessThan(60);
     expect(score(senior)).toBeLessThan(score(entry));
     const m = out.matches.find((x) => x.job.id === senior.id);
@@ -140,7 +141,7 @@ describe("后端实习生画像的分数区间", () => {
   it("技能和经历的证据指向画像里的具体技能和实习", () => {
     const m = scoreAll(backendIntern, [goBackend]).byId.get(goBackend.id);
     expect(m?.dims.skills.evidence[0]).toContain("命中");
-    expect(m?.dims.experience.evidence[0]).toContain("美团");
+    expect(m?.dims.experience.evidence[0]).toContain("云帆数据");
   });
 });
 
@@ -153,15 +154,15 @@ describe("其他方向画像不被后端偏置", () => {
 
   it("算法硕士：算法岗 ≥ 70，后端岗明显更低", () => {
     const { score } = scoreAll(find("algo-master"));
-    expect(score(seedJob("腾讯", "AI算法工程", "campus"))).toBeGreaterThanOrEqual(70);
-    expect(score(seedJob("腾讯", "算法-推荐算法方向"))).toBeGreaterThanOrEqual(70);
-    expect(score(seedJob("腾讯", "后台开发", "campus"))).toBeLessThan(55);
+    expect(score(seedJob("星河科技", "AI算法工程", "campus"))).toBeGreaterThanOrEqual(70);
+    expect(score(seedJob("星河科技", "算法-推荐算法方向"))).toBeGreaterThanOrEqual(70);
+    expect(score(seedJob("星河科技", "后台开发", "campus"))).toBeLessThan(55);
   });
 
   it("产品运营本科：运营岗 ≥ 70，算法与客户端岗低于推荐线", () => {
     const { score } = scoreAll(find("product-ops-undergrad"));
-    expect(score(seedJob("腾讯", "产品运营", "internship"))).toBeGreaterThanOrEqual(70);
-    expect(score(seedJob("腾讯", "算法-推荐算法方向"))).toBeLessThan(MIN_RECOMMEND_SCORE);
-    expect(score(seedJob("腾讯", "游戏客户端开发", "internship"))).toBeLessThan(MIN_RECOMMEND_SCORE);
+    expect(score(seedJob("星河科技", "产品运营", "internship"))).toBeGreaterThanOrEqual(70);
+    expect(score(seedJob("星河科技", "算法-推荐算法方向"))).toBeLessThan(MIN_RECOMMEND_SCORE);
+    expect(score(seedJob("星河科技", "游戏客户端开发", "internship"))).toBeLessThan(MIN_RECOMMEND_SCORE);
   });
 });

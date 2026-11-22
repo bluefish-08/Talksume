@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { Profile } from "@talksume/core";
 import { createDb, type DbHandle, migrate, schema } from "@talksume/db";
 import { type StructuredLlm, seedJobsIfEmpty } from "@talksume/matching";
@@ -7,12 +8,14 @@ import { buildApp } from "../app.ts";
 import { devHeaderIdentity, installIdentity } from "../identity.ts";
 import { createMatchingRoutes } from "./matching.ts";
 
+const FIXTURE_JOBS = fileURLToPath(new URL("../../../matching/src/test-fixtures/jobs.jsonl", import.meta.url));
+
 let handle: DbHandle;
 
 beforeAll(async () => {
   handle = await createDb({ pglite: "memory://" });
   await migrate(handle);
-  await seedJobsIfEmpty(handle.db);
+  await seedJobsIfEmpty(handle.db, FIXTURE_JOBS);
 });
 afterAll(() => handle.close());
 
@@ -80,8 +83,8 @@ describe("岗位列表与详情", () => {
     expect(item).toHaveProperty("snippet");
     expect(item).not.toHaveProperty("jdText");
 
-    const company = await json(app, "GET", `/api/v1/jobs?company=${encodeURIComponent("美团")}&pageSize=50`);
-    expect(company.body.items.every((j: { company: string }) => j.company === "美团")).toBe(true);
+    const company = await json(app, "GET", `/api/v1/jobs?company=${encodeURIComponent("云帆数据")}&pageSize=50`);
+    expect(company.body.items.every((j: { company: string }) => j.company === "云帆数据")).toBe(true);
   });
 
   it("参数非法返回 400", async () => {

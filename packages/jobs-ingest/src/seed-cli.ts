@@ -8,12 +8,12 @@ import { computeStats } from "./stats.ts";
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    out: { type: "string", default: "data/seed/jobs.jsonl" },
+    out: { type: "string" },
     size: { type: "string", default: "200" },
   },
 });
-if (positionals.length === 0) {
-  console.error("用法: seed [--out data/seed/jobs.jsonl] [--size 200] <data/jobs/a.jsonl> [...]");
+if (positionals.length === 0 || !values.out) {
+  console.error("用法: seed --out <文件.jsonl> [--size 200] <data/jobs/a.jsonl> [...]");
   process.exit(2);
 }
 

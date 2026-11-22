@@ -69,6 +69,10 @@ const gateway = createGateway(config, {
 
 const handle = await createDb({ pglite: "memory://" });
 await migrate(handle);
+if (!process.env.SEED_JOBS_PATH) {
+  console.error("用法: SEED_JOBS_PATH=<岗位.jsonl> node eval/latency.ts（岗位文件可用 jobs-ingest 抓取）");
+  process.exit(2);
+}
 await seedJobsIfEmpty(handle.db);
 const embedder = createEmbedderFromEnv();
 if (embedder) await embedPendingJobs(handle.db, embedder);

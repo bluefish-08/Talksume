@@ -21,6 +21,7 @@ if (database) {
   await migrateCloudAuth(database);
   const seeded = await seedJobsIfEmpty(database.db);
   if (seeded > 0) console.log(`已写入 ${seeded} 条种子岗位`);
+  else if (!process.env.SEED_JOBS_PATH) console.log("岗位库为空时：用 jobs-ingest 抓取后通过 SEED_JOBS_PATH 导入");
 }
 
 let embedJobs: () => void = () => {};
